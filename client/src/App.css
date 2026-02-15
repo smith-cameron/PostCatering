@@ -2,7 +2,7 @@
    Global Reset & Variables
    ========================= */
 
-   *,
+*,
 *::before,
 *::after {
   box-sizing: border-box;
@@ -11,17 +11,24 @@
 }
 
 :root {
-  --max-width: 1200px;
+  --max-width: 100%;
   --padding-mobile: 1rem;
   --padding-desktop: 2rem;
 
   /* --bg-color: #ffffff; */
-  --text-color: #ffffff;
+  --text-color: black;
   --border-color: #e0e0e0;
   --accent-color: #2563eb;
 
   --font-base: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, Helvetica, Arial, sans-serif;
+}
+
+
+@media (max-width: 991.98px) {
+  :root {
+    --header-height: 112px; /* navbar wraps + toggle row etc */
+  }
 }
 
 html,
@@ -42,12 +49,10 @@ body {
 
 #root {
   min-height: 100vh;
-  display: flex;
-  justify-content: center;
 }
 
 .app {
-  width: min(100%, 720px);
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
@@ -56,32 +61,10 @@ body {
    Header / Main / Footer
    ========================= */
 
-header {
-  border-bottom: 1px solid var(--border-color);
-}
-
-.navbar {
-  background-color: #343a40; /* same as footer */
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-}
-
-.navbar-brand,
-.navbar-nav .nav-link {
-  color: #fff;
-}
-
-.navbar-nav .nav-link:hover,
-.navbar-nav .nav-link.active {
-  color: #adb5bd; /* subtle hover/active */
-}
-   /* header {
-  border-bottom: 1px solid var(--border-color);
-} */
-
-main {
+/* main {
   flex: 1;
   width: 100%;
-}
+} */
 
 footer {
   background-color: #343a40;
@@ -100,13 +83,38 @@ footer {
 } */
 
 /* =========================
-   Content Container
+   Landing Content Container
    ========================= */
 
-.container {
+.landing-container {
   padding: 1rem;
   width: 100%;
+  /* text-align: center; */
 }
+
+/* =========================
+   Carousel
+   ========================= */
+
+.carousel-inner {
+  height: 900px;
+}
+
+.carousel-item {
+  height: clamp(280px, 50vh, 650px);
+  /* padding-bottom: 56.25%; */
+}
+
+.carousel-item img {
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+}
+
+.carousel-control-next-icon {
+  filter: invert(1);
+}
+
 
 /* =========================
    Common Elements
@@ -153,11 +161,11 @@ button:hover {
    ========================= */
 
 /* Tablets & up */
-@media (min-width: 768px) {
+/* @media (min-width: 768px) {
   .container {
     padding: var(--padding-desktop);
   }
-}
+} */
 
 /* Large desktops */
 @media (min-width: 1200px) {
@@ -169,75 +177,3 @@ button:hover {
 /* =========================
    Navigation
    ========================= */
-
-.nav-list {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 1rem;
-}
-
-.nav-list li {
-  margin-bottom: 0.5rem;
-}
-
-.nav-list li:hover {
-  background: transparent;
-  border-color: #e0e0e0;
-  border-width: 1px;
-  border: solid;
-  border-radius: 8px;
-}
-
-.nav-list a {
-  text-decoration: none;
-  font-weight: 600;
-}
-
-
-
-
-
-
-/* **************OLD************** */
-/* #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
-}
-
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
-}
-
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
-} */

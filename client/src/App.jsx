@@ -1,37 +1,27 @@
-import { useState, useEffect } from 'react'
-import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
-import 'bootstrap/dist/css/bootstrap.min.css';
-import Context from './context';
-import { Wrapper, Header, Body, Footer } from './imports';
-import './App.css'
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import "bootstrap/dist/css/bootstrap.min.css";
+import Context from "./context";
+import { Wrapper, Landing, NotFound, ServiceMenu } from "./imports";
+import "./App.css";
 
 function App() {
-  const [count, setCount] = useState(0)
-  // const [currentTime, setCurrentTime] = useState(0);
-  // useEffect(() => {
-  //   fetch('/api/time').then(res => res.json()).then(data => {
-  //     console.log('Fetched data:', data);
-  //     setCurrentTime(data.time);
-  //   });
-  // }, []);
-
   return (
-    <div className="App">
+    <div className="app">
       <Context.Provider value={"Houston, we have liftoff"}>
         <BrowserRouter>
-          {/* Routes Go Here */}
           <Routes>
-            <Route exact path="/" element={<Wrapper />} />
+            <Route path="/" element={<Wrapper />}>
+              <Route index element={<Landing />} />
+              <Route path="services/:menuKey" element={<ServiceMenu />} />
+              {/* <Route path="inquiry" element={<Inquiry />} /> */}
+              {/* <Route path="contact" element={<ContactUs />} /> */}
+              <Route path="*" element={<NotFound />} />
+            </Route>
           </Routes>
         </BrowserRouter>
       </Context.Provider>
-
-
-
-
-
     </div>
-  )
+  );
 }
 
-export default App
+export default App;

@@ -1,19 +1,14 @@
-import React, { useState, useEffect, useContext } from 'react'
-import { Header, Body, Footer } from '../imports'
-import Context from '../context';
+import { Outlet } from "react-router-dom";
+import { Header, Footer } from "../imports";
 
-const Wrapper = (props) => {
-    // const localContext = useContext(Context);
-
+const Wrapper = () => {
   return (
     <>
-      
-        <Header />
-        <Body />
-        <Footer />
-        {/* Insert action component */}
-      {/* </Context.Provider> */}
+      <Header />
+      <Outlet />
+      <Footer />
     </>
-  )
-}
+  );
+};
+
 export default Wrapper;

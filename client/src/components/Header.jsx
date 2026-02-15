@@ -1,51 +1,46 @@
-// import { Link } from "react-router-dom"
-// import React, { useState, useEffect, useContext } from 'react'
-// import Context from '../context';
+import { Navbar, Container, Nav, NavDropdown, NavbarText } from "react-bootstrap";
+import { Link } from "react-router-dom";
 
-const Header = (props) => {
-    // const {showForm, setShowForm} = useContext(Context);
-    // const localContext = useContext(Context);
+const Header = () => {
+  return (
+      <Navbar expand="lg" className="bg-body-tertiary">
+        <Container fluid>
+          <Navbar.Brand as={Link} to="/">AMERICAN LEGION POST 468</Navbar.Brand>
+          <NavbarText className="fs-5 fw-medium text-secondary opacity-75">
+            Catering & Community Food Programs
+          </NavbarText>
 
-    return (
-        <header>
-            <nav class="navbar navbar-expand-lg navbar-dark bg-dark py-3">
-                <div class="container">
-                    {/* <!-- Brand --> */}
-                    <h1><a class="navbar-brand fw-bold" href="#">AMERICAN LEGION POST 468</a></h1>
+          <Navbar.Toggle aria-controls="basic-navbar-nav" />
+          <Navbar.Collapse id="basic-navbar-nav">
+            <Nav className="ms-auto">
+              <NavDropdown title="Services" id="basic-nav-dropdown">
+                <NavDropdown.Item as={Link} to="/services/togo">
+                  To-Go & Take-and-Bake Trays
+                </NavDropdown.Item>
 
-                    {/* <!-- Mobile toggle --> */}
-                    <button
-                        class="navbar-toggler"
-                        type="button"
-                        data-bs-toggle="collapse"
-                        data-bs-target="#mainNavbar"
-                        aria-controls="mainNavbar"
-                        aria-expanded="false"
-                        aria-label="Toggle navigation"
-                    >
-                        <span class="navbar-toggler-icon"></span>
-                    </button>
+                <NavDropdown.Item as={Link} to="/services/community">
+                  Community & Crew Catering
+                </NavDropdown.Item>
 
-                    {/* <!-- Nav links --> */}
-                    {/* <div class="collapse navbar-collapse" id="mainNavbar">
-                        <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
-                            <li class="nav-item">
-                                <a class="nav-link active" aria-current="page" href="#">Home</a>
-                            </li>
-                            <li class="nav-item">
-                                <a class="nav-link" href="#">Services</a>
-                            </li>
-                            <li class="nav-item">
-                                <a class="nav-link" href="#">About Us</a>
-                            </li>
-                            <li class="nav-item">
-                                <a class="nav-link" href="#">Contact</a>
-                            </li>
-                        </ul>
-                    </div> */}
-                </div>
-            </nav>
-        </header>
-    )
-}
+                <NavDropdown.Item as={Link} to="/services/formal">
+                  Formal Events Catering
+                </NavDropdown.Item>
+
+                <NavDropdown.Divider />
+
+                <NavDropdown.Item as={Link} to="/inquiry">
+                  Send Catering Inquiry
+                </NavDropdown.Item>
+
+                <NavDropdown.Item as={Link} to="/contact">
+                  Contact Us
+                </NavDropdown.Item>
+              </NavDropdown>
+            </Nav>
+          </Navbar.Collapse>
+        </Container>
+      </Navbar>
+  );
+};
+
 export default Header;
