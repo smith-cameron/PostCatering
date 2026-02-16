@@ -96,9 +96,9 @@ footer {
    Carousel
    ========================= */
 
-.carousel-inner {
+/* .carousel-inner {
   height: 900px;
-}
+} */
 
 .carousel-item {
   height: clamp(280px, 50vh, 650px);
@@ -111,7 +111,8 @@ footer {
   object-fit: cover;
 }
 
-.carousel-control-next-icon {
+.carousel-control-next-icon,
+.carousel-control-prev-icon {
   filter: invert(1);
 }
 

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 
 const Header = () => {
   return (
-      <Navbar expand="lg" className="bg-body-tertiary">
+      <Navbar expand="lg" className="bg-body-secondary">
         <Container fluid>
           <Navbar.Brand as={Link} to="/">AMERICAN LEGION POST 468</Navbar.Brand>
           <NavbarText className="fs-5 fw-medium text-secondary opacity-75">
