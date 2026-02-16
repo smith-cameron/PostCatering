@@ -1,5 +1,5 @@
-import { useParams } from "react-router-dom";
-import { Accordion } from "react-bootstrap";
+import { useParams, Link } from "react-router-dom";
+import { Accordion, Button } from "react-bootstrap";
 import { MENU, MENU_OPTIONS } from "../static/menuData";
 
 const MenuTable = ({ columns, rows }) => (
@@ -45,6 +45,11 @@ const ServiceMenu = () => {
       <header className="mb-3">
         <h2 className="mb-1">{data.pageTitle}</h2>
         {data.subtitle ? <p className="mb-0">{data.subtitle}</p> : null}
+        <div className="mt-3">
+          <Button as={Link} to={`/inquiry?service=${menuKey}`} variant="secondary">
+            Send Inquiry About This Menu
+          </Button>
+        </div>
       </header>
 
       {data.introBlocks?.map((b) => (
