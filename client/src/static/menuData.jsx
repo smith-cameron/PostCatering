@@ -51,17 +51,17 @@ export const MENU_OPTIONS = {
 
 export const MENU = {
   togo: {
-    pageTitle: "TO-GO & TAKE-AND-BAKE TRAYS",
+    pageTitle: "To-Go & Take-and-Bake Trays",
     subtitle: "Served hot or chilled to reheat",
     introBlocks: [
       {
-        title: "TRAY SIZES",
+        title: "Tray Sizes",
         bullets: ["Half Tray: Serves 8-10", "Full Tray: Serves 16-20"],
       },
     ],
     sections: [
       {
-        title: "BAKED & HEARTY ENTRÉE TRAYS",
+        title: "Baked & Hearty Entrée Trays",
         columns: ["Entrée", "Half Tray", "Full Tray"],
         rows: [
           ["Lasagna (Meat or Veg)", "$75", "$135"],
@@ -74,7 +74,7 @@ export const MENU = {
         ],
       },
       {
-        title: "SIGNATURE PROTEIN TRAYS",
+        title: "Signature Protein Trays",
         columns: ["Entrée", "Half Tray", "Full Tray"],
         rows: [
           ["Bone-In Herb Roasted Chicken Thighs", "$75", "$140"],
@@ -86,7 +86,7 @@ export const MENU = {
         ],
       },
       {
-        title: "SIDES & SALADS",
+        title: "Sides & Salads",
         columns: ["Side", "Half", "Full"],
         rows: [
           ["Garlic Mashed Potatoes", "$40", "$75"],
@@ -113,7 +113,7 @@ export const MENU = {
   },
 
   community: {
-    pageTitle: "COMMUNITY & CREW CATERING (PER PERSON)",
+    pageTitle: "Community & Crew Catering (Per Person)",
     subtitle: "Drop-off or buffet setup • Minimums apply",
     sections: [
       {
@@ -130,7 +130,7 @@ export const MENU = {
       },
       {
         type: "tiers",
-        title: "EVENT CATERING - BUFFET STYLE",
+        title: "Event Catering - Buffet Style",
         tiers: [
           {
             tierTitle: "Tier 1: Casual Buffet",
@@ -155,7 +155,7 @@ export const MENU = {
   // inside export const MENU = { ... }
 
   formal: {
-    pageTitle: "FORMAL EVENTS - PLATED & FULL SERVICE",
+    pageTitle: "Formal Events - Plated & Full Service",
     subtitle: "Three-course dinner",
     sections: [
       {
