@@ -13,11 +13,14 @@ class Slide:
   def to_dict(self):
     return {
       "id": self.id,
+      "src": self.image_url,
+      "alt": self.alt_text,
       "title": self.title,
-      "caption": self.caption,
+      "text": self.caption,
+      "display_order": self.display_order,
       "image_url": self.image_url,
       "alt_text": self.alt_text,
-      "display_order": self.display_order,
+      "caption": self.caption,
     }
 
   @classmethod
