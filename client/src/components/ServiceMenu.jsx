@@ -79,13 +79,11 @@ const ServiceMenu = () => {
                   {s.tiers.map((t) => (
                     <div key={t.tierTitle} className="mb-3">
                       <h4 className="h6 mb-1">{t.tierTitle}</h4>
-                      <p className="mb-2">
-                        <strong>{t.price ? (
-                          <p className="mb-2">
-                            <strong>{t.price}</strong>
-                          </p>
-                        ) : null}</strong>
-                      </p>
+                      {t.price ? (
+                        <p className="mb-2">
+                          <strong>{t.price}</strong>
+                        </p>
+                      ) : null}
                       <ul className="mb-0">
                         {t.bullets.map((b) => (
                           <li key={b}>{b}</li>

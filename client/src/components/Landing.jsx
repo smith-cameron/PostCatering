@@ -67,17 +67,6 @@ const Landing = () => {
           and outreach initiatives.
         </strong>
       </p>
-      <Carousel>
-        {slides.map((slide) => (
-          <Carousel.Item key={slide.src} className="carousel-item">
-            <img className="d-block carousel-img" src={slide.src} alt={slide.alt} />
-            <Carousel.Caption className="bg-dark bg-opacity-50 text-white p-3">
-              <h3>{slide.title}</h3>
-              <p>{slide.text}</p>
-            </Carousel.Caption>
-          </Carousel.Item>
-        ))}
-      </Carousel>
       <div className="my-4 px-3">
         <Button
           className="fw-semibold"
@@ -94,6 +83,17 @@ const Landing = () => {
         </Button>
         <MondayMealModal show={showMMP} onHide={handleCloseMMP} />
       </div>
+      <Carousel>
+        {slides.map((slide) => (
+          <Carousel.Item key={slide.src} className="carousel-item">
+            <img className="d-block carousel-img" src={slide.src} alt={slide.alt} />
+            <Carousel.Caption className="bg-dark bg-opacity-50 text-white p-3">
+              <h3>{slide.title}</h3>
+              <p>{slide.text}</p>
+            </Carousel.Caption>
+          </Carousel.Item>
+        ))}
+      </Carousel>
     </main>
   );
 };
