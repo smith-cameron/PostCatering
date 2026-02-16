@@ -1,59 +1,44 @@
 // import { Link } from "react-router-dom"
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Carousel } from "react-bootstrap";
 import AboutUsModal from "./modals/AboutUsModal";
 import MondayMealModal from "./modals/MondayMealModal";
 
-const slides = [
-  {
-    src: "/imgs/homeslider3.jpg",
-    alt: "First slide",
-    title: "First slide label",
-    text: "Nulla vitae elit libero, a pharetra augue mollis interdum.",
-  },
-  {
-    src: "/imgs/gratisography-cut-the-cake-800x525.jpg",
-    alt: "Second slide",
-    title: "Second slide label",
-    text: "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
-  },
-  {
-    src: "/imgs/gettyimages-1283712032-612x612.jpg",
-    alt: "Third slide",
-    title: "Third slide label",
-    text: "Praesent commodo cursus magna, vel scelerisque nisl consectetur.",
-  },
-  {
-    src: "/imgs/cooking-2132874_1280.jpg",
-    alt: "Fourth slide",
-    title: "Fourth slide label",
-    text: "Suscipit architecto veritatis quae sit distinctio corporis beatae?.",
-  },
-  {
-    src: "/imgs/closeup-spaghetti-meatballs-tomato-sauce-260nw-2468747773.jpg",
-    alt: "Fifth slide",
-    title: "Fifth slide label",
-    text:
-      "Eos, nisi sit, possimus maiores autem minima error eligendi repudiandae praesentium veritatis nam tempore modi vero maxime dolores perferendis aperiam? Necessitatibus, quas.",
-  },
-];
-
 const Landing = () => {
-  const [showAboutUs, setShowAboutUs] = useState(false);
-  const handleCloseAboutUs = () => setShowAboutUs(false);
-  const handleShowAboutUs = () => setShowAboutUs(true);
+  const [activeModal, setActiveModal] = useState(null);
+  const handleCloseModal = () => setActiveModal(null);
+  const handleShowModal = (modalName) => setActiveModal(modalName);
 
-  const [showMMP, setShowMMP] = useState(false);
-  const handleCloseMMP = () => setShowMMP(false);
-  const handleShowMMP = () => setShowMMP(true);
+  const [slides, setSlides] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadSlides = async () => {
+      try {
+        const response = await fetch("/api/slides");
+        if (!response.ok) {
+          return;
+        }
+
+        const body = await response.json();
+        if (isMounted && Array.isArray(body.slides)) {
+          setSlides(body.slides);
+        }
+      } catch {
+        // Keep page functional even if slide API is temporarily unavailable.
+      }
+    };
+
+    loadSlides();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return (
     <main className="landing-container text-center">
-      {/* <h2
-                className="text-center text-md-start"
-            >
-                Catering & Community Food Programs
-            </h2> */}
       <h2>Food prepared with purpose</h2>
       <p>
         American Legion Post 468 Catering combines professional culinary and
@@ -71,21 +56,28 @@ const Landing = () => {
         <Button
           className="fw-semibold"
           variant="secondary"
-          onClick={handleShowAboutUs}
+          onClick={() => handleShowModal("aboutUs")}
         >
           About Us
         </Button>
-        <AboutUsModal show={showAboutUs} onHide={handleCloseAboutUs} />
+        <AboutUsModal
+          show={activeModal === "aboutUs"}
+          onHide={handleCloseModal}
+        />
       </div>
       <div className="my-4 px-3">
-        <Button className="fw-semibold" variant="secondary" onClick={handleShowMMP}>
+        <Button
+          className="fw-semibold"
+          variant="secondary"
+          onClick={() => handleShowModal("mmp")}
+        >
           Monday Meal Program
         </Button>
-        <MondayMealModal show={showMMP} onHide={handleCloseMMP} />
+        <MondayMealModal show={activeModal === "mmp"} onHide={handleCloseModal} />
       </div>
       <Carousel>
         {slides.map((slide) => (
-          <Carousel.Item key={slide.src} className="carousel-item">
+          <Carousel.Item key={slide.id ?? slide.src} className="carousel-item">
             <img className="d-block carousel-img" src={slide.src} alt={slide.alt} />
             <Carousel.Caption className="bg-dark bg-opacity-50 text-white p-3">
               <h3>{slide.title}</h3>
