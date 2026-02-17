@@ -1,8 +1,14 @@
-from flask import jsonify, request
+from pathlib import Path
+
+from flask import jsonify, request, send_from_directory
 
 from flask_api import app
 from flask_api.services.inquiry_service import InquiryService
+from flask_api.services.menu_service import MenuService
 from flask_api.services.slide_service import SlideService
+
+
+SLIDES_ASSET_DIR = Path(__file__).resolve().parent.parent / "static" / "slides"
 
 
 @app.route("/api/health", methods=["GET"])
@@ -17,6 +23,20 @@ def get_slides():
 
   slides = SlideService.get_active_slides()
   return jsonify({"slides": slides}), 200
+
+
+@app.route("/api/assets/slides/<path:filename>", methods=["GET"])
+def get_slide_asset(filename):
+  return send_from_directory(SLIDES_ASSET_DIR, filename)
+
+
+@app.route("/api/menus", methods=["GET", "OPTIONS"])
+def get_menus():
+  if request.method == "OPTIONS":
+    return ("", 204)
+
+  response_body, status_code = MenuService.get_catalog()
+  return jsonify(response_body), status_code
 
 
 @app.route("/api/inquiries", methods=["POST", "OPTIONS"])

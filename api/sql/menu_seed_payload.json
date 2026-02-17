@@ -1,0 +1,460 @@
+{
+  "MENU_OPTIONS": {
+    "bakedHeartyEntrees": {
+      "id": "baked_hearty_entrees",
+      "category": "entree",
+      "title": "Baked & Hearty Entrées",
+      "items": [
+        "Lasagna (Meat or Veg)",
+        "Enchiladas (Cheese or Chicken, Red or Green)",
+        "Baked Ziti (Veg or Beef)",
+        "BBQ Pulled Pork",
+        "Shepherd's Pie",
+        "Beef Stroganoff",
+        "Beef & Pancetta Bolognese Pappardelle"
+      ]
+    },
+    "signatureProteins": {
+      "id": "signature_proteins",
+      "category": "entree",
+      "title": "Signature Proteins",
+      "items": [
+        "Bone-In Herb Roasted Chicken Thighs",
+        "Apple Cider-Marinated Pork Chops",
+        "Marinated Pork Stir-Fry",
+        "Stuffed Chicken Breast (Spinach, Mushroom, Cheese)",
+        "Herb-Marinated Tri-Tip w/ Chimichurri",
+        "Braised Short Ribs"
+      ]
+    },
+    "sidesSalads": {
+      "id": "sides_salads",
+      "category": "sides_salads",
+      "title": "Sides & Salads",
+      "items": [
+        "Garlic Mashed Potatoes",
+        "Herb Roasted Fingerlings",
+        "Rice Pilaf",
+        "Mac & Cheese",
+        "Pasta Salad (Creamy or Pesto)",
+        "Coleslaw",
+        "Roasted Seasonal Vegetables",
+        "Caesar Salad",
+        "Watermelon & Feta Salad",
+        "Beet & Citrus Salad",
+        "Cucumber Tomato Salad",
+        "Caprese Salad",
+        "Au Gratin Potatoes",
+        "Strawberry Arugula Salad",
+        "Garlic Bread / Rolls / Cornbread",
+        "Fried Rice",
+        "Lumpia",
+        "Charcuterie Board (Serves 10-12)"
+      ]
+    }
+  },
+  "FORMAL_PLAN_OPTIONS": [
+    {
+      "id": "formal:2-course",
+      "level": "package",
+      "title": "Two-Course Dinner",
+      "price": "$65-$90 per person",
+      "details": [
+        "Starter + Entree",
+        "Sides can be selected with the entree"
+      ],
+      "constraints": {
+        "starter": {
+          "min": 1,
+          "max": 1
+        },
+        "entree": {
+          "min": 1,
+          "max": 1
+        }
+      }
+    },
+    {
+      "id": "formal:3-course",
+      "level": "package",
+      "title": "Three-Course Dinner",
+      "price": "$75-$110+ per person",
+      "details": [
+        "Passed Appetizers + Starter + Entree",
+        "Sides can be selected with the entree"
+      ],
+      "constraints": {
+        "passed": {
+          "min": 2,
+          "max": 2
+        },
+        "starter": {
+          "min": 1,
+          "max": 1
+        },
+        "entree": {
+          "min": 1,
+          "max": 2
+        }
+      }
+    }
+  ],
+  "MENU": {
+    "togo": {
+      "pageTitle": "To-Go & Take-and-Bake Trays",
+      "subtitle": "Served hot or chilled to reheat",
+      "introBlocks": [
+        {
+          "title": "Tray Sizes",
+          "bullets": [
+            "Half Tray: Serves 8-10",
+            "Full Tray: Serves 16-20"
+          ]
+        }
+      ],
+      "sections": [
+        {
+          "sectionId": "togo_baked_hearty",
+          "category": "entree",
+          "title": "Baked & Hearty Entrée Trays",
+          "columns": [
+            "Entrée",
+            "Half Tray",
+            "Full Tray"
+          ],
+          "rows": [
+            [
+              "Lasagna (Meat or Veg)",
+              "$75",
+              "$135"
+            ],
+            [
+              "Enchiladas (Cheese or Chicken, Red or Green)",
+              "$70",
+              "$130"
+            ],
+            [
+              "Baked Ziti (Veg or Beef)",
+              "$65",
+              "$120"
+            ],
+            [
+              "BBQ Pulled Pork",
+              "$75",
+              "$140"
+            ],
+            [
+              "Shepherd's Pie",
+              "$80",
+              "$150"
+            ],
+            [
+              "Beef Stroganoff",
+              "$85",
+              "$160"
+            ],
+            [
+              "Beef & Pancetta Bolognese Pappardelle",
+              "$90",
+              "$170"
+            ]
+          ]
+        },
+        {
+          "sectionId": "togo_signature_proteins",
+          "category": "entree",
+          "title": "Signature Protein Trays",
+          "columns": [
+            "Entrée",
+            "Half Tray",
+            "Full Tray"
+          ],
+          "rows": [
+            [
+              "Bone-In Herb Roasted Chicken Thighs",
+              "$75",
+              "$140"
+            ],
+            [
+              "Apple Cider-Marinated Pork Chops",
+              "$85",
+              "$160"
+            ],
+            [
+              "Marinated Pork Stir-Fry",
+              "$80",
+              "$150"
+            ],
+            [
+              "Stuffed Chicken Breast (Spinach, Mushroom, Cheese)",
+              "$90",
+              "$170"
+            ],
+            [
+              "Herb-Marinated Tri-Tip w/ Chimichurri",
+              "$110",
+              "$210"
+            ],
+            [
+              "Braised Short Ribs",
+              "$120",
+              "$225"
+            ]
+          ]
+        },
+        {
+          "sectionId": "togo_sides_salads",
+          "category": "sides_salads",
+          "title": "Sides & Salads",
+          "columns": [
+            "Side",
+            "Half",
+            "Full"
+          ],
+          "rows": [
+            [
+              "Garlic Mashed Potatoes",
+              "$40",
+              "$75"
+            ],
+            [
+              "Herb Roasted Fingerlings",
+              "$40",
+              "$75"
+            ],
+            [
+              "Rice Pilaf",
+              "$35",
+              "$65"
+            ],
+            [
+              "Mac & Cheese",
+              "$45",
+              "$85"
+            ],
+            [
+              "Pasta Salad (Creamy or Pesto)",
+              "$35",
+              "$65"
+            ],
+            [
+              "Coleslaw",
+              "$30",
+              "$55"
+            ],
+            [
+              "Roasted Seasonal Vegetables",
+              "$40",
+              "$75"
+            ],
+            [
+              "Caesar Salad",
+              "$35",
+              "$65"
+            ],
+            [
+              "Watermelon & Feta Salad",
+              "$40",
+              "$75"
+            ],
+            [
+              "Beet & Citrus Salad",
+              "$40",
+              "$75"
+            ],
+            [
+              "Cucumber Tomato Salad",
+              "$35",
+              "$65"
+            ],
+            [
+              "Caprese Salad",
+              "$45",
+              "$85"
+            ],
+            [
+              "Au Gratin Potatoes",
+              "$45",
+              "$85"
+            ],
+            [
+              "Strawberry Arugula Salad",
+              "$40",
+              "$75"
+            ],
+            [
+              "Garlic Bread / Rolls / Cornbread",
+              "$25",
+              "$45"
+            ],
+            [
+              "Fried Rice",
+              "$45",
+              "$85"
+            ],
+            [
+              "Lumpia",
+              "$55",
+              "$100"
+            ],
+            [
+              "Charcuterie Board (Serves 10-12)",
+              "—",
+              "$95"
+            ]
+          ]
+        }
+      ]
+    },
+    "community": {
+      "pageTitle": "Community & Crew Catering (Per Person)",
+      "subtitle": "Drop-off or buffet setup • Minimums apply",
+      "sections": [
+        {
+          "sectionId": "community_taco_bar",
+          "type": "package",
+          "title": "Taco Bar (Carne Asada or Chicken)",
+          "description": "Includes Spanish rice, refried beans, tortillas, toppings",
+          "price": "$18-$25 per person"
+        },
+        {
+          "sectionId": "community_homestyle",
+          "type": "package",
+          "title": "Hearty Homestyle Packages",
+          "description": "Choose 1 protein + 2 sides + bread",
+          "price": "$20-$28 per person"
+        },
+        {
+          "sectionId": "community_buffet_tiers",
+          "type": "tiers",
+          "title": "Event Catering - Buffet Style",
+          "tiers": [
+            {
+              "tierTitle": "Tier 1: Casual Buffet",
+              "constraints": {
+                "entree": 2,
+                "sides_salads": 3
+              },
+              "price": "$30-$40 per person",
+              "bullets": [
+                "2 Entrées",
+                "2 Sides",
+                "1 Salad",
+                "Bread"
+              ]
+            },
+            {
+              "tierTitle": "Tier 2: Elevated Buffet / Family-Style",
+              "constraints": {
+                "entree": 3,
+                "sides_salads": 3
+              },
+              "price": "$45-$65 per person",
+              "bullets": [
+                "2-3 Entrées",
+                "3 Sides",
+                "2 Salads",
+                "Bread"
+              ]
+            }
+          ]
+        },
+        {
+          "sectionId": "community_menu_options",
+          "type": "includeMenu",
+          "title": "Menu Options (Entrées, Proteins, Sides & Salads)",
+          "includeKeys": [
+            "bakedHeartyEntrees",
+            "signatureProteins",
+            "sidesSalads"
+          ]
+        }
+      ]
+    },
+    "formal": {
+      "pageTitle": "Formal Events - Plated & Full Service",
+      "subtitle": "Three-course dinner",
+      "sections": [
+        {
+          "sectionId": "formal_pricing",
+          "type": "package",
+          "title": "Three-Course Dinner Pricing",
+          "description": "Per person pricing (final depends on selections and service details).",
+          "price": "$75-$110+ per person"
+        },
+        {
+          "sectionId": "formal_passed",
+          "courseType": "passed",
+          "type": "tiers",
+          "title": "Passed Appetizers (Choose Two)",
+          "tiers": [
+            {
+              "tierTitle": "Options",
+              "price": "",
+              "bullets": [
+                "Bruschetta",
+                "Caprese Crostini",
+                "Prosciutto & Brie Bites",
+                "Sirloin Sliders"
+              ]
+            }
+          ]
+        },
+        {
+          "sectionId": "formal_starter",
+          "courseType": "starter",
+          "type": "tiers",
+          "title": "Starter (Choose One)",
+          "tiers": [
+            {
+              "tierTitle": "Options",
+              "price": "",
+              "bullets": [
+                "Caesar",
+                "Beet & Citrus Salad",
+                "Caprese",
+                "Strawberry Arugula Salad"
+              ]
+            }
+          ]
+        },
+        {
+          "sectionId": "formal_entree",
+          "courseType": "entree",
+          "type": "tiers",
+          "title": "Entrée (Choose One or Two)",
+          "tiers": [
+            {
+              "tierTitle": "Options",
+              "price": "",
+              "bullets": [
+                "Braised Short Rib",
+                "Apple Cider-Marinated Pork Chop",
+                "Herb-Marinated Tri-Tip",
+                "Spinach & Mushroom Stuffed Chicken Breast",
+                "Mushroom Risotto (Vegetarian)"
+              ]
+            }
+          ]
+        },
+        {
+          "sectionId": "formal_sides",
+          "courseType": "sides",
+          "type": "tiers",
+          "title": "Sides",
+          "tiers": [
+            {
+              "tierTitle": "Options",
+              "price": "",
+              "bullets": [
+                "Garlic Mashed Potatoes or Au Gratin",
+                "Seasonal Vegetables",
+                "Rice Pilaf"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -13,6 +13,7 @@ class Inquiry:
     guest_count=None,
     budget=None,
     service_interest=None,
+    desired_menu_items=None,
     message="",
     email_sent=0,
     inquiry_id=None,
@@ -26,6 +27,7 @@ class Inquiry:
     self.guest_count = guest_count
     self.budget = budget
     self.service_interest = service_interest
+    self.desired_menu_items = desired_menu_items or []
     self.message = message
     self.email_sent = email_sent
 
@@ -49,6 +51,7 @@ class Inquiry:
       guest_count=guest_count,
       budget=(raw_payload.get("budget") or "").strip() or None,
       service_interest=(raw_payload.get("service_interest") or "").strip() or None,
+      desired_menu_items=raw_payload.get("desired_menu_items") or [],
       message=(raw_payload.get("message") or "").strip(),
       email_sent=0,
     )
