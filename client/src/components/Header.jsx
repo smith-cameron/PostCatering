@@ -1,11 +1,13 @@
 import { Navbar, Container, Nav, NavDropdown, NavbarText } from "react-bootstrap";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import ContactUsModal from "./modals/ContactUsModal";
 
 const Header = () => {
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth < 992 : false
   );
+  const [showContactModal, setShowContactModal] = useState(false);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 991.98px)");
@@ -37,7 +39,10 @@ const Header = () => {
         Send Catering Inquiry
       </NavDropdown.Item>
 
-      <NavDropdown.Item as={Link} to="/contact">
+      <NavDropdown.Item
+        as="button"
+        type="button"
+        onClick={() => setShowContactModal(true)}>
         Contact Us
       </NavDropdown.Item>
     </>
@@ -72,7 +77,11 @@ const Header = () => {
                   Send Catering Inquiry
                 </Nav.Link>
 
-                <Nav.Link as={Link} to="/contact">
+                <Nav.Link
+                  as="button"
+                  type="button"
+                  className="nav-link btn btn-link text-start p-0"
+                  onClick={() => setShowContactModal(true)}>
                   Contact Us
                 </Nav.Link>
               </>
@@ -87,6 +96,7 @@ const Header = () => {
           </Nav>
         </Navbar.Collapse>
       </Container>
+      <ContactUsModal show={showContactModal} onHide={() => setShowContactModal(false)} />
     </Navbar>
   );
 };

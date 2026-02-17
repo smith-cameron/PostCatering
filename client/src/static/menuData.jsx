@@ -1,6 +1,9 @@
-
+// Archive-only menu source.
+// Runtime menu data is loaded from /api/menus (DB-backed via menu_config).
 export const MENU_OPTIONS = {
   bakedHeartyEntrees: {
+    id: "baked_hearty_entrees",
+    category: "entree",
     title: "Baked & Hearty Entrées",
     items: [
       "Lasagna (Meat or Veg)",
@@ -13,6 +16,8 @@ export const MENU_OPTIONS = {
     ],
   },
   signatureProteins: {
+    id: "signature_proteins",
+    category: "entree",
     title: "Signature Proteins",
     items: [
       "Bone-In Herb Roasted Chicken Thighs",
@@ -24,6 +29,8 @@ export const MENU_OPTIONS = {
     ],
   },
   sidesSalads: {
+    id: "sides_salads",
+    category: "sides_salads",
     title: "Sides & Salads",
     items: [
       "Garlic Mashed Potatoes",
@@ -48,6 +55,31 @@ export const MENU_OPTIONS = {
   },
 };
 
+export const FORMAL_PLAN_OPTIONS = [
+  {
+    id: "formal:2-course",
+    level: "package",
+    title: "Two-Course Dinner",
+    price: "$65-$90 per person",
+    details: ["Starter + Entree", "Sides can be selected with the entree"],
+    constraints: {
+      starter: { min: 1, max: 1 },
+      entree: { min: 1, max: 1 },
+    },
+  },
+  {
+    id: "formal:3-course",
+    level: "package",
+    title: "Three-Course Dinner",
+    price: "$75-$110+ per person",
+    details: ["Passed Appetizers + Starter + Entree", "Sides can be selected with the entree"],
+    constraints: {
+      passed: { min: 2, max: 2 },
+      starter: { min: 1, max: 1 },
+      entree: { min: 1, max: 2 },
+    },
+  },
+];
 
 export const MENU = {
   togo: {
@@ -61,6 +93,8 @@ export const MENU = {
     ],
     sections: [
       {
+        sectionId: "togo_baked_hearty",
+        category: "entree",
         title: "Baked & Hearty Entrée Trays",
         columns: ["Entrée", "Half Tray", "Full Tray"],
         rows: [
@@ -74,6 +108,8 @@ export const MENU = {
         ],
       },
       {
+        sectionId: "togo_signature_proteins",
+        category: "entree",
         title: "Signature Protein Trays",
         columns: ["Entrée", "Half Tray", "Full Tray"],
         rows: [
@@ -86,6 +122,8 @@ export const MENU = {
         ],
       },
       {
+        sectionId: "togo_sides_salads",
+        category: "sides_salads",
         title: "Sides & Salads",
         columns: ["Side", "Half", "Full"],
         rows: [
@@ -117,38 +155,49 @@ export const MENU = {
     subtitle: "Drop-off or buffet setup • Minimums apply",
     sections: [
       {
+        sectionId: "community_taco_bar",
         type: "package",
         title: "Taco Bar (Carne Asada or Chicken)",
         description: "Includes Spanish rice, refried beans, tortillas, toppings",
         price: "$18-$25 per person",
       },
       {
+        sectionId: "community_homestyle",
         type: "package",
         title: "Hearty Homestyle Packages",
         description: "Choose 1 protein + 2 sides + bread",
         price: "$20-$28 per person",
       },
       {
+        sectionId: "community_buffet_tiers",
         type: "tiers",
         title: "Event Catering - Buffet Style",
         tiers: [
           {
             tierTitle: "Tier 1: Casual Buffet",
+            constraints: {
+              entree: 2,
+              sides_salads: 3,
+            },
             price: "$30-$40 per person",
-            bullets: ["2 Entrées", "2 Sides", "1 Salad", "Bread"],
+            bullets: ["Up to 2 Entrees", "Up to 3 Sides/Salads (combined)", "Bread"],
           },
           {
             tierTitle: "Tier 2: Elevated Buffet / Family-Style",
+            constraints: {
+              entree: 3,
+              sides_salads: 3,
+            },
             price: "$45-$65 per person",
-            bullets: ["2-3 Entrées", "3 Sides", "2 Salads", "Bread"],
+            bullets: ["Up to 3 Entrees", "Up to 3 Sides/Salads (combined)", "Bread"],
           },
         ],
       },
       {
+        sectionId: "community_menu_options",
         type: "includeMenu",
         title: "Menu Options (Entrées, Proteins, Sides & Salads)",
         includeKeys: ["bakedHeartyEntrees", "signatureProteins", "sidesSalads"],
-        note: "These are the same menu options used to build the catering packages above.",
       },
     ],
   },
@@ -159,12 +208,15 @@ export const MENU = {
     subtitle: "Three-course dinner",
     sections: [
       {
+        sectionId: "formal_pricing",
         type: "package",
         title: "Three-Course Dinner Pricing",
         description: "Per person pricing (final depends on selections and service details).",
         price: "$75-$110+ per person",
       },
       {
+        sectionId: "formal_passed",
+        courseType: "passed",
         type: "tiers",
         title: "Passed Appetizers (Choose Two)",
         tiers: [
@@ -176,6 +228,8 @@ export const MENU = {
         ],
       },
       {
+        sectionId: "formal_starter",
+        courseType: "starter",
         type: "tiers",
         title: "Starter (Choose One)",
         tiers: [
@@ -187,6 +241,8 @@ export const MENU = {
         ],
       },
       {
+        sectionId: "formal_entree",
+        courseType: "entree",
         type: "tiers",
         title: "Entrée (Choose One or Two)",
         tiers: [
@@ -204,6 +260,8 @@ export const MENU = {
         ],
       },
       {
+        sectionId: "formal_sides",
+        courseType: "sides",
         type: "tiers",
         title: "Sides",
         tiers: [
@@ -218,3 +276,4 @@ export const MENU = {
   },
 
 };
+
