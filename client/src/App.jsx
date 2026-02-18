@@ -1,6 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { useState } from "react";
-import "bootstrap/dist/css/bootstrap.min.css";
 import Context from "./context";
 import { Wrapper, Landing, NotFound, ServiceMenu, Inquiry } from "./imports";
 import "./App.css";
