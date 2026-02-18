@@ -1,7 +1,10 @@
 import { Container, Nav } from "react-bootstrap";
+import { useContext } from "react";
 import { Link } from "react-router-dom";
+import Context from "../context";
 
 const Footer = () => {
+  const { openInquiryModal } = useContext(Context);
   const currentYear = new Date().getFullYear();
 
   return (
@@ -25,7 +28,11 @@ const Footer = () => {
             </Nav.Link>
           </Nav.Item>
           <Nav.Item as="li">
-            <Nav.Link as={Link} to="/inquiry" className="px-2 py-0">
+            <Nav.Link
+              as="button"
+              type="button"
+              className="px-2 py-0"
+              onClick={() => openInquiryModal?.()}>
               Inquiry
             </Nav.Link>
           </Nav.Item>
