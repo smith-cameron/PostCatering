@@ -66,21 +66,20 @@ body {
   width: 100%;
 } */
 
-footer {
-  background-color: #343a40;
-  color: #fff;
-  padding: 3rem 0;
+.site-footer {
+  margin-top: 2rem;
 }
 
-.social-icons a {
-  font-size: 1.25rem;
+.site-footer-nav .nav-link {
+  color: #6c757d;
+  font-size: 0.9rem;
 }
 
-/* footer {
-  border-top: 1px solid var(--border-color);
-  font-size: 0.875rem;
-  color: #555;
-} */
+.site-footer-nav .nav-link:hover,
+.site-footer-nav .nav-link:focus {
+  color: #495057;
+  text-decoration: none;
+}
 
 /* =========================
    Landing Content Container
