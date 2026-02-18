@@ -210,8 +210,58 @@ Backend:
 
 ## Known Gaps
 
-- No dedicated backend dependency file (`requirements.txt`/`pyproject.toml`) is currently tracked.
-- Automated test coverage is not yet present in this repository.
+### To-do list:
+#### Architecture
+- Break up oversized components (`client/src/components/Inquiry.jsx`, `client/src/components/ServiceMenu.jsx`) into smaller hooks/components.
+- Consolidate duplicated service-selection rules/constraints so frontend and backend use one source of truth.
+- Decide whether inquiry is modal-only or route-only; current setup mounts `Inquiry` in `Wrapper` and also at `/inquiry`.
+#### Performance
+- Avoid duplicate `/api/menus` fetches by centralizing menu config state/caching.
+#### Frontend Cleanup
+- Remove stray `git` token in `client/src/App.jsx`.
+- ~~Fix current lint violations and keep lint clean (`Footer` unused imports, unused `subtitle` prop, unused bootstrap import, effect setState warning).~~
+- Remove archive/dead file `client/src/static/menuData.jsx` (or move it to docs/reference only).
+- ~~Remove or implement the currently empty `Footer` component.~~
+- ~~Deduplicate Bootstrap imports (`main.jsx` + `App.jsx`) and remove unused `import * as bootstrap`.~~
+- ~~Remove stale commented boilerplate/imports that no longer add value.~~
+- Replace heuristic text cleanup (e.g., Entree regex normalization) with clean UTF-8 source data.
+
+#### Frontend Assets
+- Remove duplicated/unused slide images in `client/public/imgs` if backend slide assets are canonical.
+
+#### Backend Standards
+- Add a tracked backend dependency manifest (`api/requirements.txt` or `api/pyproject.toml`) with pinned versions.
+- Adopt Flask app-factory + blueprint structure for clearer initialization and easier testing.
+- Use safer defaults (`FLASK_DEBUG=false`, restrictive CORS defaults) for production readiness.
+- Include `X-Menu-Admin-Token` in CORS allowed headers for browser-based admin calls.
+
+#### Backend Logic
+- Persist inquiry selections as structured data (JSON columns or related tables) instead of appending everything into `message`.
+- Strengthen server-side validation and normalization for email/phone/budget fields.
+- Add abuse controls for `/api/inquiries` (rate limiting/spam protection, optional CAPTCHA).
+- Add structured logging and clearer SMTP failure diagnostics (without exposing secrets).
+
+#### Data Model
+- Reassess menu-table normalization depth; consider a hybrid model to reduce complexity and query assembly cost.
+- Resolve the unused `menu_config` path (remove dead table/path or make it an intentional cached canonical representation).
+- Normalize price storage for machine use (numeric fields + currency) instead of mostly formatted text strings.
+- Make constraint storage consistent (`formal_plan_option_constraints` vs suffix-based tier constraint keys).
+
+#### Data Access
+- Refactor DB access to avoid opening a new connection per query; support transaction/connection reuse per request.
+- Optimize `Menu.seed_from_payload` to reduce N+1 lookups and batch writes.
+- Expand health checks to verify DB connectivity, not just process status.
+
+#### Testing
+- Add backend unit/integration tests and frontend component/form tests.
+
+#### Tooling
+- Add CI checks for lint/test/build to prevent regressions.
+- Add pre-commit formatting/lint hooks (e.g., `ruff`/`black` for Python plus ESLint).
+
+#### Docs
+- Reconcile outdated docs/comments (e.g., `api/sql/menu_seed.sql` still references auto-seed behavior).
+- Define and enforce API naming conventions at boundaries (snake_case vs camelCase).
 
 ## Program And Menu Reference (Current Data)
 
