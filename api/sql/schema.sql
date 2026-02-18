@@ -107,6 +107,10 @@ CREATE TABLE IF NOT EXISTS formal_plan_options (
   option_level VARCHAR(50) NOT NULL,
   title VARCHAR(255) NOT NULL,
   price VARCHAR(100) NOT NULL,
+  price_amount_min DECIMAL(10,2) NULL,
+  price_amount_max DECIMAL(10,2) NULL,
+  price_currency CHAR(3) NULL,
+  price_unit VARCHAR(32) NULL,
   display_order INT NOT NULL DEFAULT 0,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -195,6 +199,10 @@ CREATE TABLE IF NOT EXISTS menu_sections (
   title VARCHAR(255) NOT NULL,
   description VARCHAR(255) NULL,
   price VARCHAR(100) NULL,
+  price_amount_min DECIMAL(10,2) NULL,
+  price_amount_max DECIMAL(10,2) NULL,
+  price_currency CHAR(3) NULL,
+  price_unit VARCHAR(32) NULL,
   category VARCHAR(100) NULL,
   course_type VARCHAR(50) NULL,
   display_order INT NOT NULL DEFAULT 0,
@@ -276,6 +284,10 @@ CREATE TABLE IF NOT EXISTS menu_section_tiers (
   section_id BIGINT UNSIGNED NOT NULL,
   tier_title VARCHAR(255) NOT NULL,
   price VARCHAR(100) NULL,
+  price_amount_min DECIMAL(10,2) NULL,
+  price_amount_max DECIMAL(10,2) NULL,
+  price_currency CHAR(3) NULL,
+  price_unit VARCHAR(32) NULL,
   display_order INT NOT NULL DEFAULT 0,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -315,6 +327,24 @@ CREATE TABLE IF NOT EXISTS menu_section_tier_bullets (
   CONSTRAINT fk_menu_section_tier_bullets_tier FOREIGN KEY (tier_id) REFERENCES menu_section_tiers(id) ON DELETE CASCADE,
   CONSTRAINT fk_menu_section_tier_bullets_item FOREIGN KEY (item_id) REFERENCES menu_items(id) ON DELETE SET NULL
 );
+
+ALTER TABLE formal_plan_options
+  ADD COLUMN IF NOT EXISTS price_amount_min DECIMAL(10,2) NULL AFTER price,
+  ADD COLUMN IF NOT EXISTS price_amount_max DECIMAL(10,2) NULL AFTER price_amount_min,
+  ADD COLUMN IF NOT EXISTS price_currency CHAR(3) NULL AFTER price_amount_max,
+  ADD COLUMN IF NOT EXISTS price_unit VARCHAR(32) NULL AFTER price_currency;
+
+ALTER TABLE menu_sections
+  ADD COLUMN IF NOT EXISTS price_amount_min DECIMAL(10,2) NULL AFTER price,
+  ADD COLUMN IF NOT EXISTS price_amount_max DECIMAL(10,2) NULL AFTER price_amount_min,
+  ADD COLUMN IF NOT EXISTS price_currency CHAR(3) NULL AFTER price_amount_max,
+  ADD COLUMN IF NOT EXISTS price_unit VARCHAR(32) NULL AFTER price_currency;
+
+ALTER TABLE menu_section_tiers
+  ADD COLUMN IF NOT EXISTS price_amount_min DECIMAL(10,2) NULL AFTER price,
+  ADD COLUMN IF NOT EXISTS price_amount_max DECIMAL(10,2) NULL AFTER price_amount_min,
+  ADD COLUMN IF NOT EXISTS price_currency CHAR(3) NULL AFTER price_amount_max,
+  ADD COLUMN IF NOT EXISTS price_unit VARCHAR(32) NULL AFTER price_currency;
 
 INSERT INTO slides (title, caption, image_url, alt_text, display_order, is_active)
 VALUES

@@ -1,4 +1,5 @@
 import json
+import numbers
 import re
 
 from flask_api.config.mysqlconnection import query_db
@@ -6,11 +7,159 @@ from flask_api.config.mysqlconnection import query_db
 
 class Menu:
   CACHE_CONFIG_KEY = "catalog_payload_v1"
+  PRICE_TOKEN_REGEX = re.compile(r"\$?\s*([0-9][0-9,]*(?:\.\d{1,2})?)\s*([kK])?\+?")
 
   @staticmethod
   def _slug(value):
     slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
     return slug[:120] if slug else None
+
+  @staticmethod
+  def _coerce_price_number(value):
+    if value in (None, ""):
+      return None
+    if isinstance(value, bool):
+      return None
+    if isinstance(value, numbers.Number):
+      return round(float(value), 2)
+    if not isinstance(value, str):
+      return None
+
+    cleaned = value.strip().replace("$", "").replace(",", "")
+    if cleaned.endswith("+"):
+      cleaned = cleaned[:-1]
+    if cleaned.lower().endswith("k"):
+      cleaned = cleaned[:-1]
+      try:
+        return round(float(cleaned) * 1000, 2)
+      except ValueError:
+        return None
+
+    try:
+      return round(float(cleaned), 2)
+    except ValueError:
+      return None
+
+  @classmethod
+  def _extract_price_amounts(cls, text):
+    if not isinstance(text, str):
+      return []
+
+    values = []
+    for match in cls.PRICE_TOKEN_REGEX.finditer(text):
+      raw_amount = match.group(1).replace(",", "")
+      suffix = (match.group(2) or "").lower()
+      try:
+        amount = float(raw_amount)
+      except ValueError:
+        continue
+      if suffix == "k":
+        amount *= 1000
+      values.append(round(amount, 2))
+    return values
+
+  @staticmethod
+  def _infer_price_currency(text):
+    if not isinstance(text, str):
+      return None
+    lower = text.lower()
+    if "$" in text or "usd" in lower:
+      return "USD"
+    return None
+
+  @staticmethod
+  def _infer_price_unit(text):
+    if not isinstance(text, str):
+      return None
+    lower = text.lower()
+    if "per person" in lower or "/person" in lower:
+      return "per_person"
+    if "per tray" in lower or "/tray" in lower:
+      return "per_tray"
+    if "per hour" in lower or "/hour" in lower:
+      return "per_hour"
+    if "flat rate" in lower or "flat fee" in lower:
+      return "flat"
+    return None
+
+  @classmethod
+  def _normalize_price_fields(cls, price_value, price_meta=None):
+    meta = price_meta if isinstance(price_meta, dict) else {}
+
+    display_price = None
+    if isinstance(price_value, str):
+      display_price = price_value.strip() or None
+    elif isinstance(price_value, bool):
+      display_price = None
+    elif isinstance(price_value, numbers.Number):
+      amount = round(float(price_value), 2)
+      display_price = f"${int(amount):,}" if amount.is_integer() else f"${amount:,.2f}".rstrip("0").rstrip(".")
+    elif price_value is not None:
+      display_price = str(price_value).strip() or None
+
+    amount_min = cls._coerce_price_number(
+      meta.get("amountMin")
+      if "amountMin" in meta
+      else meta.get("amount_min", meta.get("min", meta.get("price_min")))
+    )
+    amount_max = cls._coerce_price_number(
+      meta.get("amountMax")
+      if "amountMax" in meta
+      else meta.get("amount_max", meta.get("max", meta.get("price_max")))
+    )
+    currency = str(meta.get("currency") or meta.get("priceCurrency") or meta.get("price_currency") or "").strip().upper() or None
+    unit = str(meta.get("unit") or meta.get("priceUnit") or meta.get("price_unit") or "").strip().lower() or None
+    if unit:
+      unit = unit.replace("-", "_").replace(" ", "_")
+
+    parsed_amounts = cls._extract_price_amounts(display_price or "")
+    if parsed_amounts:
+      parsed_min = min(parsed_amounts)
+      parsed_max = max(parsed_amounts)
+      if amount_min is None:
+        amount_min = parsed_min
+      if amount_max is None:
+        amount_max = parsed_max
+
+    if amount_min is not None and amount_max is None:
+      amount_max = amount_min
+    if amount_max is not None and amount_min is None:
+      amount_min = amount_max
+    if amount_min is not None and amount_max is not None and amount_max < amount_min:
+      amount_min, amount_max = amount_max, amount_min
+
+    if not currency:
+      currency = cls._infer_price_currency(display_price or "")
+    if not currency and (amount_min is not None or amount_max is not None):
+      currency = "USD"
+
+    if not unit:
+      unit = cls._infer_price_unit(display_price or "")
+
+    return {
+      "price": display_price,
+      "price_amount_min": amount_min,
+      "price_amount_max": amount_max,
+      "price_currency": currency,
+      "price_unit": unit,
+    }
+
+  @classmethod
+  def _attach_price_meta_to_payload(cls, target, price_value, price_meta=None):
+    normalized = cls._normalize_price_fields(price_value, price_meta=price_meta)
+    if normalized["price"] is not None:
+      target["price"] = normalized["price"]
+
+    if any(
+      normalized[key] is not None
+      for key in ("price_amount_min", "price_amount_max", "price_currency", "price_unit")
+    ):
+      target["priceMeta"] = {
+        "amountMin": normalized["price_amount_min"],
+        "amountMax": normalized["price_amount_max"],
+        "currency": normalized["price_currency"],
+        "unit": normalized["price_unit"],
+      }
 
   @staticmethod
   def _normalize_tier_constraints(rows):
@@ -53,7 +202,7 @@ class Menu:
     normalized = {}
     for key, value in constraints.items():
       if isinstance(value, int):
-        normalized[str(key)] = {"min": 0, "max": value}
+        normalized[str(key)] = {"min": value, "max": value}
       elif isinstance(value, dict):
         min_value = value.get("min")
         max_value = value.get("max")
@@ -152,16 +301,15 @@ class Menu:
 
     payload = []
     for row in plans:
-      payload.append(
-        {
-          "id": row["plan_key"],
-          "level": row["option_level"],
-          "title": row["title"],
-          "price": row["price"],
-          "details": details_by_plan.get(row["id"], []),
-          "constraints": constraints_by_plan.get(row["id"], {}),
-        }
-      )
+      plan = {
+        "id": row["plan_key"],
+        "level": row["option_level"],
+        "title": row["title"],
+        "details": details_by_plan.get(row["id"], []),
+        "constraints": constraints_by_plan.get(row["id"], {}),
+      }
+      cls._attach_price_meta_to_payload(plan, row.get("price"))
+      payload.append(plan)
     return payload
 
   @classmethod
@@ -252,8 +400,7 @@ class Menu:
       section["title"] = row["title"]
       if row["description"] is not None:
         section["description"] = row["description"]
-      if row["price"] is not None:
-        section["price"] = row["price"]
+      cls._attach_price_meta_to_payload(section, row.get("price"))
 
       payload[catalog_key].setdefault("sections", []).append(section)
       section_by_id[row["section_id"]] = section
@@ -335,8 +482,7 @@ class Menu:
       if section is None:
         continue
       tier = {"tierTitle": row["tier_title"]}
-      if row["price"] is not None:
-        tier["price"] = row["price"]
+      cls._attach_price_meta_to_payload(tier, row.get("price"))
       tier["bullets"] = []
       tiers_by_id[row["id"]] = tier
       section.setdefault("tiers", []).append(tier)
@@ -599,14 +745,44 @@ class Menu:
         )
 
     for idx, option in enumerate(formal_plan_options, start=1):
+      normalized_option_price = cls._normalize_price_fields(
+        option.get("price"),
+        option.get("priceMeta") or option.get("price_meta"),
+      )
       query_db(
         """
-        INSERT INTO formal_plan_options (plan_key, option_level, title, price, display_order, is_active)
-        VALUES (%(plan_key)s, %(option_level)s, %(title)s, %(price)s, %(display_order)s, 1)
+        INSERT INTO formal_plan_options (
+          plan_key,
+          option_level,
+          title,
+          price,
+          price_amount_min,
+          price_amount_max,
+          price_currency,
+          price_unit,
+          display_order,
+          is_active
+        )
+        VALUES (
+          %(plan_key)s,
+          %(option_level)s,
+          %(title)s,
+          %(price)s,
+          %(price_amount_min)s,
+          %(price_amount_max)s,
+          %(price_currency)s,
+          %(price_unit)s,
+          %(display_order)s,
+          1
+        )
         ON DUPLICATE KEY UPDATE
           option_level = VALUES(option_level),
           title = VALUES(title),
           price = VALUES(price),
+          price_amount_min = VALUES(price_amount_min),
+          price_amount_max = VALUES(price_amount_max),
+          price_currency = VALUES(price_currency),
+          price_unit = VALUES(price_unit),
           display_order = VALUES(display_order),
           is_active = 1,
           updated_at = CURRENT_TIMESTAMP;
@@ -615,7 +791,11 @@ class Menu:
           "plan_key": option.get("id"),
           "option_level": option.get("level"),
           "title": option.get("title"),
-          "price": option.get("price"),
+          "price": normalized_option_price["price"],
+          "price_amount_min": normalized_option_price["price_amount_min"],
+          "price_amount_max": normalized_option_price["price_amount_max"],
+          "price_currency": normalized_option_price["price_currency"],
+          "price_unit": normalized_option_price["price_unit"],
           "display_order": idx,
         },
         fetch="none",
@@ -731,6 +911,10 @@ class Menu:
           )
 
       for section_order, section in enumerate(catalog_data.get("sections", []), start=1):
+        normalized_section_price = cls._normalize_price_fields(
+          section.get("price"),
+          section.get("priceMeta") or section.get("price_meta"),
+        )
         query_db(
           """
           INSERT INTO menu_sections (
@@ -740,6 +924,10 @@ class Menu:
             title,
             description,
             price,
+            price_amount_min,
+            price_amount_max,
+            price_currency,
+            price_unit,
             category,
             course_type,
             display_order,
@@ -752,6 +940,10 @@ class Menu:
             %(title)s,
             %(description)s,
             %(price)s,
+            %(price_amount_min)s,
+            %(price_amount_max)s,
+            %(price_currency)s,
+            %(price_unit)s,
             %(category)s,
             %(course_type)s,
             %(display_order)s,
@@ -762,6 +954,10 @@ class Menu:
             title = VALUES(title),
             description = VALUES(description),
             price = VALUES(price),
+            price_amount_min = VALUES(price_amount_min),
+            price_amount_max = VALUES(price_amount_max),
+            price_currency = VALUES(price_currency),
+            price_unit = VALUES(price_unit),
             category = VALUES(category),
             course_type = VALUES(course_type),
             display_order = VALUES(display_order),
@@ -774,7 +970,11 @@ class Menu:
             "section_type": section.get("type"),
             "title": section.get("title"),
             "description": section.get("description"),
-            "price": section.get("price"),
+            "price": normalized_section_price["price"],
+            "price_amount_min": normalized_section_price["price_amount_min"],
+            "price_amount_max": normalized_section_price["price_amount_max"],
+            "price_currency": normalized_section_price["price_currency"],
+            "price_unit": normalized_section_price["price_unit"],
             "category": section.get("category"),
             "course_type": section.get("courseType"),
             "display_order": section_order,
@@ -885,20 +1085,52 @@ class Menu:
           )
 
         for tier_order, tier in enumerate(section.get("tiers", []), start=1):
+          normalized_tier_price = cls._normalize_price_fields(
+            tier.get("price"),
+            tier.get("priceMeta") or tier.get("price_meta"),
+          )
           query_db(
             """
-            INSERT INTO menu_section_tiers (section_id, tier_title, price, display_order, is_active)
-            VALUES (%(section_id)s, %(tier_title)s, %(price)s, %(display_order)s, 1)
+            INSERT INTO menu_section_tiers (
+              section_id,
+              tier_title,
+              price,
+              price_amount_min,
+              price_amount_max,
+              price_currency,
+              price_unit,
+              display_order,
+              is_active
+            )
+            VALUES (
+              %(section_id)s,
+              %(tier_title)s,
+              %(price)s,
+              %(price_amount_min)s,
+              %(price_amount_max)s,
+              %(price_currency)s,
+              %(price_unit)s,
+              %(display_order)s,
+              1
+            )
             ON DUPLICATE KEY UPDATE
               tier_title = VALUES(tier_title),
               price = VALUES(price),
+              price_amount_min = VALUES(price_amount_min),
+              price_amount_max = VALUES(price_amount_max),
+              price_currency = VALUES(price_currency),
+              price_unit = VALUES(price_unit),
               is_active = 1,
               updated_at = CURRENT_TIMESTAMP;
             """,
             {
               "section_id": section_id,
               "tier_title": tier.get("tierTitle"),
-              "price": tier.get("price"),
+              "price": normalized_tier_price["price"],
+              "price_amount_min": normalized_tier_price["price_amount_min"],
+              "price_amount_max": normalized_tier_price["price_amount_max"],
+              "price_currency": normalized_tier_price["price_currency"],
+              "price_unit": normalized_tier_price["price_unit"],
               "display_order": tier_order,
             },
             fetch="none",

@@ -16,6 +16,11 @@ const FIELD_KEY_MAP = {
   course_type: "courseType",
   include_keys: "includeKeys",
   tier_title: "tierTitle",
+  price_meta: "priceMeta",
+  amount_min: "amountMin",
+  amount_max: "amountMax",
+  price_currency: "priceCurrency",
+  price_unit: "priceUnit",
 };
 
 const toClientShape = (value) => {
