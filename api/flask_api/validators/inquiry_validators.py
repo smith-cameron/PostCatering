@@ -3,6 +3,10 @@ from datetime import date, timedelta
 
 from flask_api.models.menu import Menu
 
+EMAIL_REGEX = re.compile(r"^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9-]+(?:\.[A-Z0-9-]+)+$", re.IGNORECASE)
+BUDGET_SPLIT_REGEX = re.compile(r"\s*(?:-|\bto\b)\s*", re.IGNORECASE)
+BUDGET_PART_REGEX = re.compile(r"^\$?\s*([0-9][0-9,]*(?:\.\d{1,2})?)\s*([kK])?\s*$")
+
 
 def validate_required_string(value, field_name):
   if not isinstance(value, str) or not value.strip():
@@ -20,13 +24,19 @@ def validate_guest_count(value):
   return "guest_count must be at least 1."
 
 
+def normalize_email(value):
+  if not isinstance(value, str):
+    return value
+  return value.strip().lower()
+
+
 def validate_email_format(value):
+  if value in (None, ""):
+    return "email is required."
   if not isinstance(value, str):
     return "email is invalid."
-  value = value.strip()
-  if not value:
-    return "email is required."
-  if "@" not in value or value.startswith("@") or value.endswith("@"):
+  value = normalize_email(value)
+  if not value or not _is_valid_email(value):
     return "email is invalid."
   return None
 
@@ -46,30 +56,57 @@ def validate_event_date(value):
   return None
 
 
+def normalize_phone(value):
+  if value in (None, ""):
+    return None
+  if not isinstance(value, str):
+    return value
+  value = value.strip()
+  if not value:
+    return None
+  normalized = _normalize_us_phone(value)
+  return normalized or value
+
+
 def validate_phone(value):
   if value in (None, ""):
     return "phone is required."
   if not isinstance(value, str):
     return "phone is invalid."
   value = value.strip()
+  if not value:
+    return "phone is required."
   if re.search(r"[A-Za-z]", value):
     return "phone must not contain letters."
-  digits = re.sub(r"\D", "", value)
-  if len(digits) == 10:
-    return None
-  if len(digits) == 11 and digits.startswith("1"):
+  if _normalize_us_phone(value):
     return None
   return "phone must be a valid US phone number."
+
+
+def normalize_budget(value):
+  if value in (None, ""):
+    return None
+  normalized = _parse_budget_to_canonical(value)
+  if normalized:
+    return normalized
+  if isinstance(value, str):
+    value = value.strip()
+    return value or None
+  return value
 
 
 def validate_budget(value):
   if value in (None, ""):
     return None
-  if not isinstance(value, str):
-    return "budget is invalid."
-  if re.search(r"[A-Za-z]", value):
-    return "budget must not contain letters."
-  return None
+  if _parse_budget_to_canonical(value):
+    return None
+  return "budget must be a valid amount or range (e.g. $2,500 or $2,500-$5,000)."
+
+
+def normalize_contact_fields(inquiry):
+  inquiry.email = normalize_email(inquiry.email)
+  inquiry.phone = normalize_phone(inquiry.phone)
+  inquiry.budget = normalize_budget(inquiry.budget)
 
 
 def validate_service_interest(value):
@@ -124,6 +161,7 @@ def validate_service_selection_constraints(service_selection, desired_menu_items
 
 
 def validate_inquiry_payload(inquiry):
+  normalize_contact_fields(inquiry)
   errors = []
 
   full_name_error = validate_required_string(inquiry.full_name, "full_name")
@@ -161,3 +199,98 @@ def validate_inquiry_payload(inquiry):
     errors.extend(validate_service_selection_constraints(inquiry.service_selection, inquiry.desired_menu_items))
 
   return errors
+
+
+def _is_valid_email(value):
+  if not isinstance(value, str):
+    return False
+  if len(value) > 254 or " " in value or ".." in value:
+    return False
+  if not EMAIL_REGEX.fullmatch(value):
+    return False
+  local_part, domain = value.rsplit("@", 1)
+  if len(local_part) > 64 or local_part.startswith(".") or local_part.endswith("."):
+    return False
+  labels = domain.split(".")
+  if any(
+    not label or len(label) > 63 or label.startswith("-") or label.endswith("-")
+    for label in labels
+  ):
+    return False
+  return True
+
+
+def _normalize_us_phone(value):
+  digits = re.sub(r"\D", "", value)
+  if len(digits) == 11 and digits.startswith("1"):
+    digits = digits[1:]
+  if len(digits) != 10:
+    return None
+
+  area_code = digits[:3]
+  exchange_code = digits[3:6]
+  if area_code[0] in ("0", "1") or exchange_code[0] in ("0", "1"):
+    return None
+
+  return f"({area_code}) {exchange_code}-{digits[6:]}"
+
+
+def _parse_budget_to_canonical(value):
+  if isinstance(value, bool):
+    return None
+
+  if isinstance(value, (int, float)):
+    amount = float(value)
+    if amount <= 0:
+      return None
+    return _format_budget_amount(amount)
+
+  if not isinstance(value, str):
+    return None
+
+  value = value.strip()
+  if not value:
+    return None
+
+  parts = BUDGET_SPLIT_REGEX.split(value, maxsplit=1)
+  if not parts or len(parts) > 2:
+    return None
+
+  lower_amount = _parse_budget_part(parts[0])
+  if lower_amount is None:
+    return None
+
+  if len(parts) == 1:
+    return _format_budget_amount(lower_amount)
+
+  upper_amount = _parse_budget_part(parts[1])
+  if upper_amount is None or upper_amount < lower_amount:
+    return None
+
+  return f"{_format_budget_amount(lower_amount)}-{_format_budget_amount(upper_amount)}"
+
+
+def _parse_budget_part(part):
+  match = BUDGET_PART_REGEX.fullmatch(part.strip())
+  if not match:
+    return None
+
+  raw_amount = match.group(1).replace(",", "")
+  suffix = (match.group(2) or "").lower()
+
+  try:
+    amount = float(raw_amount)
+  except ValueError:
+    return None
+
+  if suffix == "k":
+    amount *= 1000
+  if amount <= 0:
+    return None
+  return amount
+
+
+def _format_budget_amount(amount):
+  if float(amount).is_integer():
+    return f"${int(amount):,}"
+  return f"${amount:,.2f}".rstrip("0").rstrip(".")

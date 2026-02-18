@@ -246,7 +246,7 @@ Backend:
 
 #### Backend Logic
 - Persist inquiry selections as structured data (JSON columns or related tables) instead of appending everything into `message`.
-- Strengthen server-side validation and normalization for email/phone/budget fields.
+- ~~Strengthen server-side validation and normalization for email/phone/budget fields.~~
 - Add abuse controls for `/api/inquiries` (rate limiting/spam protection, optional CAPTCHA).
 - Add structured logging and clearer SMTP failure diagnostics (without exposing secrets).
 

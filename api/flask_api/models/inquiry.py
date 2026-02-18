@@ -1,5 +1,10 @@
 from flask_api.config.mysqlconnection import query_db
-from flask_api.validators.inquiry_validators import validate_inquiry_payload
+from flask_api.validators.inquiry_validators import (
+  normalize_budget,
+  normalize_email,
+  normalize_phone,
+  validate_inquiry_payload,
+)
 
 
 class Inquiry:
@@ -46,12 +51,12 @@ class Inquiry:
 
     return cls(
       full_name=(raw_payload.get("full_name") or "").strip(),
-      email=(raw_payload.get("email") or "").strip(),
-      phone=(raw_payload.get("phone") or "").strip() or None,
+      email=normalize_email(raw_payload.get("email") or ""),
+      phone=normalize_phone(raw_payload.get("phone")),
       event_type=(raw_payload.get("event_type") or "").strip() or None,
       event_date=(raw_payload.get("event_date") or "").strip() or None,
       guest_count=guest_count,
-      budget=(raw_payload.get("budget") or "").strip() or None,
+      budget=normalize_budget(raw_payload.get("budget")),
       service_interest=(raw_payload.get("service_interest") or "").strip() or None,
       service_selection=raw_payload.get("service_selection") if isinstance(raw_payload.get("service_selection"), dict) else {},
       desired_menu_items=raw_payload.get("desired_menu_items") or [],
