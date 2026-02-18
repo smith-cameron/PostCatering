@@ -65,21 +65,8 @@ export const getCommunityPackageBullets = (section) => {
 };
 
 export const normalizeCommunityTierConstraints = (sectionId, tierTitle, constraints) => {
-  const normalizedTitle = String(tierTitle || "").toLowerCase();
-  if (sectionId === "community_buffet_tiers" && normalizedTitle.includes("tier 1")) {
-    return {
-      entree: { min: 2, max: 2 },
-      sides: { min: 2, max: 2 },
-      salads: { min: 1, max: 1 },
-    };
-  }
-  if (sectionId === "community_buffet_tiers" && normalizedTitle.includes("tier 2")) {
-    return {
-      entree: { min: 2, max: 3 },
-      sides: { min: 3, max: 3 },
-      salads: { min: 2, max: 2 },
-    };
-  }
+  void sectionId;
+  void tierTitle;
   if (!constraints || typeof constraints !== "object") return {};
 
   const normalizedConstraints = Object.entries(constraints).reduce((acc, [key, value]) => {

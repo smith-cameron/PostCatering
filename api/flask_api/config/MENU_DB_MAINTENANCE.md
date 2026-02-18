@@ -3,6 +3,7 @@
 This project now uses a hybrid model for `/api/menus`:
 - Write model: normalized relational tables
 - Read model: cached JSON payload in `menu_config` (`config_key = catalog_payload_v1`)
+- Service-selection constraints are canonical in DB tables and consumed by both frontend and backend.
 
 ## Key Rule
 
@@ -163,6 +164,7 @@ Set `is_active = 1` on the same table/row you disabled.
 - `menu_intro_blocks`
 - `menu_intro_bullets`
 - `menu_sections`
+- `menu_section_constraints`
 - `menu_section_columns`
 - `menu_section_rows`
 - `menu_section_include_groups`

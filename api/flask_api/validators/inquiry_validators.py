@@ -1,6 +1,8 @@
 import re
 from datetime import date, timedelta
 
+from flask_api.models.menu import Menu
+
 
 def validate_required_string(value, field_name):
   if not isinstance(value, str) or not value.strip():
@@ -90,64 +92,8 @@ def validate_desired_menu_items(value):
   return None
 
 
-def _normalize_constraint_rule(rule):
-  if isinstance(rule, int):
-    return {"min": 0, "max": rule}
-  if isinstance(rule, dict):
-    min_value = rule.get("min")
-    max_value = rule.get("max")
-    if isinstance(min_value, int) or isinstance(max_value, int):
-      return {"min": min_value or 0, "max": max_value or 0}
-  return {"min": 0, "max": 0}
-
-
 def _get_effective_service_constraints(service_selection):
-  if not isinstance(service_selection, dict):
-    return {}
-
-  section_id = str(service_selection.get("sectionId") or "").strip().lower()
-  plan_id = str(service_selection.get("id") or "").strip().lower()
-  level = str(service_selection.get("level") or "").strip().lower()
-  title = str(service_selection.get("title") or "").strip().lower()
-  if plan_id == "formal:3-course":
-    return {
-      "passed": {"min": 2, "max": 2},
-      "starter": {"min": 1, "max": 1},
-      "entree": {"min": 1, "max": 2},
-      "sides": {"min": 0, "max": 0},
-    }
-  if section_id == "community_buffet_tiers" and "tier 1" in title:
-    return {
-      "entree": {"min": 2, "max": 2},
-      "sides": {"min": 2, "max": 2},
-      "salads": {"min": 1, "max": 1},
-    }
-  if section_id == "community_buffet_tiers" and "tier 2" in title:
-    return {
-      "entree": {"min": 2, "max": 3},
-      "sides": {"min": 3, "max": 3},
-      "salads": {"min": 2, "max": 2},
-    }
-  if level == "package" and "taco bar" in title:
-    return {
-      "entree": {"min": 1, "max": 1},
-    }
-  if level == "package" and "hearty homestyle" in title:
-    return {
-      "entree": {"min": 1, "max": 1},
-      "sides": {"min": 2, "max": 2},
-    }
-
-  constraints = service_selection.get("constraints")
-  if not isinstance(constraints, dict):
-    return {}
-
-  normalized = {}
-  for key, rule in constraints.items():
-    normalized[str(key)] = _normalize_constraint_rule(rule)
-  if "sides_salads" in normalized and "sides" not in normalized and "salads" not in normalized:
-    normalized["sides"] = normalized.pop("sides_salads")
-  return normalized
+  return Menu.get_effective_service_constraints(service_selection)
 
 
 def validate_service_selection_constraints(service_selection, desired_menu_items):

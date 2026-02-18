@@ -318,6 +318,12 @@
           "type": "package",
           "title": "Taco Bar (Carne Asada, Chicken, Carnitas, or Marinated Pork)",
           "description": "Includes Spanish rice, refried beans, tortillas, toppings",
+          "constraints": {
+            "entree": {
+              "min": 1,
+              "max": 1
+            }
+          },
           "price": "$18-$25 per person"
         },
         {
@@ -325,6 +331,16 @@
           "type": "package",
           "title": "Hearty Homestyle Packages",
           "description": "Choose 1 protein + 2 sides + bread",
+          "constraints": {
+            "entree": {
+              "min": 1,
+              "max": 1
+            },
+            "sides": {
+              "min": 2,
+              "max": 2
+            }
+          },
           "price": "$20-$28 per person"
         },
         {

@@ -32,6 +32,41 @@ class Menu:
 
     return constraints
 
+  @staticmethod
+  def _normalize_min_max_constraints(rows):
+    constraints = {}
+    for row in rows:
+      key = row.get("constraint_key")
+      if not key:
+        continue
+      constraints[str(key)] = {
+        "min": int(row.get("min_select") or 0),
+        "max": int(row.get("max_select") or 0),
+      }
+    return constraints
+
+  @classmethod
+  def _normalize_payload_constraints(cls, constraints):
+    if not isinstance(constraints, dict):
+      return {}
+
+    normalized = {}
+    for key, value in constraints.items():
+      if isinstance(value, int):
+        normalized[str(key)] = {"min": 0, "max": value}
+      elif isinstance(value, dict):
+        min_value = value.get("min")
+        max_value = value.get("max")
+        if isinstance(min_value, int) or isinstance(max_value, int):
+          normalized[str(key)] = {
+            "min": min_value or 0,
+            "max": max_value or 0,
+          }
+
+    if "sides_salads" in normalized and "sides" not in normalized and "salads" not in normalized:
+      normalized["sides"] = normalized.pop("sides_salads")
+    return normalized
+
   @classmethod
   def _get_menu_options(cls):
     query = """
@@ -252,6 +287,24 @@ class Menu:
         continue
       section.setdefault("rows", []).append([row["item_name"], row["value_1"], row["value_2"]])
 
+    section_constraint_rows = query_db(
+      """
+      SELECT section_id, constraint_key, min_select, max_select
+      FROM menu_section_constraints
+      WHERE is_active = 1
+      ORDER BY section_id ASC, id ASC;
+      """
+    )
+    constraints_by_section_id = {}
+    for row in section_constraint_rows:
+      constraints_by_section_id.setdefault(row["section_id"], []).append(row)
+
+    for section_id, rows in constraints_by_section_id.items():
+      section = section_by_id.get(section_id)
+      if section is None:
+        continue
+      section["constraints"] = cls._normalize_min_max_constraints(rows)
+
     include_rows = query_db(
       """
       SELECT ig.section_id, g.option_key
@@ -393,6 +446,73 @@ class Menu:
       {"config_key": cls.CACHE_CONFIG_KEY},
       fetch="none",
     )
+
+  @classmethod
+  def get_effective_service_constraints(cls, service_selection):
+    if not isinstance(service_selection, dict):
+      return {}
+
+    plan_id = str(service_selection.get("id") or "").strip()
+    level = str(service_selection.get("level") or "").strip().lower()
+    section_key = str(service_selection.get("sectionId") or "").strip()
+    title = str(service_selection.get("title") or "").strip()
+
+    if plan_id:
+      formal_rows = query_db(
+        """
+        SELECT c.constraint_key, c.min_select, c.max_select
+        FROM formal_plan_options p
+        JOIN formal_plan_option_constraints c
+          ON c.plan_option_id = p.id AND c.is_active = 1
+        WHERE p.is_active = 1
+          AND p.plan_key = %(plan_key)s
+        ORDER BY c.id ASC;
+        """,
+        {"plan_key": plan_id},
+      )
+      formal_constraints = cls._normalize_min_max_constraints(formal_rows or [])
+      if formal_constraints:
+        return formal_constraints
+
+    if section_key and level == "tier" and title:
+      tier_rows = query_db(
+        """
+        SELECT c.constraint_key, c.constraint_value
+        FROM menu_sections s
+        JOIN menu_section_tiers t
+          ON t.section_id = s.id AND t.is_active = 1
+        JOIN menu_section_tier_constraints c
+          ON c.tier_id = t.id AND c.is_active = 1
+        WHERE s.is_active = 1
+          AND s.section_key = %(section_key)s
+          AND t.tier_title = %(tier_title)s
+        ORDER BY c.id ASC;
+        """,
+        {"section_key": section_key, "tier_title": title},
+      )
+      tier_constraints = cls._normalize_tier_constraints(tier_rows or [])
+      if tier_constraints:
+        return cls._normalize_payload_constraints(tier_constraints)
+
+    if section_key and level == "package":
+      package_rows = query_db(
+        """
+        SELECT c.constraint_key, c.min_select, c.max_select
+        FROM menu_sections s
+        JOIN menu_section_constraints c
+          ON c.section_id = s.id AND c.is_active = 1
+        WHERE s.is_active = 1
+          AND s.section_key = %(section_key)s
+        ORDER BY c.id ASC;
+        """,
+        {"section_key": section_key},
+      )
+      package_constraints = cls._normalize_min_max_constraints(package_rows or [])
+      if package_constraints:
+        return package_constraints
+
+    # Fallback for legacy payloads while clients converge on DB-backed constraints.
+    return cls._normalize_payload_constraints(service_selection.get("constraints"))
 
   @classmethod
   def seed_from_payload(cls, payload):
@@ -669,6 +789,35 @@ class Menu:
         if not section_row:
           continue
         section_id = section_row["id"]
+
+        for constraint_key, limits in section.get("constraints", {}).items():
+          if isinstance(limits, int):
+            min_select = 0
+            max_select = limits
+          elif isinstance(limits, dict):
+            min_select = limits.get("min", 0)
+            max_select = limits.get("max", 0)
+          else:
+            continue
+
+          query_db(
+            """
+            INSERT INTO menu_section_constraints (section_id, constraint_key, min_select, max_select, is_active)
+            VALUES (%(section_id)s, %(constraint_key)s, %(min_select)s, %(max_select)s, 1)
+            ON DUPLICATE KEY UPDATE
+              min_select = VALUES(min_select),
+              max_select = VALUES(max_select),
+              is_active = 1,
+              updated_at = CURRENT_TIMESTAMP;
+            """,
+            {
+              "section_id": section_id,
+              "constraint_key": constraint_key,
+              "min_select": min_select,
+              "max_select": max_select,
+            },
+            fetch="none",
+          )
 
         for col_order, col_label in enumerate(section.get("columns", []), start=1):
           query_db(

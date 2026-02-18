@@ -198,6 +198,21 @@ CREATE TABLE IF NOT EXISTS menu_sections (
   CONSTRAINT fk_menu_sections_catalog FOREIGN KEY (catalog_id) REFERENCES menu_catalogs(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS menu_section_constraints (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  section_id BIGINT UNSIGNED NOT NULL,
+  constraint_key VARCHAR(100) NOT NULL,
+  min_select INT NOT NULL DEFAULT 0,
+  max_select INT NOT NULL DEFAULT 0,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_menu_section_constraints_key (section_id, constraint_key),
+  KEY idx_menu_section_constraints_active (is_active),
+  CONSTRAINT fk_menu_section_constraints_section FOREIGN KEY (section_id) REFERENCES menu_sections(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS menu_section_columns (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   section_id BIGINT UNSIGNED NOT NULL,

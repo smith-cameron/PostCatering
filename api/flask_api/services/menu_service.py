@@ -15,6 +15,7 @@ class MenuService:
     "menu_section_include_groups",
     "menu_section_rows",
     "menu_section_columns",
+    "menu_section_constraints",
     "menu_sections",
     "menu_intro_bullets",
     "menu_intro_blocks",

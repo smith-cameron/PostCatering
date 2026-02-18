@@ -44,21 +44,6 @@ export const getMinEventDateISO = () => {
 
 export const buildCommunitySelectionRules = (plan) => {
   if (!plan) return null;
-  const normalizedTitle = String(plan.title || "").toLowerCase();
-  if (plan.sectionId === "community_buffet_tiers" && normalizedTitle.includes("tier 1")) {
-    return {
-      entree: { min: 2, max: 2 },
-      sides: { min: 2, max: 2 },
-      salads: { min: 1, max: 1 },
-    };
-  }
-  if (plan.sectionId === "community_buffet_tiers" && normalizedTitle.includes("tier 2")) {
-    return {
-      entree: { min: 2, max: 3 },
-      sides: { min: 3, max: 3 },
-      salads: { min: 2, max: 2 },
-    };
-  }
 
   if (plan.constraints && typeof plan.constraints === "object") {
     const normalizedConstraints = Object.entries(plan.constraints).reduce((acc, [key, value]) => {
@@ -75,18 +60,6 @@ export const buildCommunitySelectionRules = (plan) => {
       normalizedConstraints.sides = combined;
     }
     return normalizedConstraints;
-  }
-
-  if (plan.level === "package") {
-    if (normalizedTitle.includes("taco bar")) {
-      return { entree: { min: 1, max: 1 } };
-    }
-    if (normalizedTitle.includes("hearty homestyle")) {
-      return {
-        entree: { min: 1, max: 1 },
-        sides: { min: 2, max: 2 },
-      };
-    }
   }
   return null;
 };
@@ -247,9 +220,11 @@ export const buildServicePlanOptions = (serviceKey, menu, formalPlanOptions) => 
       plans.push({
         id: `package:${section.title}`,
         level: "package",
+        sectionId: section.sectionId || null,
         title: section.title,
         price: section.price || "",
         details: section.description ? [section.description] : [],
+        constraints: section.constraints || null,
       });
       return;
     }
