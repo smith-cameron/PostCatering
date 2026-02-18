@@ -13,7 +13,6 @@ const Header = ({ onOpenInquiry }) => {
     const mediaQuery = window.matchMedia("(max-width: 991.98px)");
     const handleChange = (event) => setIsMobile(event.matches);
 
-    setIsMobile(mediaQuery.matches);
     mediaQuery.addEventListener("change", handleChange);
 
     return () => mediaQuery.removeEventListener("change", handleChange);
