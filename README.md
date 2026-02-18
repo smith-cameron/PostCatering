@@ -187,6 +187,44 @@ Content-Type: application/json
 }
 ```
 
+## Updating Homepage Photos
+
+Current canonical location:
+- `api/flask_api/static/slides`
+- Frontend loads slide metadata from `GET /api/slides` and renders each slide `src` as returned.
+
+Step-by-step (current setup):
+1. Prepare each image (recommended landscape ratio, web-compressed JPG/WEBP).
+2. Add new files to `api/flask_api/static/slides` with stable, descriptive filenames.
+3. Update slide records in MySQL `slides` table:
+   - `image_url` should point to `/api/assets/slides/<filename>`
+   - Set `title`, `caption`, `alt_text`, `display_order`, and `is_active`
+4. Disable retired slides with `is_active = 0` (instead of deleting rows) to preserve history.
+5. Verify in browser:
+   - `GET /api/slides` returns expected order and URLs
+   - Homepage carousel shows updated images/text
+6. Commit image file changes (if files are in repo) and any migration/SQL changes used to update records.
+
+Example SQL update:
+
+```sql
+UPDATE slides
+SET
+  title = 'Community Dinner',
+  caption = 'Seasonal menu highlights',
+  image_url = '/api/assets/slides/community-dinner-2026.jpg',
+  alt_text = 'Community dinner service line',
+  display_order = 1,
+  is_active = 1
+WHERE id = 1;
+```
+
+Future-ready option (recommended when moving off-repo assets):
+1. Upload images to object storage/CDN (S3, R2, etc.).
+2. Save full CDN URLs in `slides.image_url` (no frontend code changes required).
+3. Use versioned filenames or query params for cache busting (example: `hero-2026-05.jpg?v=2`).
+4. Keep `GET /api/slides` as the single source of truth so updates remain operational, not code-driven.
+
 ## Inquiry Flow
 
 Frontend:
@@ -236,7 +274,7 @@ Backend:
 - ~~Replace heuristic text cleanup (e.g., Entree regex normalization) with clean UTF-8 source data.~~
 
 #### Frontend Assets
-- Remove duplicated/unused slide images in `client/public/imgs` if backend slide assets are canonical.
+- ~~Remove duplicated/unused slide images in `client/public/imgs` if backend slide assets are canonical.~~
 
 #### Backend Standards
 - ~~Add a tracked backend dependency manifest (`api/requirements.txt` or `api/pyproject.toml`) with pinned versions.~~
