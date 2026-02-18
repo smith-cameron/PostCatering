@@ -1,9 +1,12 @@
+import json
 import re
 
 from flask_api.config.mysqlconnection import query_db
 
 
 class Menu:
+  CACHE_CONFIG_KEY = "catalog_payload_v1"
+
   @staticmethod
   def _slug(value):
     slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
@@ -336,6 +339,60 @@ class Menu:
       "formal_plan_options": formal_plan_options,
       "menu": menu,
     }
+
+  @classmethod
+  def get_cached_config_payload(cls):
+    row = query_db(
+      """
+      SELECT config_json
+      FROM menu_config
+      WHERE config_key = %(config_key)s
+      LIMIT 1;
+      """,
+      {"config_key": cls.CACHE_CONFIG_KEY},
+      fetch="one",
+    )
+    if not row:
+      return None
+
+    cached = row.get("config_json")
+    if isinstance(cached, dict):
+      return cached
+    if isinstance(cached, str):
+      try:
+        parsed = json.loads(cached)
+      except json.JSONDecodeError:
+        return None
+      return parsed if isinstance(parsed, dict) else None
+    return None
+
+  @classmethod
+  def upsert_cached_config_payload(cls, payload):
+    query_db(
+      """
+      INSERT INTO menu_config (config_key, config_json)
+      VALUES (%(config_key)s, CAST(%(config_json)s AS JSON))
+      ON DUPLICATE KEY UPDATE
+        config_json = VALUES(config_json),
+        updated_at = CURRENT_TIMESTAMP;
+      """,
+      {
+        "config_key": cls.CACHE_CONFIG_KEY,
+        "config_json": json.dumps(payload, ensure_ascii=False),
+      },
+      fetch="none",
+    )
+
+  @classmethod
+  def clear_cached_config_payload(cls):
+    query_db(
+      """
+      DELETE FROM menu_config
+      WHERE config_key = %(config_key)s;
+      """,
+      {"config_key": cls.CACHE_CONFIG_KEY},
+      fetch="none",
+    )
 
   @classmethod
   def seed_from_payload(cls, payload):

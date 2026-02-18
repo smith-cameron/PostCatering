@@ -251,7 +251,7 @@ Backend:
 - Add structured logging and clearer SMTP failure diagnostics (without exposing secrets).
 
 #### Data Model
-- Reassess menu-table normalization depth; consider a hybrid model to reduce complexity and query assembly cost.
+- ~~Reassess menu-table normalization depth; consider a hybrid model to reduce complexity and query assembly cost.~~
 - Resolve the unused `menu_config` path (remove dead table/path or make it an intentional cached canonical representation).
 - Normalize price storage for machine use (numeric fields + currency) instead of mostly formatted text strings.
 - Make constraint storage consistent (`formal_plan_option_constraints` vs suffix-based tier constraint keys).

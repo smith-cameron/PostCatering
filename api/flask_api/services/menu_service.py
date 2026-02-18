@@ -162,12 +162,20 @@ class MenuService:
       cls._truncate_normalized_tables()
       steps.append("reset_normalized_tables")
 
+    if apply_schema or reset:
+      Menu.clear_cached_config_payload()
+      steps.append("invalidated_menu_cache")
+
     if seed:
       payload = cls._load_seed_payload()
       if not payload:
         return {"error": "Menu seed payload not found.", "steps": steps}, 500
       Menu.seed_from_payload(payload)
       steps.append("seeded_from_payload")
+      refreshed_payload = Menu.get_config_payload()
+      if refreshed_payload:
+        Menu.upsert_cached_config_payload(refreshed_payload)
+        steps.append("refreshed_menu_cache")
 
     return {"ok": True, "steps": steps}, 200
 
@@ -176,8 +184,13 @@ class MenuService:
     source = (os.getenv("MENU_DATA_SOURCE") or "db").strip().lower()
 
     if source == "db":
+      cached_payload = Menu.get_cached_config_payload()
+      if cached_payload:
+        return {"source": "db-cache", **cls._normalize_menu_payload_for_api(cached_payload)}, 200
+
       payload = Menu.get_config_payload()
       if payload:
+        Menu.upsert_cached_config_payload(payload)
         return {"source": "db", **cls._normalize_menu_payload_for_api(payload)}, 200
 
       return {

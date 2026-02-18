@@ -1,6 +1,8 @@
 # Menu DB Maintenance
 
-This project now serves `/api/menus` from normalized relational tables.
+This project now uses a hybrid model for `/api/menus`:
+- Write model: normalized relational tables
+- Read model: cached JSON payload in `menu_config` (`config_key = catalog_payload_v1`)
 
 ## Key Rule
 
@@ -10,6 +12,17 @@ Use `is_active = 0` to hide content instead of deleting rows. The API only retur
 
 There is no lazy auto-seed on `/api/menus`.
 Run an explicit sync via admin endpoint or script when needed.
+
+## Read Path (Hybrid Model)
+
+- `/api/menus` checks `menu_config` first (cache hit path).
+- If cache is missing, API assembles from normalized tables, returns it, and refreshes cache.
+
+## Cache Lifecycle
+
+- `POST /api/admin/menu/sync` with `apply_schema` or `reset` invalidates menu cache.
+- Seeding (`seed=true`) refreshes cache from current normalized DB state.
+- Manual SQL edits to normalized tables should be followed by admin sync/seed to refresh cache.
 
 ## On-Demand Sync (Recommended)
 
