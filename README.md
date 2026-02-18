@@ -239,7 +239,7 @@ Backend:
 - Remove duplicated/unused slide images in `client/public/imgs` if backend slide assets are canonical.
 
 #### Backend Standards
-- Add a tracked backend dependency manifest (`api/requirements.txt` or `api/pyproject.toml`) with pinned versions.
+- ~~Add a tracked backend dependency manifest (`api/requirements.txt` or `api/pyproject.toml`) with pinned versions.~~
 - Adopt Flask app-factory + blueprint structure for clearer initialization and easier testing.
 - Use safer defaults (`FLASK_DEBUG=false`, restrictive CORS defaults) for production readiness.
 - Include `X-Menu-Admin-Token` in CORS allowed headers for browser-based admin calls.
