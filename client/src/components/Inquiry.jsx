@@ -9,7 +9,6 @@ import {
   EMPTY_FORM,
   formatBudgetWithCommas,
   getMinEventDateISO,
-  getPlanDisplayTitle,
   getSelectionCategoryKeyFromText,
 } from "./inquiry/inquiryUtils";
 import useInquirySelections from "./inquiry/useInquirySelections";
@@ -307,32 +306,12 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
         return;
       }
 
-      const planText = selectedServicePlan
-        ? `${selectedServicePlan.level === "package" ? "Selected Package" : "Selected Tier"}: ${getPlanDisplayTitle(
-            form.service_interest,
-            selectedServicePlan
-          )}${selectedServicePlan.price ? ` (${selectedServicePlan.price})` : ""}\n${
-            selectedServicePlan.level === "package" ? "Includes" : "Details"
-          }:\n${displayedPlanDetails.map((detail) => `- ${detail}`).join("\n")}`
-        : "";
-
-      const desiredItemsText = selectedItems.length
-        ? `Desired Menu Items:\n${selectedItems
-            .map(
-              (item) =>
-                `- ${item.name}${
-                  item.tray_size ? ` (Tray: ${item.tray_size}${item.tray_price ? ` - ${item.tray_price}` : ""})` : ""
-                }`
-            )
-            .join("\n")}`
-        : "";
-
       const payload = {
         ...normalizedForm,
         service_interest: selectedService ? selectedService.label : "",
         service_selection: selectedServicePlan,
         desired_menu_items: selectedItems,
-        message: [normalizedForm.message, planText, desiredItemsText].filter(Boolean).join("\n\n"),
+        message: normalizedForm.message,
       };
 
       const response = await fetch("/api/inquiries", {

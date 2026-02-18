@@ -1,3 +1,5 @@
+import json
+
 from flask_api.config.mysqlconnection import query_db
 from flask_api.validators.inquiry_validators import (
   normalize_budget,
@@ -81,6 +83,41 @@ class Inquiry:
       "email_sent": self.email_sent,
     }
 
+  def _to_structured_selection_dict(self):
+    service_selection = self.service_selection if isinstance(self.service_selection, dict) else {}
+    desired_menu_items = self.desired_menu_items if isinstance(self.desired_menu_items, list) else []
+
+    return {
+      "service_selection_json": json.dumps(service_selection, ensure_ascii=False),
+      "desired_menu_items_json": json.dumps(desired_menu_items, ensure_ascii=False),
+    }
+
+  def _save_structured_selections(self):
+    if not self.id:
+      return
+
+    query = """
+      INSERT INTO inquiry_selection_data (
+        inquiry_id,
+        service_selection_json,
+        desired_menu_items_json
+      )
+      VALUES (
+        %(inquiry_id)s,
+        %(service_selection_json)s,
+        %(desired_menu_items_json)s
+      )
+      ON DUPLICATE KEY UPDATE
+        service_selection_json = VALUES(service_selection_json),
+        desired_menu_items_json = VALUES(desired_menu_items_json),
+        updated_at = CURRENT_TIMESTAMP;
+    """
+    payload = {
+      "inquiry_id": self.id,
+      **self._to_structured_selection_dict(),
+    }
+    query_db(query, payload, fetch="none")
+
   def save(self):
     query = """
       INSERT INTO inquiries (
@@ -109,6 +146,7 @@ class Inquiry:
       );
     """
     self.id = query_db(query, self.to_db_dict(), fetch="none")
+    self._save_structured_selections()
     return self.id
 
   def update_email_sent(self, email_sent):

@@ -37,6 +37,16 @@ CREATE TABLE IF NOT EXISTS inquiries (
   KEY idx_inquiries_status_created (status, created_at)
 );
 
+CREATE TABLE IF NOT EXISTS inquiry_selection_data (
+  inquiry_id BIGINT UNSIGNED NOT NULL,
+  service_selection_json JSON NULL,
+  desired_menu_items_json JSON NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (inquiry_id),
+  CONSTRAINT fk_inquiry_selection_data_inquiry FOREIGN KEY (inquiry_id) REFERENCES inquiries(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS menu_config (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   config_key VARCHAR(64) NOT NULL,
