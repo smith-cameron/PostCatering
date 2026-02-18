@@ -1,415 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { Alert, Button, Form, Modal, Spinner } from "react-bootstrap";
 import { useSearchParams } from "react-router-dom";
 import useMenuConfig from "../hooks/useMenuConfig";
-
-const EMPTY_FORM = {
-  full_name: "",
-  email: "",
-  phone: "",
-  event_type: "",
-  event_date: "",
-  guest_count: "",
-  budget: "",
-  service_interest: "",
-  message: "",
-};
-
-const COMMUNITY_TACO_BAR_OPTIONS = ["Carne Asada", "Chicken", "Carnitas", "Marinated Pork"];
-
-const toIdPart = (value) => String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-");
-const isSaladName = (value) => String(value || "").toLowerCase().includes("salad");
-const splitSidesAndSalads = (items = []) =>
-  items.reduce(
-    (acc, item) => {
-      if (isSaladName(item?.name)) {
-        acc.salads.push(item);
-      } else {
-        acc.sides.push(item);
-      }
-      return acc;
-    },
-    { sides: [], salads: [] }
-  );
-
-const isPricedValue = (value) => /\$/.test(String(value || ""));
-const formatBudgetWithCommas = (value) => {
-  const digitsOnly = String(value || "").replace(/\D/g, "");
-  if (!digitsOnly) return "";
-  return Number(digitsOnly).toLocaleString("en-US");
-};
-const getMinEventDateISO = () => {
-  const now = new Date();
-  now.setDate(now.getDate() + 7);
-  const tzOffset = now.getTimezoneOffset() * 60000;
-  return new Date(now.getTime() - tzOffset).toISOString().slice(0, 10);
-};
-
-const buildCommunitySelectionRules = (plan) => {
-  if (!plan) return null;
-  const normalizedTitle = String(plan.title || "").toLowerCase();
-  if (plan.sectionId === "community_buffet_tiers" && normalizedTitle.includes("tier 1")) {
-    return {
-      entree: { min: 2, max: 2 },
-      sides: { min: 2, max: 2 },
-      salads: { min: 1, max: 1 },
-    };
-  }
-  if (plan.sectionId === "community_buffet_tiers" && normalizedTitle.includes("tier 2")) {
-    return {
-      entree: { min: 2, max: 3 },
-      sides: { min: 3, max: 3 },
-      salads: { min: 2, max: 2 },
-    };
-  }
-
-  if (plan.constraints && typeof plan.constraints === "object") {
-    const normalizedConstraints = Object.entries(plan.constraints).reduce((acc, [key, value]) => {
-      if (typeof value === "number") {
-        acc[key] = { max: value };
-      } else if (value && typeof value === "object") {
-        acc[key] = value;
-      }
-      return acc;
-    }, {});
-    if (normalizedConstraints.sides_salads && !normalizedConstraints.sides && !normalizedConstraints.salads) {
-      const combined = normalizedConstraints.sides_salads;
-      delete normalizedConstraints.sides_salads;
-      normalizedConstraints.sides = combined;
-    }
-    return normalizedConstraints;
-  }
-  if (plan.level === "package") {
-    if (normalizedTitle.includes("taco bar")) {
-      return {
-        entree: { min: 1, max: 1 },
-      };
-    }
-    if (normalizedTitle.includes("hearty homestyle")) {
-      return {
-        entree: { min: 1, max: 1 },
-        sides: { min: 2, max: 2 },
-      };
-    }
-  }
-  return null;
-};
-
-const toTitleCase = (value) =>
-  String(value || "")
-    .split(" ")
-    .filter(Boolean)
-    .map((word) => word[0]?.toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ");
-
-const toMatchText = (value) =>
-  String(value || "")
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .toLowerCase();
-
-const getSelectionCategoryKeyFromText = (value) => {
-  const lower = toMatchText(value);
-  if (lower.includes("passed")) return "passed";
-  if (lower.includes("starter")) return "starter";
-  if (lower.includes("salad")) return "salads";
-  if (lower.includes("side")) return "sides";
-  if (lower.includes("entree") || lower.includes("protein")) return "entree";
-  return null;
-};
-
-const parseCommunityPackageDetails = (details) => {
-  const joined = (details || []).join(" ").trim();
-  if (!joined) return [];
-
-  const cleaned = joined.replace(/^includes\s*/i, "");
-  if (cleaned.includes("+")) {
-    return cleaned
-      .split("+")
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .map((part) => {
-        const lower = part.toLowerCase();
-        if (/^\d+\s+/.test(lower)) return `Choose ${toTitleCase(part)}`;
-        return toTitleCase(part);
-      });
-  }
-  if (cleaned.includes(",")) {
-    return cleaned
-      .split(",")
-      .map((part) => toTitleCase(part.trim()))
-      .filter(Boolean);
-  }
-  return [toTitleCase(cleaned)];
-};
-
-const getCommunityPackageDetails = (plan) => {
-  if (!plan) return [];
-  const normalizedTitle = String(plan.title || "").toLowerCase();
-  if (normalizedTitle.includes("hearty homestyle")) {
-    return ["Choose 1 Entrée/Protein", "Choose 2 Sides", "Bread"];
-  }
-  return parseCommunityPackageDetails(plan.details);
-};
-
-const getDisplayPlanDetails = (serviceKey, plan, communityLimits) => {
-  if (!plan) return [];
-  if (serviceKey === "formal" && plan.level === "package") {
-    if (plan.id === "formal:3-course") {
-      return ["2 Passed Appetizers", "1 Starter", "1 or 2 Entrées", "Bread"];
-    }
-    if (plan.id === "formal:2-course") {
-      return ["1 Starter", "1 Entrée", "Bread"];
-    }
-  }
-  if (serviceKey === "community" && plan.level === "package") {
-    return getCommunityPackageDetails(plan);
-  }
-  if (serviceKey !== "community" || plan.level !== "tier") return plan.details || [];
-
-  const details = [];
-  if (communityLimits?.entree?.max) {
-    const entreeMin = communityLimits?.entree?.min || 0;
-    const entreeMax = communityLimits.entree.max;
-    if (entreeMin && entreeMin === entreeMax) {
-      details.push(`Choose ${entreeMax} Entrées/Proteins`);
-    } else if (entreeMin && entreeMin < entreeMax) {
-      details.push(`Choose ${entreeMin}-${entreeMax} Entrées/Proteins`);
-    } else {
-      details.push(`Choose up to ${entreeMax} Entrées/Proteins`);
-    }
-  }
-  const appendCommunityDetail = (limits, label) => {
-    if (!limits?.max) return;
-    const min = limits?.min || 0;
-    const max = limits.max;
-    if (min && min === max) {
-      details.push(`Choose ${max} ${label}`);
-    } else if (min && min < max) {
-      details.push(`Choose ${min}-${max} ${label}`);
-    } else {
-      details.push(`Choose up to ${max} ${label}`);
-    }
-  };
-  appendCommunityDetail(communityLimits?.sides, "Sides");
-  appendCommunityDetail(communityLimits?.salads, "Salads");
-  if (!communityLimits?.sides && !communityLimits?.salads && communityLimits?.sides_salads?.max) {
-    const sidesMin = communityLimits?.sides_salads?.min || 0;
-    const sidesMax = communityLimits.sides_salads.max;
-    if (sidesMin && sidesMin === sidesMax) {
-      details.push(`Choose ${sidesMax} Sides/Salads`);
-    } else if (sidesMin && sidesMin < sidesMax) {
-      details.push(`Choose ${sidesMin}-${sidesMax} Sides/Salads`);
-    } else {
-      details.push(`Choose up to ${sidesMax} Sides/Salads`);
-    }
-  }
-  return details.length ? details : plan.details || [];
-};
-
-const normalizeSizeOption = (option) => {
-  if (typeof option === "string") {
-    return {
-      value: option,
-      label: `${option} Tray`,
-      price: null,
-    };
-  }
-  return {
-    value: option?.value || "",
-    label: option?.label || `${option?.value || ""} Tray`,
-    price: option?.price || null,
-  };
-};
-
-const getDisplayGroupTitle = (serviceKey, group) => {
-  if (serviceKey !== "formal") return group.title;
-  const map = {
-    passed: "Passed Appetizers",
-    starter: "Starters",
-    entree: "Entrées",
-    sides: "Sides",
-  };
-  return map[group.groupKey] || group.title;
-};
-
-const getApprovedFormalPlans = (plans) => (plans || []).filter((plan) => plan.id !== "formal:2-course");
-
-const buildServicePlanOptions = (serviceKey, menu, formalPlanOptions) => {
-  if (serviceKey === "formal") {
-    return getApprovedFormalPlans(formalPlanOptions);
-  }
-
-  const serviceMenu = menu[serviceKey];
-  if (!serviceMenu?.sections) return [];
-
-  const plans = [];
-
-  serviceMenu.sections.forEach((section) => {
-    if (section.type === "package" && section.title) {
-      plans.push({
-        id: `package:${section.title}`,
-        level: "package",
-        title: section.title,
-        price: section.price || "",
-        details: section.description ? [section.description] : [],
-      });
-      return;
-    }
-
-    if (section.type === "tiers" && Array.isArray(section.tiers)) {
-      section.tiers.forEach((tier) => {
-        plans.push({
-          id: `tier:${section.title}:${tier.tierTitle}`,
-          level: "tier",
-          sectionId: section.sectionId || null,
-          courseType: section.courseType || null,
-          sectionTitle: section.title,
-          title: tier.tierTitle,
-          price: tier.price || "",
-          details: tier.bullets || [],
-          constraints: tier.constraints || null,
-        });
-      });
-    }
-  });
-
-  return plans;
-};
-
-const buildServiceItemGroups = (serviceKey, menu, menuOptions) => {
-  const serviceData = menu[serviceKey];
-  if (!serviceData?.sections) return [];
-
-  const groups = [];
-  const addGroup = (title, items, groupKey = "other") => {
-    const seen = new Set();
-    const uniqueItems = items.filter((item) => {
-      if (!item?.name) return false;
-      if (seen.has(item.name)) return false;
-      seen.add(item.name);
-      return true;
-    });
-    if (!uniqueItems.length) return;
-    groups.push({
-      title: title || "Menu Items",
-      groupKey,
-      items: uniqueItems,
-    });
-  };
-
-  serviceData.sections.forEach((section) => {
-    if (!section.type && Array.isArray(section.rows)) {
-      const sectionItems = section.rows
-        .map((row) => {
-          if (!Array.isArray(row) || !row[0]) return null;
-
-          const sizeOptions = [];
-          if (Array.isArray(section.columns)) {
-            section.columns.forEach((column, columnIndex) => {
-              if (columnIndex === 0) return;
-
-              const columnLabel = String(column || "").toLowerCase();
-              if (!columnLabel.includes("half") && !columnLabel.includes("full")) return;
-
-              const priceValue = row[columnIndex];
-              if (!isPricedValue(priceValue)) return;
-
-              if (columnLabel.includes("half")) {
-                sizeOptions.push({
-                  value: "Half",
-                  label: `Half Tray (${priceValue})`,
-                  price: priceValue,
-                });
-              }
-              if (columnLabel.includes("full")) {
-                sizeOptions.push({
-                  value: "Full",
-                  label: `Full Tray (${priceValue})`,
-                  price: priceValue,
-                });
-              }
-            });
-          }
-
-          return {
-            name: row[0],
-            sizeOptions,
-          };
-        })
-        .filter(Boolean);
-
-      const sectionGroupKey = section.category || section.courseType || "other";
-      if (sectionGroupKey === "sides_salads") {
-        const { sides, salads } = splitSidesAndSalads(sectionItems);
-        addGroup("Sides", sides, "sides");
-        addGroup("Salads", salads, "salads");
-      } else {
-        addGroup(section.title, sectionItems, sectionGroupKey);
-      }
-      return;
-    }
-
-    if (section.type === "includeMenu" && Array.isArray(section.includeKeys)) {
-      section.includeKeys.forEach((includeKey) => {
-        const block = menuOptions[includeKey];
-        if (!block?.items?.length) return;
-
-        const blockItems = block.items.map((item) => ({
-          name: item,
-          sizeOptions: serviceKey === "togo" ? ["Half", "Full"].map(normalizeSizeOption) : [],
-        }));
-        if (block.category === "sides_salads") {
-          const { sides, salads } = splitSidesAndSalads(blockItems);
-          addGroup("Sides", sides, "sides");
-          addGroup("Salads", salads, "salads");
-        } else {
-          addGroup(block.title, blockItems, block.category || "other");
-        }
-      });
-      return;
-    }
-
-    if (section.type === "tiers" && Array.isArray(section.tiers)) {
-      if (serviceKey === "community") return;
-
-      const sectionItems = [];
-      section.tiers.forEach((tier) => {
-        tier?.bullets?.forEach((item) => sectionItems.push({ name: item, sizeOptions: [] }));
-      });
-      const sectionGroupKey = section.courseType || "other";
-      addGroup(section.title, sectionItems, sectionGroupKey);
-      return;
-    }
-
-    if (section.type === "package" && section.title) {
-      if (serviceKey === "community") return;
-      if (section.title === "Three-Course Dinner Pricing") return;
-      addGroup("Packages", [{ name: section.title, sizeOptions: [] }], "package");
-    }
-  });
-
-  return groups;
-};
-
-const isCommunityTacoBarPlan = (plan) =>
-  Boolean(plan && plan.level === "package" && String(plan.title || "").toLowerCase().includes("taco bar"));
-
-const getPlanDisplayTitle = (serviceKey, plan) => {
-  const title = String(plan?.title || "");
-  if (serviceKey === "community") {
-    return title.replace(/\s*\([^)]*\)\s*/g, "").trim();
-  }
-  return title;
-};
-
-const getPlanSectionDisplayTitle = (serviceKey, sectionTitle) => {
-  const title = String(sectionTitle || "");
-  if (serviceKey === "community") {
-    return title.replace(/Event Catering - Buffet Style/i, "Event/Crew Catering - Buffet Style");
-  }
-  return title;
-};
+import InquiryDesiredItemsSection from "./inquiry/InquiryDesiredItemsSection";
+import InquiryServicePlanSection from "./inquiry/InquiryServicePlanSection";
+import InquirySuccessModal from "./inquiry/InquirySuccessModal";
+import {
+  EMPTY_FORM,
+  formatBudgetWithCommas,
+  getMinEventDateISO,
+  getPlanDisplayTitle,
+  getSelectionCategoryKeyFromText,
+} from "./inquiry/inquiryUtils";
+import useInquirySelections from "./inquiry/useInquirySelections";
 
 const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" }) => {
   const minEventDateISO = useMemo(() => getMinEventDateISO(), []);
@@ -417,23 +20,42 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
   const [searchParams] = useSearchParams();
   const presetServiceKey = presetService || searchParams.get("service") || "";
 
-  const serviceOptions = useMemo(
-    () =>
-      Object.entries(menu).map(([key, value]) => ({
-        key,
-        label: value.pageTitle,
-      })),
-    [menu]
-  );
+  const [showModal, setShowModal] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState([]);
+  const [highlightedDetailKeys, setHighlightedDetailKeys] = useState([]);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [desiredItems, setDesiredItems] = useState([]);
+  const [traySizes, setTraySizes] = useState({});
+  const [servicePlanId, setServicePlanId] = useState("");
+
+  const {
+    serviceOptions,
+    servicePlans,
+    selectedServicePlan,
+    communitySelectionRules,
+    displayedPlanDetails,
+    shouldRequirePlanSelection,
+    canShowDesiredItems,
+    desiredItemGroups,
+    itemSizeOptions,
+  } = useInquirySelections({
+    formServiceInterest: form.service_interest,
+    servicePlanId,
+    menu,
+    menuOptions,
+    formalPlanOptions,
+  });
 
   const isValidPreset = useMemo(() => {
     const match = serviceOptions.find((service) => service.key === presetServiceKey);
     return Boolean(match);
   }, [presetServiceKey, serviceOptions]);
 
-  const [showModal, setShowModal] = useState(true);
   const isControlledModal = typeof onRequestClose === "function";
   const modalOpen = isControlledModal ? forceOpen : showModal;
+
   const handleCloseModal = () => {
     if (isControlledModal) {
       onRequestClose();
@@ -441,17 +63,6 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
     }
     setShowModal(false);
   };
-  const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState([]);
-  const [highlightedDetailKeys, setHighlightedDetailKeys] = useState([]);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [form, setForm] = useState({
-    ...EMPTY_FORM,
-    service_interest: isValidPreset ? presetServiceKey : "",
-  });
-  const [desiredItems, setDesiredItems] = useState([]);
-  const [traySizes, setTraySizes] = useState({});
-  const [servicePlanId, setServicePlanId] = useState("");
 
   useEffect(() => {
     if (isValidPreset) {
@@ -466,57 +77,9 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
     setHighlightedDetailKeys([]);
   }, [form.service_interest]);
 
-  const servicePlans = useMemo(
-    () => buildServicePlanOptions(form.service_interest, menu, formalPlanOptions),
-    [form.service_interest, menu, formalPlanOptions]
-  );
-  const selectedServicePlan = useMemo(
-    () => servicePlans.find((plan) => plan.id === servicePlanId) || null,
-    [servicePlanId, servicePlans]
-  );
-  const communitySelectionRules = useMemo(() => {
-    if (form.service_interest !== "community") return null;
-    return buildCommunitySelectionRules(selectedServicePlan);
-  }, [form.service_interest, selectedServicePlan]);
-  const displayedPlanDetails = useMemo(
-    () => getDisplayPlanDetails(form.service_interest, selectedServicePlan, communitySelectionRules),
-    [form.service_interest, selectedServicePlan, communitySelectionRules]
-  );
-  const shouldRequirePlanSelection =
-    form.service_interest === "community" || form.service_interest === "formal";
-  const canShowDesiredItems =
-    Boolean(form.service_interest) && (!shouldRequirePlanSelection || Boolean(selectedServicePlan));
-  const desiredItemGroups = useMemo(() => {
-    const groups = buildServiceItemGroups(form.service_interest, menu, menuOptions);
-    if (form.service_interest === "community" && isCommunityTacoBarPlan(selectedServicePlan)) {
-      return [
-        {
-          title: "Taco Bar Proteins",
-          groupKey: "entree",
-          items: COMMUNITY_TACO_BAR_OPTIONS.map((item) => ({ name: item, sizeOptions: [] })),
-        },
-      ];
-    }
-    if (form.service_interest !== "formal") return groups;
-
-    const groupsWithoutSides = groups.filter((group) => group.groupKey !== "sides");
-    if (servicePlanId === "formal:2-course") {
-      return groupsWithoutSides.filter((group) => group.groupKey !== "passed");
-    }
-    return groupsWithoutSides;
-  }, [form.service_interest, servicePlanId, selectedServicePlan, menu, menuOptions]);
-  const itemSizeOptions = useMemo(() => {
-    const map = {};
-    desiredItemGroups.forEach((group) => {
-      group.items.forEach((item) => {
-        map[item.name] = (item.sizeOptions || []).map(normalizeSizeOption);
-      });
-    });
-    return map;
-  }, [desiredItemGroups]);
-
   useEffect(() => {
     if (!form.service_interest) return;
+
     const allowedItems = new Set(desiredItemGroups.flatMap((group) => group.items.map((item) => item.name)));
     setDesiredItems((prev) => prev.filter((item) => allowedItems.has(item)));
     setTraySizes((prev) => {
@@ -571,7 +134,6 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
             return prev;
           }
         }
-
       }
 
       if (!isSelected && form.service_interest === "community" && communitySelectionRules) {
@@ -579,13 +141,14 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
         const category = itemGroup?.groupKey || "other";
         const categoryRule = communitySelectionRules[category];
 
-        if (categoryRule?.max || categoryRule?.min) {
+        if (categoryRule?.max) {
           const selectedInCategory = prev.filter((selectedItem) => {
             const selectedGroup = desiredItemGroups.find((group) =>
               group.items.some((groupItem) => groupItem.name === selectedItem)
             );
             return (selectedGroup?.groupKey || "other") === category;
           }).length;
+
           if (selectedInCategory >= categoryRule.max) {
             setHighlightedDetailKeys([category]);
             setErrors([]);
@@ -593,6 +156,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
           }
         }
       }
+
       const next = isSelected ? prev.filter((existingItem) => existingItem !== item) : [...prev, item];
       setErrors([]);
       setHighlightedDetailKeys([]);
@@ -678,7 +242,6 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
         setLoading(false);
         return;
       }
-
       if (shouldRequirePlanSelection && !servicePlanId) {
         setErrors(["Please select a package or tier option."]);
         setLoading(false);
@@ -688,7 +251,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
       if (form.service_interest === "formal") {
         const limits = selectedServicePlan?.constraints || {};
         for (const [groupKey, rule] of Object.entries(limits)) {
-          const groups = desiredItemGroups.filter((g) => g.groupKey === groupKey);
+          const groups = desiredItemGroups.filter((group) => group.groupKey === groupKey);
           const selectedInGroup = groups
             .flatMap((group) => group.items || [])
             .filter((groupItem) => desiredItems.includes(groupItem.name)).length;
@@ -698,7 +261,6 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
             return;
           }
         }
-
       }
 
       if (form.service_interest === "community" && communitySelectionRules) {
@@ -730,9 +292,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
       const selectedItems = desiredItems.map((item) => {
         const options = itemSizeOptions[item] || [];
         const selectedSize = options.find((option) => option.value === traySizes[item]);
-        const selectedGroup = desiredItemGroups.find((group) =>
-          group.items.some((groupItem) => groupItem.name === item)
-        );
+        const selectedGroup = desiredItemGroups.find((group) => group.items.some((groupItem) => groupItem.name === item));
         return {
           name: item,
           category: selectedGroup?.groupKey || "other",
@@ -740,11 +300,13 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
           tray_price: selectedSize?.price || null,
         };
       });
+
       if (!selectedItems.length) {
         setErrors(["Please select at least one desired menu item."]);
         setLoading(false);
         return;
       }
+
       const planText = selectedServicePlan
         ? `${selectedServicePlan.level === "package" ? "Selected Package" : "Selected Tier"}: ${getPlanDisplayTitle(
             form.service_interest,
@@ -753,6 +315,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
             selectedServicePlan.level === "package" ? "Includes" : "Details"
           }:\n${displayedPlanDetails.map((detail) => `- ${detail}`).join("\n")}`
         : "";
+
       const desiredItemsText = selectedItems.length
         ? `Desired Menu Items:\n${selectedItems
             .map(
@@ -795,6 +358,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
       if (body.warning) {
         console.warn("Inquiry saved but email send failed:", body.warning);
       }
+
       setForm({
         ...EMPTY_FORM,
         service_interest: isValidPreset ? presetServiceKey : "",
@@ -812,7 +376,8 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
     }
   };
 
-  const modalMarkup = (
+  return (
+    <>
       <Modal show={modalOpen} onHide={handleCloseModal} centered size="lg">
         <Modal.Header closeButton>
           <Modal.Title>Send Catering Inquiry</Modal.Title>
@@ -909,119 +474,27 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
               </Form.Select>
             </Form.Group>
 
-            {form.service_interest && shouldRequirePlanSelection ? (
-              <Form.Group className="mb-3">
-                <Form.Label>
-                  {form.service_interest === "community" ? "Package / Tier " : "Formal Dinner Package "}
-                  <span className="text-danger">*</span>
-                </Form.Label>
-                <Form.Select value={servicePlanId} onChange={onChangeServicePlan} required>
-                  <option value="">Select an option</option>
-                  <optgroup label={form.service_interest === "formal" ? "Dinner Packages" : "Packages"}>
-                    {servicePlans
-                      .filter((plan) => plan.level === "package")
-                      .map((plan) => (
-                        <option key={plan.id} value={plan.id}>
-                          {getPlanDisplayTitle(form.service_interest, plan)}
-                          {plan.price ? ` (${plan.price})` : ""}
-                        </option>
-                      ))}
-                  </optgroup>
-                  {form.service_interest !== "formal"
-                    ? Array.from(
-                        new Set(servicePlans.filter((plan) => plan.level === "tier").map((plan) => plan.sectionTitle))
-                      ).map((sectionTitle) => (
-                        <optgroup key={sectionTitle} label={getPlanSectionDisplayTitle(form.service_interest, sectionTitle)}>
-                          {servicePlans
-                            .filter((plan) => plan.level === "tier" && plan.sectionTitle === sectionTitle)
-                            .map((plan) => (
-                              <option key={plan.id} value={plan.id}>
-                                {getPlanDisplayTitle(form.service_interest, plan)}
-                                {plan.price ? ` (${plan.price})` : ""}
-                              </option>
-                            ))}
-                        </optgroup>
-                      ))
-                    : null}
-                </Form.Select>
-                {selectedServicePlan ? (
-                  <div className="small text-muted mt-2">
-                    <div className="fw-semibold mb-1">
-                      {selectedServicePlan.level === "package" ? "Package Includes" : "Tier Details"}
-                    </div>
-                    <ul className="mb-0">
-                      {displayedPlanDetails.map((detail) => {
-                        const detailKey = getSelectionCategoryKeyFromText(detail);
-                        const isHighlighted = Boolean(detailKey && highlightedDetailKeys.includes(detailKey));
-                        return (
-                          <li key={detail} className={isHighlighted ? "text-danger fw-semibold" : undefined}>
-                            {detail}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                    {form.service_interest === "community" && selectedServicePlan.level === "tier" ? (
-                      <div className="mt-2">Special chef requests can be added in the Message field.</div>
-                    ) : null}
-                  </div>
-                ) : null}
-              </Form.Group>
-            ) : null}
+            <InquiryServicePlanSection
+              serviceInterest={form.service_interest}
+              shouldRequirePlanSelection={shouldRequirePlanSelection}
+              servicePlanId={servicePlanId}
+              onChangeServicePlan={onChangeServicePlan}
+              servicePlans={servicePlans}
+              selectedServicePlan={selectedServicePlan}
+              displayedPlanDetails={displayedPlanDetails}
+              highlightedDetailKeys={highlightedDetailKeys}
+            />
 
-            <Form.Group className="mb-3">
-              <Form.Label>
-                Desired Menu Items <span className="text-danger">*</span>
-              </Form.Label>
-              {canShowDesiredItems ? (
-                desiredItemGroups.length ? (
-                  <div className="border rounded p-2" style={{ maxHeight: "220px", overflowY: "auto" }}>
-                    {desiredItemGroups.map((group) => (
-                      <div key={group.title} className="mb-3">
-                        <div className="fw-semibold small text-uppercase mb-1">
-                          {getDisplayGroupTitle(form.service_interest, group)}
-                        </div>
-                        {group.items.map((item, index) => {
-                          const isSelected = desiredItems.includes(item.name);
-                          const sizeOptions = (item.sizeOptions || []).map(normalizeSizeOption);
-                          return (
-                            <div key={`${group.title}-${item.name}`} className="mb-2">
-                              <Form.Check
-                                id={`desired-item-${toIdPart(group.title)}-${index}`}
-                                type="checkbox"
-                                className="mb-1"
-                                label={item.name}
-                                checked={isSelected}
-                                onChange={() => onToggleDesiredItem(item.name)}
-                              />
-                              {isSelected && sizeOptions.length ? (
-                                <Form.Select
-                                  size="sm"
-                                  className="ms-4"
-                                  style={{ maxWidth: "200px" }}
-                                  value={traySizes[item.name] || sizeOptions[0].value}
-                                  onChange={(event) => onChangeTraySize(item.name, event.target.value)}>
-                                  {sizeOptions.map((sizeOption) => (
-                                    <option key={`${item.name}-${sizeOption.value}`} value={sizeOption.value}>
-                                      {sizeOption.label}
-                                    </option>
-                                  ))}
-                                </Form.Select>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-muted small">No items available for this service yet.</div>
-                )
-              ) : form.service_interest && shouldRequirePlanSelection ? (
-                <div className="text-muted small">Select a package/tier first to choose desired menu items.</div>
-              ) : (
-                <div className="text-muted small">Select a service first to choose desired items.</div>
-              )}
-            </Form.Group>
+            <InquiryDesiredItemsSection
+              serviceInterest={form.service_interest}
+              shouldRequirePlanSelection={shouldRequirePlanSelection}
+              canShowDesiredItems={canShowDesiredItems}
+              desiredItemGroups={desiredItemGroups}
+              desiredItems={desiredItems}
+              traySizes={traySizes}
+              onToggleDesiredItem={onToggleDesiredItem}
+              onChangeTraySize={onChangeTraySize}
+            />
 
             <Form.Group>
               <Form.Label>Message</Form.Label>
@@ -1049,26 +522,8 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
           </Modal.Footer>
         </Form>
       </Modal>
-  );
 
-  return (
-    <>
-      {modalMarkup}
-      <Modal show={showSuccessModal} onHide={() => setShowSuccessModal(false)} centered>
-        <Modal.Header closeButton>
-          <Modal.Title>Inquiry Sent</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          <Alert variant="success" className="mb-0">
-            Your inquiry was sent successfully.
-          </Alert>
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowSuccessModal(false)}>
-            Close
-          </Button>
-        </Modal.Footer>
-      </Modal>
+      <InquirySuccessModal show={showSuccessModal} onHide={() => setShowSuccessModal(false)} />
     </>
   );
 };
