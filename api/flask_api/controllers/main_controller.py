@@ -5,6 +5,7 @@ from pathlib import Path
 from flask import jsonify, request, send_from_directory
 
 from flask_api import app
+from flask_api.config.mysqlconnection import query_db
 from flask_api.services.inquiry_service import InquiryService
 from flask_api.services.menu_service import MenuService
 from flask_api.services.slide_service import SlideService
@@ -15,7 +16,16 @@ SLIDES_ASSET_DIR = Path(__file__).resolve().parent.parent / "static" / "slides"
 
 @app.route("/api/health", methods=["GET"])
 def api_health():
-  return jsonify({"ok": True}), 200
+  try:
+    db_row = query_db("SELECT 1 AS ok;", fetch="one")
+    db_ok = bool(db_row and int(db_row.get("ok", 0)) == 1)
+    if not db_ok:
+      raise RuntimeError("Unexpected database health check result.")
+
+    return jsonify({"ok": True, "database": {"ok": True}}), 200
+  except Exception:
+    app.logger.warning("api_health database check failed")
+    return jsonify({"ok": False, "database": {"ok": False}, "error": "database_unavailable"}), 503
 
 
 @app.route("/api/slides", methods=["GET", "OPTIONS"])
