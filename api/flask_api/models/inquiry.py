@@ -116,7 +116,14 @@ class Inquiry:
       "inquiry_id": self.id,
       **self._to_structured_selection_dict(),
     }
-    query_db(query, payload, fetch="none")
+    try:
+      query_db(query, payload, fetch="none")
+    except Exception as exc:
+      # Backward compatibility while environments roll out schema.sql changes.
+      error_text = str(exc).lower()
+      if "inquiry_selection_data" in error_text and ("doesn't exist" in error_text or "unknown table" in error_text):
+        return
+      raise
 
   def save(self):
     query = """
