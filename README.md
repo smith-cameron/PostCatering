@@ -225,7 +225,7 @@ Backend:
 - ~~Consolidate duplicated service-selection rules/constraints so frontend and backend use one source of truth.~~
 - ~~Decide whether inquiry is modal-only or route-only; current setup mounts `Inquiry` in `Wrapper` and also at `/inquiry`.~~
 #### Performance
-- Avoid duplicate `/api/menus` fetches by centralizing menu config state/caching.
+- ~~Avoid duplicate `/api/menus` fetches by centralizing menu config state/caching.~~
 #### Frontend Cleanup
 - ~~Remove stray `git` token in `client/src/App.jsx`.~~
 - ~~Fix current lint violations and keep lint clean (`Footer` unused imports, unused `subtitle` prop, unused bootstrap import, effect setState warning).~~
@@ -241,7 +241,7 @@ Backend:
 #### Backend Standards
 - ~~Add a tracked backend dependency manifest (`api/requirements.txt` or `api/pyproject.toml`) with pinned versions.~~
 - Adopt Flask app-factory + blueprint structure for clearer initialization and easier testing.
-- Use safer defaults (`FLASK_DEBUG=false`, restrictive CORS defaults) for production readiness.
+- ~~Use safer defaults (`FLASK_DEBUG=false`, restrictive CORS defaults) for production readiness.~~
 - Include `X-Menu-Admin-Token` in CORS allowed headers for browser-based admin calls.
 
 #### Backend Logic
