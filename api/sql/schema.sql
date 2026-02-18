@@ -302,7 +302,9 @@ CREATE TABLE IF NOT EXISTS menu_section_tier_constraints (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   tier_id BIGINT UNSIGNED NOT NULL,
   constraint_key VARCHAR(100) NOT NULL,
-  constraint_value INT NOT NULL,
+  min_select INT NOT NULL DEFAULT 0,
+  max_select INT NOT NULL DEFAULT 0,
+  constraint_value INT NULL,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -345,6 +347,70 @@ ALTER TABLE menu_section_tiers
   ADD COLUMN IF NOT EXISTS price_amount_max DECIMAL(10,2) NULL AFTER price_amount_min,
   ADD COLUMN IF NOT EXISTS price_currency CHAR(3) NULL AFTER price_amount_max,
   ADD COLUMN IF NOT EXISTS price_unit VARCHAR(32) NULL AFTER price_currency;
+
+ALTER TABLE menu_section_tier_constraints
+  ADD COLUMN IF NOT EXISTS min_select INT NOT NULL DEFAULT 0 AFTER constraint_key,
+  ADD COLUMN IF NOT EXISTS max_select INT NOT NULL DEFAULT 0 AFTER min_select,
+  MODIFY COLUMN constraint_value INT NULL;
+
+INSERT INTO menu_section_tier_constraints (
+  tier_id,
+  constraint_key,
+  min_select,
+  max_select,
+  constraint_value,
+  is_active
+)
+SELECT
+  legacy.tier_id,
+  legacy.constraint_key,
+  legacy.min_select,
+  legacy.max_select,
+  NULL,
+  1
+FROM (
+  SELECT
+    c.tier_id,
+    CASE
+      WHEN c.constraint_key LIKE '%\\_min' ESCAPE '\\' THEN LEFT(c.constraint_key, LENGTH(c.constraint_key) - 4)
+      WHEN c.constraint_key LIKE '%\\_max' ESCAPE '\\' THEN LEFT(c.constraint_key, LENGTH(c.constraint_key) - 4)
+      ELSE c.constraint_key
+    END AS constraint_key,
+    MAX(
+      CASE
+        WHEN c.constraint_key LIKE '%\\_min' ESCAPE '\\' THEN c.constraint_value
+        WHEN c.constraint_key LIKE '%\\_max' ESCAPE '\\' THEN 0
+        ELSE COALESCE(NULLIF(c.min_select, 0), c.constraint_value, 0)
+      END
+    ) AS min_select,
+    MAX(
+      CASE
+        WHEN c.constraint_key LIKE '%\\_max' ESCAPE '\\' THEN c.constraint_value
+        WHEN c.constraint_key LIKE '%\\_min' ESCAPE '\\' THEN 0
+        ELSE COALESCE(NULLIF(c.max_select, 0), c.constraint_value, 0)
+      END
+    ) AS max_select
+  FROM menu_section_tier_constraints c
+  WHERE c.is_active = 1
+  GROUP BY
+    c.tier_id,
+    CASE
+      WHEN c.constraint_key LIKE '%\\_min' ESCAPE '\\' THEN LEFT(c.constraint_key, LENGTH(c.constraint_key) - 4)
+      WHEN c.constraint_key LIKE '%\\_max' ESCAPE '\\' THEN LEFT(c.constraint_key, LENGTH(c.constraint_key) - 4)
+      ELSE c.constraint_key
+    END
+) AS legacy
+ON DUPLICATE KEY UPDATE
+  min_select = VALUES(min_select),
+  max_select = VALUES(max_select),
+  constraint_value = NULL,
+  is_active = VALUES(is_active),
+  updated_at = CURRENT_TIMESTAMP;
+
+UPDATE menu_section_tier_constraints
+SET is_active = 0
+WHERE constraint_key LIKE '%\\_min' ESCAPE '\\'
+   OR constraint_key LIKE '%\\_max' ESCAPE '\\';
 
 INSERT INTO slides (title, caption, image_url, alt_text, display_order, is_active)
 VALUES

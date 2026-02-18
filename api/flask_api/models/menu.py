@@ -165,19 +165,47 @@ class Menu:
   def _normalize_tier_constraints(rows):
     constraints = {}
     for row in rows:
-      key = row["constraint_key"]
-      value = row["constraint_value"]
-
-      if key.endswith("_min"):
-        base_key = key[:-4]
-        constraints.setdefault(base_key, {})["min"] = value
-        continue
-      if key.endswith("_max"):
-        base_key = key[:-4]
-        constraints.setdefault(base_key, {})["max"] = value
+      key = str(row.get("constraint_key") or "").strip()
+      if not key:
         continue
 
-      constraints[key] = value
+      min_select = row.get("min_select")
+      max_select = row.get("max_select")
+      legacy_value = row.get("constraint_value")
+
+      try:
+        min_select = int(min_select) if min_select is not None else None
+      except (TypeError, ValueError):
+        min_select = None
+      try:
+        max_select = int(max_select) if max_select is not None else None
+      except (TypeError, ValueError):
+        max_select = None
+      try:
+        legacy_value = int(legacy_value) if legacy_value is not None else None
+      except (TypeError, ValueError):
+        legacy_value = None
+
+      # Backward compatibility for legacy suffix rows.
+      if key.endswith("_min") and legacy_value is not None:
+        base_key = key[:-4]
+        constraints.setdefault(base_key, {"min": 0, "max": 0})["min"] = legacy_value
+        continue
+      if key.endswith("_max") and legacy_value is not None:
+        base_key = key[:-4]
+        constraints.setdefault(base_key, {"min": 0, "max": 0})["max"] = legacy_value
+        continue
+
+      if legacy_value is not None:
+        if min_select is None or (min_select == 0 and (max_select is None or max_select == 0)):
+          min_select = legacy_value
+        if max_select is None or (max_select == 0 and (min_select is None or min_select == legacy_value)):
+          max_select = legacy_value
+
+      constraints[key] = {
+        "min": int(min_select or 0),
+        "max": int(max_select or 0),
+      }
 
     return constraints
 
@@ -489,7 +517,7 @@ class Menu:
 
     tier_constraint_rows = query_db(
       """
-      SELECT tier_id, constraint_key, constraint_value
+      SELECT tier_id, constraint_key, min_select, max_select, constraint_value
       FROM menu_section_tier_constraints
       WHERE is_active = 1
       ORDER BY tier_id ASC, id ASC;
@@ -623,7 +651,7 @@ class Menu:
     if section_key and level == "tier" and title:
       tier_rows = query_db(
         """
-        SELECT c.constraint_key, c.constraint_value
+        SELECT c.constraint_key, c.min_select, c.max_select, c.constraint_value
         FROM menu_sections s
         JOIN menu_section_tiers t
           ON t.section_id = s.id AND t.is_active = 1
@@ -1149,34 +1177,60 @@ class Menu:
           tier_id = tier_row["id"]
 
           for constraint_key, constraint_value in tier.get("constraints", {}).items():
+            min_select = None
+            max_select = None
+
             if isinstance(constraint_value, dict):
               min_value = constraint_value.get("min")
               max_value = constraint_value.get("max")
-              constraint_rows = []
               if isinstance(min_value, int):
-                constraint_rows.append((f"{constraint_key}_min", min_value))
+                min_select = min_value
               if isinstance(max_value, int):
-                constraint_rows.append((f"{constraint_key}_max", max_value))
-            else:
-              constraint_rows = [(constraint_key, constraint_value)]
+                max_select = max_value
+            elif isinstance(constraint_value, int):
+              min_select = constraint_value
+              max_select = constraint_value
 
-            for db_constraint_key, db_constraint_value in constraint_rows:
-              query_db(
-                """
-                INSERT INTO menu_section_tier_constraints (tier_id, constraint_key, constraint_value, is_active)
-                VALUES (%(tier_id)s, %(constraint_key)s, %(constraint_value)s, 1)
-                ON DUPLICATE KEY UPDATE
-                  constraint_value = VALUES(constraint_value),
-                  is_active = 1,
-                  updated_at = CURRENT_TIMESTAMP;
-                """,
-                {
-                  "tier_id": tier_id,
-                  "constraint_key": db_constraint_key,
-                  "constraint_value": db_constraint_value,
-                },
-                fetch="none",
+            if min_select is None and max_select is None:
+              continue
+            if min_select is None:
+              min_select = int(max_select)
+            if max_select is None:
+              max_select = int(min_select)
+
+            query_db(
+              """
+              INSERT INTO menu_section_tier_constraints (
+                tier_id,
+                constraint_key,
+                min_select,
+                max_select,
+                constraint_value,
+                is_active
               )
+              VALUES (
+                %(tier_id)s,
+                %(constraint_key)s,
+                %(min_select)s,
+                %(max_select)s,
+                NULL,
+                1
+              )
+              ON DUPLICATE KEY UPDATE
+                min_select = VALUES(min_select),
+                max_select = VALUES(max_select),
+                constraint_value = NULL,
+                is_active = 1,
+                updated_at = CURRENT_TIMESTAMP;
+              """,
+              {
+                "tier_id": tier_id,
+                "constraint_key": constraint_key,
+                "min_select": min_select,
+                "max_select": max_select,
+              },
+              fetch="none",
+            )
 
           for bullet_order, bullet in enumerate(tier.get("bullets", []), start=1):
             item_id = item_ids.get(bullet)
