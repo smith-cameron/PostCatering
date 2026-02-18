@@ -146,6 +146,15 @@ Security notes:
 - `POST /api/admin/menu/sync`  
   Protected endpoint for schema apply/reset/seed operations. Requires `MENU_ADMIN_TOKEN` in header.
 
+## API Naming Conventions
+
+- HTTP payloads use `snake_case` for API field names.
+- React component/view-model state uses `camelCase`.
+- Boundary mapping is enforced in `client/src/hooks/useMenuConfig.js` for `/api/menus`:
+  - API fields like `page_title`, `intro_blocks`, `section_id`, `course_type`, `include_keys`, `tier_title`
+  - Client fields like `pageTitle`, `introBlocks`, `sectionId`, `courseType`, `includeKeys`, `tierTitle`
+- Inquiry request/response payloads remain `snake_case` end-to-end to align with backend validators and DB fields.
+
 ## Menu Data And Maintenance
 
 Primary menu source is normalized MySQL tables. Seed source is:
@@ -261,7 +270,7 @@ Backend:
 
 #### Docs
 - Reconcile outdated docs/comments (e.g., `api/sql/menu_seed.sql` still references auto-seed behavior).
-- Define and enforce API naming conventions at boundaries (snake_case vs camelCase).
+- ~~Define and enforce API naming conventions at boundaries (snake_case vs camelCase).~~
 
 ## Program And Menu Reference (Current Data)
 

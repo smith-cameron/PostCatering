@@ -6,6 +6,55 @@ const EMPTY = {
   formalPlanOptions: [],
 };
 
+const FIELD_KEY_MAP = {
+  page_title: "pageTitle",
+  intro_blocks: "introBlocks",
+  section_id: "sectionId",
+  course_type: "courseType",
+  include_keys: "includeKeys",
+  tier_title: "tierTitle",
+};
+
+const toClientShape = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((item) => toClientShape(item));
+  }
+
+  if (value && typeof value === "object") {
+    return Object.entries(value).reduce((acc, [key, entry]) => {
+      const mappedKey = FIELD_KEY_MAP[key] || key;
+      acc[mappedKey] = toClientShape(entry);
+      return acc;
+    }, {});
+  }
+
+  return value;
+};
+
+const normalizeMenuConfig = (body) => {
+  const menuOptionsRaw = body.menu_options || {};
+  const formalPlanOptionsRaw = body.formal_plan_options || [];
+  const menuRaw = body.menu || {};
+
+  const menuOptions = Object.entries(menuOptionsRaw).reduce((acc, [key, option]) => {
+    acc[key] = toClientShape(option);
+    return acc;
+  }, {});
+
+  const menu = Object.entries(menuRaw).reduce((acc, [catalogKey, catalog]) => {
+    acc[catalogKey] = toClientShape(catalog);
+    return acc;
+  }, {});
+
+  const formalPlanOptions = formalPlanOptionsRaw.map((plan) => toClientShape(plan));
+
+  return {
+    menu,
+    menuOptions,
+    formalPlanOptions,
+  };
+};
+
 const useMenuConfig = () => {
   const [state, setState] = useState({
     ...EMPTY,
@@ -23,9 +72,7 @@ const useMenuConfig = () => {
         if (!response.ok) {
           throw new Error(body.error || "Failed to load menu config.");
         }
-        const menu = body.menu || body.MENU || {};
-        const menuOptions = body.menu_options || body.MENU_OPTIONS || {};
-        const formalPlanOptions = body.formal_plan_options || body.FORMAL_PLAN_OPTIONS || [];
+        const { menu, menuOptions, formalPlanOptions } = normalizeMenuConfig(body);
         if (!menu || typeof menu !== "object" || !Object.keys(menu).length) {
           throw new Error("Unexpected /api/menus payload. Expected menu config keys are missing.");
         }

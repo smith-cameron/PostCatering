@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from pathlib import Path
 
 from flask_api.config.mysqlconnection import connect_to_mysql
@@ -25,6 +26,40 @@ class MenuService:
     "menu_option_groups",
     "menu_items",
   )
+
+  @staticmethod
+  def _to_snake_case(value):
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", str(value)).lower()
+
+  @classmethod
+  def _to_snake_case_keys(cls, value):
+    if isinstance(value, list):
+      return [cls._to_snake_case_keys(item) for item in value]
+    if isinstance(value, dict):
+      return {cls._to_snake_case(key): cls._to_snake_case_keys(item) for key, item in value.items()}
+    return value
+
+  @classmethod
+  def _normalize_menu_payload_for_api(cls, payload):
+    menu_options = payload.get("menu_options", {})
+    formal_plan_options = payload.get("formal_plan_options", [])
+    menu = payload.get("menu", {})
+
+    # Keep catalog/menu option IDs as-is; only normalize schema field names.
+    normalized_menu_options = {
+      key: cls._to_snake_case_keys(option)
+      for key, option in menu_options.items()
+    }
+    normalized_menu = {
+      key: cls._to_snake_case_keys(catalog)
+      for key, catalog in menu.items()
+    }
+
+    return {
+      "menu_options": normalized_menu_options,
+      "formal_plan_options": cls._to_snake_case_keys(formal_plan_options),
+      "menu": normalized_menu,
+    }
 
   @staticmethod
   def _load_seed_payload():
@@ -143,7 +178,7 @@ class MenuService:
     if source == "db":
       payload = Menu.get_config_payload()
       if payload:
-        return {"source": "db", **payload}, 200
+        return {"source": "db", **cls._normalize_menu_payload_for_api(payload)}, 200
 
       return {
         "error": "Menu config not found in DB. Run admin menu seed/migration endpoint or script."
@@ -151,5 +186,5 @@ class MenuService:
 
     fallback = cls._load_seed_payload()
     if fallback:
-      return {"source": "seed-file", **fallback}, 200
+      return {"source": "seed-file", **cls._normalize_menu_payload_for_api(fallback)}, 200
     return {"error": "Menu seed payload not found."}, 500
