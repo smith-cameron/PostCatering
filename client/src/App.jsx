@@ -35,7 +35,7 @@ function App() {
         }}>
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Wrapper />}>git
+            <Route path="/" element={<Wrapper />}>
               <Route index element={<Landing />} />
               <Route path="services/:menuKey" element={<ServiceMenu />} />
               <Route path="inquiry" element={<Inquiry />} />

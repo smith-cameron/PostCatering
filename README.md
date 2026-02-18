@@ -218,7 +218,7 @@ Backend:
 #### Performance
 - Avoid duplicate `/api/menus` fetches by centralizing menu config state/caching.
 #### Frontend Cleanup
-- Remove stray `git` token in `client/src/App.jsx`.
+- ~~Remove stray `git` token in `client/src/App.jsx`.~~
 - ~~Fix current lint violations and keep lint clean (`Footer` unused imports, unused `subtitle` prop, unused bootstrap import, effect setState warning).~~
 - Remove archive/dead file `client/src/static/menuData.jsx` (or move it to docs/reference only).
 - ~~Remove or implement the currently empty `Footer` component.~~
