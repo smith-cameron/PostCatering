@@ -44,11 +44,28 @@ export const getMinEventDateISO = () => {
 
 export const buildCommunitySelectionRules = (plan) => {
   if (!plan) return null;
+  const normalizedTitle = String(plan.title || "").toLowerCase();
+
+  if (plan.sectionId === "community_buffet_tiers" && normalizedTitle.includes("tier 1")) {
+    return {
+      entree: { min: 2, max: 2 },
+      sides: { min: 2, max: 2 },
+      salads: { min: 1, max: 1 },
+    };
+  }
+
+  if (plan.sectionId === "community_buffet_tiers" && normalizedTitle.includes("tier 2")) {
+    return {
+      entree: { min: 2, max: 3 },
+      sides: { min: 3, max: 3 },
+      salads: { min: 2, max: 2 },
+    };
+  }
 
   if (plan.constraints && typeof plan.constraints === "object") {
     const normalizedConstraints = Object.entries(plan.constraints).reduce((acc, [key, value]) => {
       if (typeof value === "number") {
-        acc[key] = { max: value };
+        acc[key] = { min: value, max: value };
       } else if (value && typeof value === "object") {
         acc[key] = value;
       }
@@ -136,44 +153,39 @@ export const getDisplayPlanDetails = (serviceKey, plan, communityLimits) => {
   }
   if (serviceKey !== "community" || plan.level !== "tier") return plan.details || [];
 
-  const details = [];
-  if (communityLimits?.entree?.max) {
-    const entreeMin = communityLimits?.entree?.min || 0;
-    const entreeMax = communityLimits.entree.max;
-    if (entreeMin && entreeMin === entreeMax) {
-      details.push(`Choose ${entreeMax} Entrees/Proteins`);
-    } else if (entreeMin && entreeMin < entreeMax) {
-      details.push(`Choose ${entreeMin}-${entreeMax} Entrees/Proteins`);
-    } else {
-      details.push(`Choose up to ${entreeMax} Entrees/Proteins`);
-    }
+  const normalizedTierTitle = String(plan.title || "").toLowerCase();
+  if (plan.sectionId === "community_buffet_tiers" && normalizedTierTitle.includes("tier 1")) {
+    return ["2 Entrees/Protiens", "2 Sides", "1 Salad", "Bread"];
   }
-  const appendCommunityDetail = (limits, label) => {
-    if (!limits?.max) return;
+  if (plan.sectionId === "community_buffet_tiers" && normalizedTierTitle.includes("tier 2")) {
+    return ["2-3 Entrees/Protiens", "3 Sides", "2 Salads", "Bread"];
+  }
+
+  const details = [];
+  const toCommunityCountDetail = (limits, pluralLabel) => {
+    if (!limits?.max) return null;
     const min = limits?.min || 0;
     const max = limits.max;
-    if (min && min === max) {
-      details.push(`Choose ${max} ${label}`);
-    } else if (min && min < max) {
-      details.push(`Choose ${min}-${max} ${label}`);
-    } else {
-      details.push(`Choose up to ${max} ${label}`);
-    }
+    const singularLabel = pluralLabel.replace(/s$/i, "");
+    if (min && min === max) return `${max} ${max === 1 ? singularLabel : pluralLabel}`;
+    if (min && min < max) return `${min}-${max} ${pluralLabel}`;
+    return `${max} ${pluralLabel}`;
   };
 
-  appendCommunityDetail(communityLimits?.sides, "Sides");
-  appendCommunityDetail(communityLimits?.salads, "Salads");
-  if (!communityLimits?.sides && !communityLimits?.salads && communityLimits?.sides_salads?.max) {
-    const sidesMin = communityLimits?.sides_salads?.min || 0;
-    const sidesMax = communityLimits.sides_salads.max;
-    if (sidesMin && sidesMin === sidesMax) {
-      details.push(`Choose ${sidesMax} Sides/Salads`);
-    } else if (sidesMin && sidesMin < sidesMax) {
-      details.push(`Choose ${sidesMin}-${sidesMax} Sides/Salads`);
-    } else {
-      details.push(`Choose up to ${sidesMax} Sides/Salads`);
-    }
+  if (communityLimits?.entree?.max) {
+    details.push(toCommunityCountDetail(communityLimits.entree, "entrees"));
   }
+
+  const sideDetail = toCommunityCountDetail(communityLimits?.sides, "sides");
+  if (sideDetail) details.push(sideDetail);
+  const saladDetail = toCommunityCountDetail(communityLimits?.salads, "salads");
+  if (saladDetail) details.push(saladDetail);
+
+  if (!communityLimits?.sides && !communityLimits?.salads && communityLimits?.sides_salads?.max) {
+    const combined = toCommunityCountDetail(communityLimits.sides_salads, "sides/salads");
+    if (combined) details.push(combined);
+  }
+  details.push("bread");
 
   return details.length ? details : plan.details || [];
 };
