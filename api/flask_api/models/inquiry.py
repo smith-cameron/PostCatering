@@ -1,6 +1,6 @@
 import json
 
-from flask_api.config.mysqlconnection import query_db
+from flask_api.config.mysqlconnection import db_transaction, query_db
 from flask_api.validators.inquiry_validators import (
   normalize_budget,
   normalize_email,
@@ -92,7 +92,7 @@ class Inquiry:
       "desired_menu_items_json": json.dumps(desired_menu_items, ensure_ascii=False),
     }
 
-  def _save_structured_selections(self):
+  def _save_structured_selections(self, connection=None):
     if not self.id:
       return
 
@@ -117,7 +117,7 @@ class Inquiry:
       **self._to_structured_selection_dict(),
     }
     try:
-      query_db(query, payload, fetch="none")
+      query_db(query, payload, fetch="none", connection=connection, auto_commit=False)
     except Exception as exc:
       # Backward compatibility while environments roll out schema.sql changes.
       error_text = str(exc).lower()
@@ -152,8 +152,15 @@ class Inquiry:
         %(email_sent)s
       );
     """
-    self.id = query_db(query, self.to_db_dict(), fetch="none")
-    self._save_structured_selections()
+    with db_transaction() as connection:
+      self.id = query_db(
+        query,
+        self.to_db_dict(),
+        fetch="none",
+        connection=connection,
+        auto_commit=False,
+      )
+      self._save_structured_selections(connection=connection)
     return self.id
 
   def update_email_sent(self, email_sent):

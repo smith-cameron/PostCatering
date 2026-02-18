@@ -2,6 +2,7 @@ import logging
 import os
 
 from flask import Flask
+from flask_api.config.mysqlconnection import close_request_connection
 
 log_level_name = os.getenv("LOG_LEVEL", "INFO").upper()
 log_level = getattr(logging, log_level_name, logging.INFO)
@@ -20,3 +21,8 @@ def add_cors_headers(response):
   response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
   response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
   return response
+
+
+@app.teardown_appcontext
+def teardown_db_connection(exception):
+  close_request_connection(exception=exception)
