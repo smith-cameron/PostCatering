@@ -6,6 +6,9 @@ const EMPTY = {
   formalPlanOptions: [],
 };
 
+let cachedMenuConfig = null;
+let inFlightMenuConfigRequest = null;
+
 const FIELD_KEY_MAP = {
   page_title: "pageTitle",
   intro_blocks: "introBlocks",
@@ -55,27 +58,61 @@ const normalizeMenuConfig = (body) => {
   };
 };
 
+const fetchMenuConfig = async () => {
+  const response = await fetch("/api/menus");
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body.error || "Failed to load menu config.");
+  }
+
+  const normalized = normalizeMenuConfig(body);
+  if (!normalized.menu || typeof normalized.menu !== "object" || !Object.keys(normalized.menu).length) {
+    throw new Error("Unexpected /api/menus payload. Expected menu config keys are missing.");
+  }
+
+  return normalized;
+};
+
+const getSharedMenuConfig = async () => {
+  if (cachedMenuConfig) {
+    return cachedMenuConfig;
+  }
+
+  if (!inFlightMenuConfigRequest) {
+    inFlightMenuConfigRequest = fetchMenuConfig()
+      .then((config) => {
+        cachedMenuConfig = config;
+        return config;
+      })
+      .finally(() => {
+        inFlightMenuConfigRequest = null;
+      });
+  }
+
+  return inFlightMenuConfigRequest;
+};
+
 const useMenuConfig = () => {
-  const [state, setState] = useState({
-    ...EMPTY,
-    loading: true,
-    error: "",
-  });
+  const [state, setState] = useState(() =>
+    cachedMenuConfig
+      ? {
+          ...cachedMenuConfig,
+          loading: false,
+          error: "",
+        }
+      : {
+          ...EMPTY,
+          loading: true,
+          error: "",
+        }
+  );
 
   useEffect(() => {
     let isMounted = true;
 
     const load = async () => {
       try {
-        const response = await fetch("/api/menus");
-        const body = await response.json();
-        if (!response.ok) {
-          throw new Error(body.error || "Failed to load menu config.");
-        }
-        const { menu, menuOptions, formalPlanOptions } = normalizeMenuConfig(body);
-        if (!menu || typeof menu !== "object" || !Object.keys(menu).length) {
-          throw new Error("Unexpected /api/menus payload. Expected menu config keys are missing.");
-        }
+        const { menu, menuOptions, formalPlanOptions } = await getSharedMenuConfig();
         if (!isMounted) return;
         setState({
           menu,
