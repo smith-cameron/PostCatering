@@ -102,8 +102,14 @@ const toTitleCase = (value) =>
     .map((word) => word[0]?.toUpperCase() + word.slice(1).toLowerCase())
     .join(" ");
 
+const toMatchText = (value) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase();
+
 const getSelectionCategoryKeyFromText = (value) => {
-  const lower = String(value || "").toLowerCase();
+  const lower = toMatchText(value);
   if (lower.includes("passed")) return "passed";
   if (lower.includes("starter")) return "starter";
   if (lower.includes("salad")) return "salads";
@@ -141,7 +147,7 @@ const getCommunityPackageDetails = (plan) => {
   if (!plan) return [];
   const normalizedTitle = String(plan.title || "").toLowerCase();
   if (normalizedTitle.includes("hearty homestyle")) {
-    return ["Choose 1 Entree/Protein", "Choose 2 Sides", "Bread"];
+    return ["Choose 1 Entrée/Protein", "Choose 2 Sides", "Bread"];
   }
   return parseCommunityPackageDetails(plan.details);
 };
@@ -150,10 +156,10 @@ const getDisplayPlanDetails = (serviceKey, plan, communityLimits) => {
   if (!plan) return [];
   if (serviceKey === "formal" && plan.level === "package") {
     if (plan.id === "formal:3-course") {
-      return ["2 Passed Appetizers", "1 Starter", "1 or 2 Entrees", "Bread"];
+      return ["2 Passed Appetizers", "1 Starter", "1 or 2 Entrées", "Bread"];
     }
     if (plan.id === "formal:2-course") {
-      return ["1 Starter", "1 Entree", "Bread"];
+      return ["1 Starter", "1 Entrée", "Bread"];
     }
   }
   if (serviceKey === "community" && plan.level === "package") {
@@ -166,11 +172,11 @@ const getDisplayPlanDetails = (serviceKey, plan, communityLimits) => {
     const entreeMin = communityLimits?.entree?.min || 0;
     const entreeMax = communityLimits.entree.max;
     if (entreeMin && entreeMin === entreeMax) {
-      details.push(`Choose ${entreeMax} Entrees/Proteins`);
+      details.push(`Choose ${entreeMax} Entrées/Proteins`);
     } else if (entreeMin && entreeMin < entreeMax) {
-      details.push(`Choose ${entreeMin}-${entreeMax} Entrees/Proteins`);
+      details.push(`Choose ${entreeMin}-${entreeMax} Entrées/Proteins`);
     } else {
-      details.push(`Choose up to ${entreeMax} Entrees/Proteins`);
+      details.push(`Choose up to ${entreeMax} Entrées/Proteins`);
     }
   }
   const appendCommunityDetail = (limits, label) => {
@@ -221,7 +227,7 @@ const getDisplayGroupTitle = (serviceKey, group) => {
   const map = {
     passed: "Passed Appetizers",
     starter: "Starters",
-    entree: "Entrees",
+    entree: "Entrées",
     sides: "Sides",
   };
   return map[group.groupKey] || group.title;

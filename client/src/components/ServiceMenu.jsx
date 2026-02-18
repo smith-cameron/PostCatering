@@ -30,8 +30,7 @@ const MenuTable = ({ columns, rows }) => (
 );
 
 const normalizeMenuText = (value) => {
-  if (typeof value !== "string") return value;
-  return value.replace(/Entr.{0,3}e/g, "Entree").replace(/Entr.{0,3}es/g, "Entrees");
+  return value;
 };
 const isSaladName = (value) => String(value || "").toLowerCase().includes("salad");
 const splitItemsBySaladName = (items = []) =>
@@ -141,7 +140,7 @@ const getFormalCourseLabel = (courseType) => {
   const map = {
     passed: "Passed Appetizers",
     starter: "Starters",
-    entree: "Entrees",
+    entree: "Entrées",
     sides: "Sides",
   };
   return map[courseType] || "Menu Options";
@@ -150,10 +149,10 @@ const getFormalCourseLabel = (courseType) => {
 const getFormalPlanDetails = (plan) => {
   if (!plan) return [];
   if (plan.id === "formal:3-course") {
-    return ["2 Passed Appetizers", "1 Starter", "1 or 2 Entrees", "Bread"];
+    return ["2 Passed Appetizers", "1 Starter", "1 or 2 Entrées", "Bread"];
   }
   if (plan.id === "formal:2-course") {
-    return ["1 Starter", "1 Entree", "Bread"];
+    return ["1 Starter", "1 Entrée", "Bread"];
   }
   return plan.details || [];
 };
@@ -325,7 +324,7 @@ const ServiceMenu = () => {
                           ? (() => {
                               const limits = normalizeCommunityTierConstraints(s.sectionId, t.tierTitle, t.constraints);
                               return [
-                                toCommunityTierBullet("Entrees", limits.entree),
+                                toCommunityTierBullet("Entrées", limits.entree),
                                 toCommunityTierBullet("Sides", limits.sides),
                                 toCommunityTierBullet("Salads", limits.salads),
                                 !limits.sides && !limits.salads
