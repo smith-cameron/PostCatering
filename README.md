@@ -223,7 +223,7 @@ Backend:
 #### Architecture
 - Break up oversized components (`client/src/components/Inquiry.jsx`, `client/src/components/ServiceMenu.jsx`) into smaller hooks/components.
 - Consolidate duplicated service-selection rules/constraints so frontend and backend use one source of truth.
-- Decide whether inquiry is modal-only or route-only; current setup mounts `Inquiry` in `Wrapper` and also at `/inquiry`.
+- ~~Decide whether inquiry is modal-only or route-only; current setup mounts `Inquiry` in `Wrapper` and also at `/inquiry`.~~
 #### Performance
 - Avoid duplicate `/api/menus` fetches by centralizing menu config state/caching.
 #### Frontend Cleanup

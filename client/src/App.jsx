@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { useState } from "react";
 import Context from "./context";
-import { Wrapper, Landing, NotFound, ServiceMenu, Inquiry } from "./imports";
+import { Wrapper, Landing, NotFound, ServiceMenu } from "./imports";
 import "./App.css";
 
 function App() {
@@ -38,7 +38,6 @@ function App() {
             <Route path="/" element={<Wrapper />}>
               <Route index element={<Landing />} />
               <Route path="services/:menuKey" element={<ServiceMenu />} />
-              <Route path="inquiry" element={<Inquiry />} />
               <Route path="*" element={<NotFound />} />
             </Route>
           </Routes>
