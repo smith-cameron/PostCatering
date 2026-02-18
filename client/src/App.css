@@ -158,6 +158,18 @@ button:hover {
 }
 
 /* =========================
+   Accordion Styling
+   ========================= */
+
+.accordion-button {
+  font-weight: 700;
+}
+
+.menu-section-title {
+  font-weight: 600;
+}
+
+/* =========================
    Responsive Breakpoints
    ========================= */
 

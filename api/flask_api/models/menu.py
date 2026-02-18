@@ -9,6 +9,26 @@ class Menu:
     slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
     return slug[:120] if slug else None
 
+  @staticmethod
+  def _normalize_tier_constraints(rows):
+    constraints = {}
+    for row in rows:
+      key = row["constraint_key"]
+      value = row["constraint_value"]
+
+      if key.endswith("_min"):
+        base_key = key[:-4]
+        constraints.setdefault(base_key, {})["min"] = value
+        continue
+      if key.endswith("_max"):
+        base_key = key[:-4]
+        constraints.setdefault(base_key, {})["max"] = value
+        continue
+
+      constraints[key] = value
+
+    return constraints
+
   @classmethod
   def _get_menu_options(cls):
     query = """
@@ -273,11 +293,15 @@ class Menu:
       ORDER BY tier_id ASC, id ASC;
       """
     )
+    tier_constraints_by_id = {}
     for row in tier_constraint_rows:
-      tier = tiers_by_id.get(row["tier_id"])
+      tier_constraints_by_id.setdefault(row["tier_id"], []).append(row)
+
+    for tier_id, rows in tier_constraints_by_id.items():
+      tier = tiers_by_id.get(tier_id)
       if tier is None:
         continue
-      tier.setdefault("constraints", {})[row["constraint_key"]] = row["constraint_value"]
+      tier["constraints"] = cls._normalize_tier_constraints(rows)
 
     tier_bullet_rows = query_db(
       """
@@ -687,22 +711,34 @@ class Menu:
           tier_id = tier_row["id"]
 
           for constraint_key, constraint_value in tier.get("constraints", {}).items():
-            query_db(
-              """
-              INSERT INTO menu_section_tier_constraints (tier_id, constraint_key, constraint_value, is_active)
-              VALUES (%(tier_id)s, %(constraint_key)s, %(constraint_value)s, 1)
-              ON DUPLICATE KEY UPDATE
-                constraint_value = VALUES(constraint_value),
-                is_active = 1,
-                updated_at = CURRENT_TIMESTAMP;
-              """,
-              {
-                "tier_id": tier_id,
-                "constraint_key": constraint_key,
-                "constraint_value": constraint_value,
-              },
-              fetch="none",
-            )
+            if isinstance(constraint_value, dict):
+              min_value = constraint_value.get("min")
+              max_value = constraint_value.get("max")
+              constraint_rows = []
+              if isinstance(min_value, int):
+                constraint_rows.append((f"{constraint_key}_min", min_value))
+              if isinstance(max_value, int):
+                constraint_rows.append((f"{constraint_key}_max", max_value))
+            else:
+              constraint_rows = [(constraint_key, constraint_value)]
+
+            for db_constraint_key, db_constraint_value in constraint_rows:
+              query_db(
+                """
+                INSERT INTO menu_section_tier_constraints (tier_id, constraint_key, constraint_value, is_active)
+                VALUES (%(tier_id)s, %(constraint_key)s, %(constraint_value)s, 1)
+                ON DUPLICATE KEY UPDATE
+                  constraint_value = VALUES(constraint_value),
+                  is_active = 1,
+                  updated_at = CURRENT_TIMESTAMP;
+                """,
+                {
+                  "tier_id": tier_id,
+                  "constraint_key": db_constraint_key,
+                  "constraint_value": db_constraint_value,
+                },
+                fetch="none",
+              )
 
           for bullet_order, bullet in enumerate(tier.get("bullets", []), start=1):
             item_id = item_ids.get(bullet)

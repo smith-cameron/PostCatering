@@ -60,8 +60,9 @@
       "title": "Two-Course Dinner",
       "price": "$65-$90 per person",
       "details": [
-        "Starter + Entree",
-        "Sides can be selected with the entree"
+        "1 Starter",
+        "1 Entree",
+        "Bread"
       ],
       "constraints": {
         "starter": {
@@ -80,8 +81,10 @@
       "title": "Three-Course Dinner",
       "price": "$75-$110+ per person",
       "details": [
-        "Passed Appetizers + Starter + Entree",
-        "Sides can be selected with the entree"
+        "2 Passed Appetizers",
+        "1 Starter",
+        "1 or 2 Entrees",
+        "Bread"
       ],
       "constraints": {
         "passed": {
@@ -313,7 +316,7 @@
         {
           "sectionId": "community_taco_bar",
           "type": "package",
-          "title": "Taco Bar (Carne Asada or Chicken)",
+          "title": "Taco Bar (Carne Asada, Chicken, Carnitas, or Marinated Pork)",
           "description": "Includes Spanish rice, refried beans, tortillas, toppings",
           "price": "$18-$25 per person"
         },
@@ -333,7 +336,8 @@
               "tierTitle": "Tier 1: Casual Buffet",
               "constraints": {
                 "entree": 2,
-                "sides_salads": 3
+                "sides": 2,
+                "salads": 1
               },
               "price": "$30-$40 per person",
               "bullets": [
@@ -346,8 +350,18 @@
             {
               "tierTitle": "Tier 2: Elevated Buffet / Family-Style",
               "constraints": {
-                "entree": 3,
-                "sides_salads": 3
+                "entree": {
+                  "min": 2,
+                  "max": 3
+                },
+                "sides": {
+                  "min": 3,
+                  "max": 3
+                },
+                "salads": {
+                  "min": 2,
+                  "max": 2
+                }
               },
               "price": "$45-$65 per person",
               "bullets": [

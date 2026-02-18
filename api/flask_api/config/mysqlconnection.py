@@ -1,6 +1,12 @@
 import os
+from pathlib import Path
 
 import pymysql.cursors
+from dotenv import load_dotenv
+
+
+_API_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(_API_ROOT / ".env")
 
 
 def connect_to_mysql():

@@ -2,7 +2,7 @@ import InfoModal from "./InfoModal";
 
 const MondayMealModal = ({ show, onHide }) => {
   return (
-    <InfoModal show={show} onHide={onHide} title="Our Monday Meal Program (Community Impact)">
+    <InfoModal show={show} onHide={onHide} title="Our Monday Meal Program" >
       <p>
         The heart of our work begins every Monday.
         <br />

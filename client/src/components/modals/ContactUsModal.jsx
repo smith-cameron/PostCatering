@@ -1,4 +1,4 @@
-import { Modal } from "react-bootstrap";
+import { Button, Modal } from "react-bootstrap";
 
 const ContactUsModal = ({ show, onHide }) => {
   return (
@@ -17,6 +17,11 @@ const ContactUsModal = ({ show, onHide }) => {
           <strong>Mailing Address:</strong> ____________________
         </p>
       </Modal.Body>
+      <Modal.Footer>
+        <Button variant="secondary" onClick={onHide}>
+          Close
+        </Button>
+      </Modal.Footer>
     </Modal>
   );
 };

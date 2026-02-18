@@ -8,7 +8,45 @@ Use `is_active = 0` to hide content instead of deleting rows. The API only retur
 
 ## One-time Initialization
 
-If the menu tables are empty, the API auto-seeds from `api/sql/menu_seed_payload.json` the first time `/api/menus` is requested.
+There is no lazy auto-seed on `/api/menus`.
+Run an explicit sync via admin endpoint or script when needed.
+
+## On-Demand Sync (Recommended)
+
+### Admin endpoint
+
+`POST /api/admin/menu/sync`
+
+Headers:
+- `X-Menu-Admin-Token: <MENU_ADMIN_TOKEN>` or `Authorization: Bearer <MENU_ADMIN_TOKEN>`
+
+JSON body:
+- `apply_schema` (boolean, default `false`)
+- `reset` (boolean, default `false`)
+- `seed` (boolean, default `true`)
+
+Example:
+
+```json
+{
+  "apply_schema": true,
+  "reset": true,
+  "seed": true
+}
+```
+
+### Script
+
+Run from `api/`:
+
+```bash
+python scripts/menu_admin_sync.py --apply-schema --reset
+```
+
+Flags:
+- `--apply-schema`: execute `api/sql/schema.sql` statements first
+- `--reset`: truncate normalized menu tables before seed
+- `--no-seed`: skip seed
 
 ## Common Operations
 

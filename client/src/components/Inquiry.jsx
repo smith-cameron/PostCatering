@@ -15,11 +15,29 @@ const EMPTY_FORM = {
   message: "",
 };
 
-const COMMUNITY_TACO_BAR_OPTIONS = ["Carne Asada", "Chicken", "Carnitas"];
+const COMMUNITY_TACO_BAR_OPTIONS = ["Carne Asada", "Chicken", "Carnitas", "Marinated Pork"];
 
 const toIdPart = (value) => String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+const isSaladName = (value) => String(value || "").toLowerCase().includes("salad");
+const splitSidesAndSalads = (items = []) =>
+  items.reduce(
+    (acc, item) => {
+      if (isSaladName(item?.name)) {
+        acc.salads.push(item);
+      } else {
+        acc.sides.push(item);
+      }
+      return acc;
+    },
+    { sides: [], salads: [] }
+  );
 
 const isPricedValue = (value) => /\$/.test(String(value || ""));
+const formatBudgetWithCommas = (value) => {
+  const digitsOnly = String(value || "").replace(/\D/g, "");
+  if (!digitsOnly) return "";
+  return Number(digitsOnly).toLocaleString("en-US");
+};
 const getMinEventDateISO = () => {
   const now = new Date();
   now.setDate(now.getDate() + 7);
@@ -29,8 +47,24 @@ const getMinEventDateISO = () => {
 
 const buildCommunitySelectionRules = (plan) => {
   if (!plan) return null;
+  const normalizedTitle = String(plan.title || "").toLowerCase();
+  if (plan.sectionId === "community_buffet_tiers" && normalizedTitle.includes("tier 1")) {
+    return {
+      entree: { min: 2, max: 2 },
+      sides: { min: 2, max: 2 },
+      salads: { min: 1, max: 1 },
+    };
+  }
+  if (plan.sectionId === "community_buffet_tiers" && normalizedTitle.includes("tier 2")) {
+    return {
+      entree: { min: 2, max: 3 },
+      sides: { min: 3, max: 3 },
+      salads: { min: 2, max: 2 },
+    };
+  }
+
   if (plan.constraints && typeof plan.constraints === "object") {
-    return Object.entries(plan.constraints).reduce((acc, [key, value]) => {
+    const normalizedConstraints = Object.entries(plan.constraints).reduce((acc, [key, value]) => {
       if (typeof value === "number") {
         acc[key] = { max: value };
       } else if (value && typeof value === "object") {
@@ -38,9 +72,14 @@ const buildCommunitySelectionRules = (plan) => {
       }
       return acc;
     }, {});
+    if (normalizedConstraints.sides_salads && !normalizedConstraints.sides && !normalizedConstraints.salads) {
+      const combined = normalizedConstraints.sides_salads;
+      delete normalizedConstraints.sides_salads;
+      normalizedConstraints.sides = combined;
+    }
+    return normalizedConstraints;
   }
   if (plan.level === "package") {
-    const normalizedTitle = String(plan.title || "").toLowerCase();
     if (normalizedTitle.includes("taco bar")) {
       return {
         entree: { min: 1, max: 1 },
@@ -49,7 +88,7 @@ const buildCommunitySelectionRules = (plan) => {
     if (normalizedTitle.includes("hearty homestyle")) {
       return {
         entree: { min: 1, max: 1 },
-        sides_salads: { min: 2, max: 2 },
+        sides: { min: 2, max: 2 },
       };
     }
   }
@@ -63,15 +102,14 @@ const toTitleCase = (value) =>
     .map((word) => word[0]?.toUpperCase() + word.slice(1).toLowerCase())
     .join(" ");
 
-const getReadableCategoryLabel = (key) => {
-  const map = {
-    entree: "Entrees",
-    sides_salads: "Sides/Salads",
-    starter: "Starters",
-    passed: "Passed Appetizers",
-    sides: "Sides",
-  };
-  return map[key] || toTitleCase(String(key || "").replace(/_/g, " "));
+const getSelectionCategoryKeyFromText = (value) => {
+  const lower = String(value || "").toLowerCase();
+  if (lower.includes("passed")) return "passed";
+  if (lower.includes("starter")) return "starter";
+  if (lower.includes("salad")) return "salads";
+  if (lower.includes("side")) return "sides";
+  if (lower.includes("entree") || lower.includes("protein")) return "entree";
+  return null;
 };
 
 const parseCommunityPackageDetails = (details) => {
@@ -103,26 +141,19 @@ const getCommunityPackageDetails = (plan) => {
   if (!plan) return [];
   const normalizedTitle = String(plan.title || "").toLowerCase();
   if (normalizedTitle.includes("hearty homestyle")) {
-    return ["Choose 1 Entree/Protein", "Choose 2 Sides/Salads", "Bread"];
+    return ["Choose 1 Entree/Protein", "Choose 2 Sides", "Bread"];
   }
   return parseCommunityPackageDetails(plan.details);
-};
-
-const getSelectedCountForGroup = (selectedItems, desiredItemGroups, groupKey) => {
-  const groups = desiredItemGroups.filter((group) => group.groupKey === groupKey);
-  return groups
-    .flatMap((group) => group.items || [])
-    .filter((groupItem) => selectedItems.includes(groupItem.name)).length;
 };
 
 const getDisplayPlanDetails = (serviceKey, plan, communityLimits) => {
   if (!plan) return [];
   if (serviceKey === "formal" && plan.level === "package") {
     if (plan.id === "formal:3-course") {
-      return ["2 Passed Appetizers", "1 Starter", "1 Entree and 1 Side or 2 Entrees"];
+      return ["2 Passed Appetizers", "1 Starter", "1 or 2 Entrees", "Bread"];
     }
     if (plan.id === "formal:2-course") {
-      return ["1 Starter", "1 Entree and 1 Side or 2 Entrees"];
+      return ["1 Starter", "1 Entree", "Bread"];
     }
   }
   if (serviceKey === "community" && plan.level === "package") {
@@ -132,23 +163,40 @@ const getDisplayPlanDetails = (serviceKey, plan, communityLimits) => {
 
   const details = [];
   if (communityLimits?.entree?.max) {
-    const exactEntreeCount =
-      communityLimits?.entree?.min && communityLimits?.entree?.min === communityLimits?.entree?.max;
-    details.push(
-      exactEntreeCount
-        ? `Choose ${communityLimits.entree.max} Entrees/Proteins`
-        : `Choose up to ${communityLimits.entree.max} Entrees/Proteins`
-    );
+    const entreeMin = communityLimits?.entree?.min || 0;
+    const entreeMax = communityLimits.entree.max;
+    if (entreeMin && entreeMin === entreeMax) {
+      details.push(`Choose ${entreeMax} Entrees/Proteins`);
+    } else if (entreeMin && entreeMin < entreeMax) {
+      details.push(`Choose ${entreeMin}-${entreeMax} Entrees/Proteins`);
+    } else {
+      details.push(`Choose up to ${entreeMax} Entrees/Proteins`);
+    }
   }
-  if (communityLimits?.sides_salads?.max) {
-    const exactSidesCount =
-      communityLimits?.sides_salads?.min &&
-      communityLimits?.sides_salads?.min === communityLimits?.sides_salads?.max;
-    details.push(
-      exactSidesCount
-        ? `Choose ${communityLimits.sides_salads.max} Sides/Salads`
-        : `Choose up to ${communityLimits.sides_salads.max} Sides/Salads`
-    );
+  const appendCommunityDetail = (limits, label) => {
+    if (!limits?.max) return;
+    const min = limits?.min || 0;
+    const max = limits.max;
+    if (min && min === max) {
+      details.push(`Choose ${max} ${label}`);
+    } else if (min && min < max) {
+      details.push(`Choose ${min}-${max} ${label}`);
+    } else {
+      details.push(`Choose up to ${max} ${label}`);
+    }
+  };
+  appendCommunityDetail(communityLimits?.sides, "Sides");
+  appendCommunityDetail(communityLimits?.salads, "Salads");
+  if (!communityLimits?.sides && !communityLimits?.salads && communityLimits?.sides_salads?.max) {
+    const sidesMin = communityLimits?.sides_salads?.min || 0;
+    const sidesMax = communityLimits.sides_salads.max;
+    if (sidesMin && sidesMin === sidesMax) {
+      details.push(`Choose ${sidesMax} Sides/Salads`);
+    } else if (sidesMin && sidesMin < sidesMax) {
+      details.push(`Choose ${sidesMin}-${sidesMax} Sides/Salads`);
+    } else {
+      details.push(`Choose up to ${sidesMax} Sides/Salads`);
+    }
   }
   return details.length ? details : plan.details || [];
 };
@@ -286,7 +334,13 @@ const buildServiceItemGroups = (serviceKey, menu, menuOptions) => {
         .filter(Boolean);
 
       const sectionGroupKey = section.category || section.courseType || "other";
-      addGroup(section.title, sectionItems, sectionGroupKey);
+      if (sectionGroupKey === "sides_salads") {
+        const { sides, salads } = splitSidesAndSalads(sectionItems);
+        addGroup("Sides", sides, "sides");
+        addGroup("Salads", salads, "salads");
+      } else {
+        addGroup(section.title, sectionItems, sectionGroupKey);
+      }
       return;
     }
 
@@ -295,14 +349,17 @@ const buildServiceItemGroups = (serviceKey, menu, menuOptions) => {
         const block = menuOptions[includeKey];
         if (!block?.items?.length) return;
 
-        addGroup(
-          block.title,
-          block.items.map((item) => ({
-              name: item,
-              sizeOptions: serviceKey === "togo" ? ["Half", "Full"].map(normalizeSizeOption) : [],
-            })),
-          block.category || "other"
-        );
+        const blockItems = block.items.map((item) => ({
+          name: item,
+          sizeOptions: serviceKey === "togo" ? ["Half", "Full"].map(normalizeSizeOption) : [],
+        }));
+        if (block.category === "sides_salads") {
+          const { sides, salads } = splitSidesAndSalads(blockItems);
+          addGroup("Sides", sides, "sides");
+          addGroup("Salads", salads, "salads");
+        } else {
+          addGroup(block.title, blockItems, block.category || "other");
+        }
       });
       return;
     }
@@ -340,11 +397,19 @@ const getPlanDisplayTitle = (serviceKey, plan) => {
   return title;
 };
 
-const Inquiry = () => {
+const getPlanSectionDisplayTitle = (serviceKey, sectionTitle) => {
+  const title = String(sectionTitle || "");
+  if (serviceKey === "community") {
+    return title.replace(/Event Catering - Buffet Style/i, "Event/Crew Catering - Buffet Style");
+  }
+  return title;
+};
+
+const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" }) => {
   const minEventDateISO = useMemo(() => getMinEventDateISO(), []);
   const { menu, menuOptions, formalPlanOptions, loading: menuLoading, error: menuError } = useMenuConfig();
   const [searchParams] = useSearchParams();
-  const presetServiceKey = searchParams.get("service") || "";
+  const presetServiceKey = presetService || searchParams.get("service") || "";
 
   const serviceOptions = useMemo(
     () =>
@@ -361,10 +426,19 @@ const Inquiry = () => {
   }, [presetServiceKey, serviceOptions]);
 
   const [showModal, setShowModal] = useState(true);
+  const isControlledModal = typeof onRequestClose === "function";
+  const modalOpen = isControlledModal ? forceOpen : showModal;
+  const handleCloseModal = () => {
+    if (isControlledModal) {
+      onRequestClose();
+      return;
+    }
+    setShowModal(false);
+  };
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState([]);
-  const [warning, setWarning] = useState("");
-  const [submittedId, setSubmittedId] = useState(null);
+  const [highlightedDetailKeys, setHighlightedDetailKeys] = useState([]);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [form, setForm] = useState({
     ...EMPTY_FORM,
     service_interest: isValidPreset ? presetServiceKey : "",
@@ -383,6 +457,7 @@ const Inquiry = () => {
     setDesiredItems([]);
     setTraySizes({});
     setServicePlanId("");
+    setHighlightedDetailKeys([]);
   }, [form.service_interest]);
 
   const servicePlans = useMemo(
@@ -418,10 +493,11 @@ const Inquiry = () => {
     }
     if (form.service_interest !== "formal") return groups;
 
+    const groupsWithoutSides = groups.filter((group) => group.groupKey !== "sides");
     if (servicePlanId === "formal:2-course") {
-      return groups.filter((group) => group.groupKey !== "passed");
+      return groupsWithoutSides.filter((group) => group.groupKey !== "passed");
     }
-    return groups;
+    return groupsWithoutSides;
   }, [form.service_interest, servicePlanId, selectedServicePlan, menu, menuOptions]);
   const itemSizeOptions = useMemo(() => {
     const map = {};
@@ -454,11 +530,19 @@ const Inquiry = () => {
       return;
     }
     if (name === "budget") {
-      const sanitizedBudget = value.replace(/[A-Za-z]/g, "");
-      setForm((prev) => ({ ...prev, [name]: sanitizedBudget }));
+      setForm((prev) => ({ ...prev, [name]: formatBudgetWithCommas(value) }));
       return;
     }
     setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const onChangeServicePlan = (event) => {
+    const nextPlanId = event.target.value;
+    setServicePlanId(nextPlanId);
+    setDesiredItems([]);
+    setTraySizes({});
+    setErrors([]);
+    setHighlightedDetailKeys([]);
   };
 
   const onToggleDesiredItem = (item) => {
@@ -469,7 +553,6 @@ const Inquiry = () => {
         const limits = selectedServicePlan?.constraints || {};
         const itemGroup = desiredItemGroups.find((group) => group.items.some((groupItem) => groupItem.name === item));
         const groupKey = itemGroup?.groupKey || "other";
-        const groupTitle = itemGroup?.title || groupKey;
         const groupLimit = limits[groupKey] || null;
 
         if (groupLimit?.max) {
@@ -477,28 +560,12 @@ const Inquiry = () => {
             itemGroup?.items.some((groupItem) => groupItem.name === selectedItem)
           ).length;
           if (selectedInGroup >= groupLimit.max) {
-            setErrors([`You can only select up to ${groupLimit.max} item(s) in "${groupTitle}".`]);
+            setHighlightedDetailKeys([groupKey]);
+            setErrors([]);
             return prev;
           }
         }
 
-        if (selectedServicePlan?.id === "formal:3-course") {
-          const entreeCount = getSelectedCountForGroup(prev, desiredItemGroups, "entree");
-          const sideCount = getSelectedCountForGroup(prev, desiredItemGroups, "sides");
-
-          if (groupKey === "sides" && sideCount >= 1) {
-            setErrors(["Three-course dinner allows at most 1 side."]);
-            return prev;
-          }
-          if (groupKey === "sides" && entreeCount >= 2) {
-            setErrors(["For three-course dinner, choose either 2 entrees or 1 entree and 1 side."]);
-            return prev;
-          }
-          if (groupKey === "entree" && sideCount >= 1 && entreeCount >= 1) {
-            setErrors(["For three-course dinner, choose either 2 entrees or 1 entree and 1 side."]);
-            return prev;
-          }
-        }
       }
 
       if (!isSelected && form.service_interest === "community" && communitySelectionRules) {
@@ -506,25 +573,23 @@ const Inquiry = () => {
         const category = itemGroup?.groupKey || "other";
         const categoryRule = communitySelectionRules[category];
 
-        if (categoryRule?.max) {
+        if (categoryRule?.max || categoryRule?.min) {
           const selectedInCategory = prev.filter((selectedItem) => {
             const selectedGroup = desiredItemGroups.find((group) =>
               group.items.some((groupItem) => groupItem.name === selectedItem)
             );
             return (selectedGroup?.groupKey || "other") === category;
           }).length;
-
           if (selectedInCategory >= categoryRule.max) {
-            setErrors([
-              `For this selection, you can choose up to ${categoryRule.max} ${getReadableCategoryLabel(category)}.`,
-            ]);
+            setHighlightedDetailKeys([category]);
+            setErrors([]);
             return prev;
           }
         }
       }
-
       const next = isSelected ? prev.filter((existingItem) => existingItem !== item) : [...prev, item];
-      if (!isSelected) setErrors([]);
+      setErrors([]);
+      setHighlightedDetailKeys([]);
 
       setTraySizes((prevSizes) => {
         const nextSizes = { ...prevSizes };
@@ -551,8 +616,8 @@ const Inquiry = () => {
     event.preventDefault();
     setLoading(true);
     setErrors([]);
-    setWarning("");
-    setSubmittedId(null);
+    setHighlightedDetailKeys([]);
+    setShowSuccessModal(false);
 
     try {
       if (menuLoading) {
@@ -602,6 +667,11 @@ const Inquiry = () => {
         setLoading(false);
         return;
       }
+      if (!form.guest_count) {
+        setErrors(["guest_count is required."]);
+        setLoading(false);
+        return;
+      }
 
       if (shouldRequirePlanSelection && !servicePlanId) {
         setErrors(["Please select a package or tier option."]);
@@ -617,23 +687,12 @@ const Inquiry = () => {
             .flatMap((group) => group.items || [])
             .filter((groupItem) => desiredItems.includes(groupItem.name)).length;
           if (rule.min && selectedInGroup < rule.min) {
-            setErrors([`Please select at least ${rule.min} item(s) in the ${getReadableCategoryLabel(groupKey)} section.`]);
+            setHighlightedDetailKeys([groupKey]);
             setLoading(false);
             return;
           }
         }
 
-        if (selectedServicePlan?.id === "formal:3-course") {
-          const entreeCount = getSelectedCountForGroup(desiredItems, desiredItemGroups, "entree");
-          const sideCount = getSelectedCountForGroup(desiredItems, desiredItemGroups, "sides");
-          const isValidCombo = (entreeCount === 2 && sideCount === 0) || (entreeCount === 1 && sideCount === 1);
-
-          if (!isValidCombo) {
-            setErrors(["Three-course dinner requires either 2 entrees or 1 entree and 1 side."]);
-            setLoading(false);
-            return;
-          }
-        }
       }
 
       if (form.service_interest === "community" && communitySelectionRules) {
@@ -649,12 +708,12 @@ const Inquiry = () => {
         for (const [category, rule] of Object.entries(communitySelectionRules)) {
           const selectedCount = categoryCounts[category] || 0;
           if (rule.min && selectedCount < rule.min) {
-            setErrors([`Please select at least ${rule.min} ${getReadableCategoryLabel(category)}.`]);
+            setHighlightedDetailKeys([category]);
             setLoading(false);
             return;
           }
           if (rule.max && selectedCount > rule.max) {
-            setErrors([`For this selection, you can choose up to ${rule.max} ${getReadableCategoryLabel(category)}.`]);
+            setHighlightedDetailKeys([category]);
             setLoading(false);
             return;
           }
@@ -665,8 +724,12 @@ const Inquiry = () => {
       const selectedItems = desiredItems.map((item) => {
         const options = itemSizeOptions[item] || [];
         const selectedSize = options.find((option) => option.value === traySizes[item]);
+        const selectedGroup = desiredItemGroups.find((group) =>
+          group.items.some((groupItem) => groupItem.name === item)
+        );
         return {
           name: item,
+          category: selectedGroup?.groupKey || "other",
           tray_size: traySizes[item] || null,
           tray_price: selectedSize?.price || null,
         };
@@ -711,13 +774,20 @@ const Inquiry = () => {
       const body = await response.json();
 
       if (!response.ok) {
-        setErrors(body.errors || ["Unable to submit inquiry."]);
+        const responseErrors = Array.isArray(body.errors) ? body.errors : ["Unable to submit inquiry."];
+        const selectionKeys = [...new Set(responseErrors.map(getSelectionCategoryKeyFromText).filter(Boolean))];
+        if (selectionKeys.length) {
+          setHighlightedDetailKeys(selectionKeys);
+          const nonSelectionErrors = responseErrors.filter((error) => !getSelectionCategoryKeyFromText(error));
+          setErrors(nonSelectionErrors);
+        } else {
+          setErrors(responseErrors);
+        }
         return;
       }
 
-      setSubmittedId(body.inquiry_id || null);
       if (body.warning) {
-        setWarning(body.warning);
+        console.warn("Inquiry saved but email send failed:", body.warning);
       }
       setForm({
         ...EMPTY_FORM,
@@ -726,6 +796,9 @@ const Inquiry = () => {
       setDesiredItems([]);
       setTraySizes({});
       setServicePlanId("");
+      setHighlightedDetailKeys([]);
+      handleCloseModal();
+      setShowSuccessModal(true);
     } catch {
       setErrors(["Network error. Please try again."]);
     } finally {
@@ -733,16 +806,8 @@ const Inquiry = () => {
     }
   };
 
-  return (
-    <main className="container my-4">
-      <h2 className="mb-2">Catering Inquiry</h2>
-      <p className="mb-3">Tell us about your event and menu needs. We will follow up shortly.</p>
-
-      <Button variant="secondary" onClick={() => setShowModal(true)}>
-        Open Inquiry Form
-      </Button>
-
-      <Modal show={showModal} onHide={() => setShowModal(false)} centered size="lg">
+  const modalMarkup = (
+      <Modal show={modalOpen} onHide={handleCloseModal} centered size="lg">
         <Modal.Header closeButton>
           <Modal.Title>Send Catering Inquiry</Modal.Title>
         </Modal.Header>
@@ -752,8 +817,6 @@ const Inquiry = () => {
             <p className="mb-2 text-danger fw-semibold">* indicates a required field.</p>
             {menuLoading ? <Alert variant="info">Loading menu configuration...</Alert> : null}
             {menuError ? <Alert variant="danger">Menu configuration unavailable: {menuError}</Alert> : null}
-            {submittedId ? <Alert variant="success">Inquiry submitted. ID: {submittedId}</Alert> : null}
-            {warning ? <Alert variant="warning">{warning}</Alert> : null}
             {errors.length ? (
               <Alert variant="danger">
                 {errors.map((error) => (
@@ -815,13 +878,15 @@ const Inquiry = () => {
             </Form.Group>
 
             <Form.Group className="mb-3">
-              <Form.Label>Guest Count</Form.Label>
-              <Form.Control type="number" min="1" name="guest_count" value={form.guest_count} onChange={onChange} />
+              <Form.Label>
+                Guest Count <span className="text-danger">*</span>
+              </Form.Label>
+              <Form.Control type="number" min="1" name="guest_count" value={form.guest_count} onChange={onChange} required />
             </Form.Group>
 
             <Form.Group className="mb-3">
-              <Form.Label>Budget</Form.Label>
-              <Form.Control name="budget" value={form.budget} onChange={onChange} />
+              <Form.Label>Budget ($)</Form.Label>
+              <Form.Control name="budget" value={form.budget} onChange={onChange} placeholder="e.g. $2,500" />
             </Form.Group>
 
             <Form.Group className="mb-3">
@@ -844,7 +909,7 @@ const Inquiry = () => {
                   {form.service_interest === "community" ? "Package / Tier " : "Formal Dinner Package "}
                   <span className="text-danger">*</span>
                 </Form.Label>
-                <Form.Select value={servicePlanId} onChange={(event) => setServicePlanId(event.target.value)} required>
+                <Form.Select value={servicePlanId} onChange={onChangeServicePlan} required>
                   <option value="">Select an option</option>
                   <optgroup label={form.service_interest === "formal" ? "Dinner Packages" : "Packages"}>
                     {servicePlans
@@ -860,7 +925,7 @@ const Inquiry = () => {
                     ? Array.from(
                         new Set(servicePlans.filter((plan) => plan.level === "tier").map((plan) => plan.sectionTitle))
                       ).map((sectionTitle) => (
-                        <optgroup key={sectionTitle} label={sectionTitle}>
+                        <optgroup key={sectionTitle} label={getPlanSectionDisplayTitle(form.service_interest, sectionTitle)}>
                           {servicePlans
                             .filter((plan) => plan.level === "tier" && plan.sectionTitle === sectionTitle)
                             .map((plan) => (
@@ -879,9 +944,15 @@ const Inquiry = () => {
                       {selectedServicePlan.level === "package" ? "Package Includes" : "Tier Details"}
                     </div>
                     <ul className="mb-0">
-                      {displayedPlanDetails.map((detail) => (
-                        <li key={detail}>{detail}</li>
-                      ))}
+                      {displayedPlanDetails.map((detail) => {
+                        const detailKey = getSelectionCategoryKeyFromText(detail);
+                        const isHighlighted = Boolean(detailKey && highlightedDetailKeys.includes(detailKey));
+                        return (
+                          <li key={detail} className={isHighlighted ? "text-danger fw-semibold" : undefined}>
+                            {detail}
+                          </li>
+                        );
+                      })}
                     </ul>
                     {form.service_interest === "community" && selectedServicePlan.level === "tier" ? (
                       <div className="mt-2">Special chef requests can be added in the Message field.</div>
@@ -956,7 +1027,7 @@ const Inquiry = () => {
           </Modal.Body>
 
           <Modal.Footer>
-            <Button variant="outline-secondary" onClick={() => setShowModal(false)}>
+            <Button variant="outline-secondary" onClick={handleCloseModal}>
               Cancel
             </Button>
             <Button variant="secondary" type="submit" disabled={loading}>
@@ -972,7 +1043,27 @@ const Inquiry = () => {
           </Modal.Footer>
         </Form>
       </Modal>
-    </main>
+  );
+
+  return (
+    <>
+      {modalMarkup}
+      <Modal show={showSuccessModal} onHide={() => setShowSuccessModal(false)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>Inquiry Sent</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Alert variant="success" className="mb-0">
+            Your inquiry was sent successfully.
+          </Alert>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowSuccessModal(false)}>
+            Close
+          </Button>
+        </Modal.Footer>
+      </Modal>
+    </>
   );
 };
 

@@ -1,6 +1,6 @@
 import { Button, Modal } from "react-bootstrap";
 
-const InfoModal = ({ show, onHide, title, children }) => {
+const InfoModal = ({ show, onHide, title, subtitle, children }) => {
   return (
     <Modal show={show} onHide={onHide}>
       <Modal.Header closeButton>

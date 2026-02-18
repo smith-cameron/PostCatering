@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import ContactUsModal from "./modals/ContactUsModal";
 
-const Header = () => {
+const Header = ({ onOpenInquiry }) => {
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth < 992 : false
   );
@@ -35,7 +35,10 @@ const Header = () => {
 
       <NavDropdown.Divider />
 
-      <NavDropdown.Item as={Link} to="/inquiry">
+      <NavDropdown.Item
+        as="button"
+        type="button"
+        onClick={() => onOpenInquiry?.()}>
         Send Catering Inquiry
       </NavDropdown.Item>
 
@@ -73,7 +76,11 @@ const Header = () => {
                   Formal Events Catering
                 </Nav.Link>
 
-                <Nav.Link as={Link} to="/inquiry">
+                <Nav.Link
+                  as="button"
+                  type="button"
+                  className="nav-link btn btn-link text-start p-0"
+                  onClick={() => onOpenInquiry?.()}>
                   Send Catering Inquiry
                 </Nav.Link>
 

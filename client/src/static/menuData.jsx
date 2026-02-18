@@ -61,7 +61,7 @@ export const FORMAL_PLAN_OPTIONS = [
     level: "package",
     title: "Two-Course Dinner",
     price: "$65-$90 per person",
-    details: ["Starter + Entree", "Sides can be selected with the entree"],
+    details: ["1 Starter", "1 Entree", "Bread"],
     constraints: {
       starter: { min: 1, max: 1 },
       entree: { min: 1, max: 1 },
@@ -72,7 +72,7 @@ export const FORMAL_PLAN_OPTIONS = [
     level: "package",
     title: "Three-Course Dinner",
     price: "$75-$110+ per person",
-    details: ["Passed Appetizers + Starter + Entree", "Sides can be selected with the entree"],
+    details: ["2 Passed Appetizers", "1 Starter", "1 or 2 Entrees", "Bread"],
     constraints: {
       passed: { min: 2, max: 2 },
       starter: { min: 1, max: 1 },
@@ -157,7 +157,7 @@ export const MENU = {
       {
         sectionId: "community_taco_bar",
         type: "package",
-        title: "Taco Bar (Carne Asada or Chicken)",
+        title: "Taco Bar (Carne Asada, Chicken, Carnitas, or Marinated Pork)",
         description: "Includes Spanish rice, refried beans, tortillas, toppings",
         price: "$18-$25 per person",
       },
@@ -177,19 +177,21 @@ export const MENU = {
             tierTitle: "Tier 1: Casual Buffet",
             constraints: {
               entree: 2,
-              sides_salads: 3,
+              sides: 2,
+              salads: 1,
             },
             price: "$30-$40 per person",
-            bullets: ["Up to 2 Entrees", "Up to 3 Sides/Salads (combined)", "Bread"],
+            bullets: ["2 Entrees", "2 Sides", "1 Salad", "Bread"],
           },
           {
             tierTitle: "Tier 2: Elevated Buffet / Family-Style",
             constraints: {
-              entree: 3,
-              sides_salads: 3,
+              entree: { min: 2, max: 3 },
+              sides: { min: 3, max: 3 },
+              salads: { min: 2, max: 2 },
             },
             price: "$45-$65 per person",
-            bullets: ["Up to 3 Entrees", "Up to 3 Sides/Salads (combined)", "Bread"],
+            bullets: ["2-3 Entrees", "3 Sides", "2 Salads", "Bread"],
           },
         ],
       },

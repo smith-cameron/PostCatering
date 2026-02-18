@@ -1,3 +1,5 @@
+import hmac
+import os
 from pathlib import Path
 
 from flask import jsonify, request, send_from_directory
@@ -36,6 +38,35 @@ def get_menus():
     return ("", 204)
 
   response_body, status_code = MenuService.get_catalog()
+  return jsonify(response_body), status_code
+
+
+@app.route("/api/admin/menu/sync", methods=["POST", "OPTIONS"])
+def admin_menu_sync():
+  if request.method == "OPTIONS":
+    return ("", 204)
+
+  configured_token = (os.getenv("MENU_ADMIN_TOKEN") or "").strip()
+  provided_token = (
+    request.headers.get("X-Menu-Admin-Token")
+    or request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+  )
+
+  if not configured_token:
+    return jsonify({"error": "MENU_ADMIN_TOKEN is not configured on server."}), 403
+  if not provided_token or not hmac.compare_digest(provided_token, configured_token):
+    return jsonify({"error": "Unauthorized"}), 401
+
+  body = request.get_json(silent=True) or {}
+  apply_schema = bool(body.get("apply_schema", False))
+  reset = bool(body.get("reset", False))
+  seed = bool(body.get("seed", True))
+
+  response_body, status_code = MenuService.run_menu_admin_task(
+    apply_schema=apply_schema,
+    reset=reset,
+    seed=seed,
+  )
   return jsonify(response_body), status_code
 
 

@@ -2,7 +2,7 @@ import InfoModal from "./InfoModal";
 
 const AboutUsModal = ({ show, onHide }) => {
   return (
-    <InfoModal show={show} onHide={onHide} title="Why Choose American Legion Post 468 Catering">
+    <InfoModal show={show} onHide={onHide} title="Why Choose Post 468 Catering">
       <p>American Legion Post 468 Catering brings together professional culinary
         experience, large-scale event expertise, and a deep commitment to
         serving our community.
