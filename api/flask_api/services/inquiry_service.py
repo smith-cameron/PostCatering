@@ -1,11 +1,21 @@
+import json
+import logging
 import os
+import socket
 import smtplib
 from email.message import EmailMessage
 
 from flask_api.models.inquiry import Inquiry
 
+logger = logging.getLogger(__name__)
+
 
 class InquiryService:
+  @staticmethod
+  def _log_event(level, event, **fields):
+    payload = {"event": event, **fields}
+    logger.log(level, json.dumps(payload, ensure_ascii=False, default=str))
+
   @staticmethod
   def _format_service_selection(service_selection):
     if not isinstance(service_selection, dict):
@@ -50,6 +60,43 @@ class InquiryService:
     return "\n".join(lines)
 
   @staticmethod
+  def _diagnose_smtp_failure(exc):
+    if isinstance(exc, smtplib.SMTPAuthenticationError):
+      return {
+        "reason_code": "smtp_auth_failed",
+        "warning": "Inquiry saved, but email notification failed SMTP authentication.",
+      }
+    if isinstance(exc, smtplib.SMTPConnectError):
+      return {
+        "reason_code": "smtp_connect_failed",
+        "warning": "Inquiry saved, but email notification could not connect to the SMTP server.",
+      }
+    if isinstance(exc, smtplib.SMTPServerDisconnected):
+      return {
+        "reason_code": "smtp_server_disconnected",
+        "warning": "Inquiry saved, but the SMTP server disconnected before completion.",
+      }
+    if isinstance(exc, smtplib.SMTPRecipientsRefused):
+      return {
+        "reason_code": "smtp_recipient_refused",
+        "warning": "Inquiry saved, but the configured recipient address was refused by SMTP.",
+      }
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+      return {
+        "reason_code": "smtp_timeout",
+        "warning": "Inquiry saved, but email notification timed out.",
+      }
+    if isinstance(exc, smtplib.SMTPException):
+      return {
+        "reason_code": "smtp_error",
+        "warning": "Inquiry saved, but SMTP returned an error while sending notification.",
+      }
+    return {
+      "reason_code": "email_send_failed",
+      "warning": "Inquiry saved, but email notification failed unexpectedly.",
+    }
+
+  @staticmethod
   def _send_inquiry_email(inquiry):
     smtp_host = os.getenv("SMTP_HOST")
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
@@ -60,7 +107,16 @@ class InquiryService:
     inquiry_from_email = os.getenv("INQUIRY_FROM_EMAIL", smtp_username or "")
 
     if not smtp_host or not smtp_username or not smtp_password or not inquiry_to_email:
-      return False, "Email settings are incomplete."
+      InquiryService._log_event(
+        logging.WARNING,
+        "inquiry_email_skipped_missing_config",
+        inquiry_id=inquiry.id,
+        has_smtp_host=bool(smtp_host),
+        has_smtp_username=bool(smtp_username),
+        has_smtp_password=bool(smtp_password),
+        has_inquiry_to_email=bool(inquiry_to_email),
+      )
+      return False, "Inquiry saved, but email notification is not configured.", "email_config_incomplete"
 
     message = EmailMessage()
     message["Subject"] = f"New Catering Inquiry: {inquiry.full_name}"
@@ -96,22 +152,69 @@ class InquiryService:
           server.starttls()
         server.login(smtp_username, smtp_password)
         server.send_message(message)
-      return True, None
-    except Exception:
-      return False, "Failed to send inquiry email."
+      InquiryService._log_event(
+        logging.INFO,
+        "inquiry_email_sent",
+        inquiry_id=inquiry.id,
+        smtp_host=smtp_host,
+        smtp_port=smtp_port,
+        smtp_use_tls=smtp_use_tls,
+      )
+      return True, None, None
+    except Exception as exc:
+      diagnosis = InquiryService._diagnose_smtp_failure(exc)
+      InquiryService._log_event(
+        logging.WARNING,
+        "inquiry_email_send_failed",
+        inquiry_id=inquiry.id,
+        reason_code=diagnosis["reason_code"],
+        exception_type=type(exc).__name__,
+        smtp_host=smtp_host,
+        smtp_port=smtp_port,
+        smtp_use_tls=smtp_use_tls,
+      )
+      return False, diagnosis["warning"], diagnosis["reason_code"]
 
   @classmethod
   def submit(cls, raw_payload):
     inquiry = Inquiry.from_payload(raw_payload)
+    cls._log_event(
+      logging.INFO,
+      "inquiry_submit_received",
+      has_service_selection=bool(inquiry.service_selection),
+      desired_item_count=len(inquiry.desired_menu_items),
+      has_message=bool(inquiry.message),
+    )
+
     validation_errors = inquiry.validate()
     if validation_errors:
+      cls._log_event(
+        logging.INFO,
+        "inquiry_submit_validation_failed",
+        error_count=len(validation_errors),
+        errors=validation_errors,
+      )
       return {"errors": validation_errors}, 400
 
     inquiry.save()
-    email_sent, email_error = cls._send_inquiry_email(inquiry)
+    cls._log_event(logging.INFO, "inquiry_saved", inquiry_id=inquiry.id)
+    email_sent, email_error, reason_code = cls._send_inquiry_email(inquiry)
 
     if email_sent:
       inquiry.update_email_sent(True)
+      cls._log_event(logging.INFO, "inquiry_submit_completed", inquiry_id=inquiry.id, email_sent=True)
       return {"inquiry_id": inquiry.id, "email_sent": True}, 201
 
-    return {"inquiry_id": inquiry.id, "email_sent": False, "warning": email_error}, 201
+    cls._log_event(
+      logging.WARNING,
+      "inquiry_submit_completed",
+      inquiry_id=inquiry.id,
+      email_sent=False,
+      warning_reason_code=reason_code,
+    )
+    return {
+      "inquiry_id": inquiry.id,
+      "email_sent": False,
+      "warning": email_error,
+      "warning_code": reason_code,
+    }, 201

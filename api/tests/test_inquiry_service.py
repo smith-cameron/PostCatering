@@ -1,3 +1,5 @@
+import smtplib
+import socket
 import sys
 import unittest
 from pathlib import Path
@@ -35,6 +37,21 @@ class InquiryServiceFormattingTests(unittest.TestCase):
   def test_formatters_handle_empty_values(self):
     self.assertEqual(InquiryService._format_service_selection({}), "")
     self.assertEqual(InquiryService._format_desired_items([]), "")
+
+  def test_diagnose_smtp_failure_auth(self):
+    exc = smtplib.SMTPAuthenticationError(535, b"5.7.8 bad credentials")
+    diagnosis = InquiryService._diagnose_smtp_failure(exc)
+    self.assertEqual(diagnosis["reason_code"], "smtp_auth_failed")
+    self.assertIn("authentication", diagnosis["warning"].lower())
+
+  def test_diagnose_smtp_failure_timeout(self):
+    diagnosis = InquiryService._diagnose_smtp_failure(socket.timeout("timed out"))
+    self.assertEqual(diagnosis["reason_code"], "smtp_timeout")
+    self.assertIn("timed out", diagnosis["warning"].lower())
+
+  def test_diagnose_smtp_failure_generic(self):
+    diagnosis = InquiryService._diagnose_smtp_failure(RuntimeError("boom"))
+    self.assertEqual(diagnosis["reason_code"], "email_send_failed")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,14 @@
+import logging
 import os
 
 from flask import Flask
+
+log_level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+log_level = getattr(logging, log_level_name, logging.INFO)
+logging.basicConfig(
+  level=log_level,
+  format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-only-secret-key")
