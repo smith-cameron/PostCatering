@@ -15,3 +15,12 @@ if (!window.matchMedia) {
     }),
   });
 }
+
+// JSDOM + react-bootstrap transitions can produce NaN timeouts in tests.
+// Normalize invalid delay values so test output stays signal-only.
+const nativeSetTimeout = globalThis.setTimeout.bind(globalThis);
+globalThis.setTimeout = (handler, timeout, ...args) => {
+  const numericTimeout = Number(timeout);
+  const safeTimeout = Number.isNaN(numericTimeout) ? 0 : timeout;
+  return nativeSetTimeout(handler, safeTimeout, ...args);
+};

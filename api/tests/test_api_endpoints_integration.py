@@ -29,6 +29,41 @@ class ApiEndpointIntegrationTests(unittest.TestCase):
         self.assertIn("community", body["menu"])
         self.assertIn("page_title", body["menu"]["community"])
 
+    def test_admin_menu_sync_returns_403_when_token_not_configured(self):
+        with patch.dict("os.environ", {"MENU_ADMIN_TOKEN": ""}, clear=False):
+            response = self.client.post("/api/admin/menu/sync", json={"seed": True})
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            response.get_json(),
+            {"error": "MENU_ADMIN_TOKEN is not configured on server."},
+        )
+
+    def test_admin_menu_sync_returns_401_when_token_invalid(self):
+        with patch.dict("os.environ", {"MENU_ADMIN_TOKEN": "expected-token"}, clear=False):
+            response = self.client.post(
+                "/api/admin/menu/sync",
+                headers={"X-Menu-Admin-Token": "wrong-token"},
+                json={"seed": True},
+            )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.get_json(), {"error": "Unauthorized"})
+
+    @patch("flask_api.controllers.main_controller.MenuService.run_menu_admin_task")
+    def test_admin_menu_sync_runs_task_with_valid_token_and_flags(self, mock_run_menu_admin_task):
+        mock_run_menu_admin_task.return_value = ({"ok": True, "steps": ["seeded_from_payload"]}, 200)
+        with patch.dict("os.environ", {"MENU_ADMIN_TOKEN": "expected-token"}, clear=False):
+            response = self.client.post(
+                "/api/admin/menu/sync",
+                headers={"Authorization": "Bearer expected-token"},
+                json={"apply_schema": True, "reset": False, "seed": True},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"ok": True, "steps": ["seeded_from_payload"]})
+        mock_run_menu_admin_task.assert_called_once_with(apply_schema=True, reset=False, seed=True)
+
     @patch("flask_api.controllers.main_controller.SlideService.get_active_slides")
     def test_get_slides_returns_active_slide_payload(self, mock_get_active_slides):
         mock_get_active_slides.return_value = [

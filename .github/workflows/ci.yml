@@ -59,3 +59,107 @@ jobs:
 
       - name: Build frontend
         run: npm run build
+
+  frontend-e2e:
+    name: Frontend E2E (Playwright + Flask + MySQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: post_catering
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: api/requirements.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install backend dependencies
+        run: pip install -r api/requirements.txt
+
+      - name: Install frontend dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Install Playwright browser
+        working-directory: client
+        run: npx playwright install --with-deps chromium
+
+      - name: Apply schema and seed menu data
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: "3306"
+          DB_USER: root
+          DB_PASSWORD: root
+          DB_NAME: post_catering
+        run: python api/scripts/menu_admin_sync.py --apply-schema --reset
+
+      - name: Start backend
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: "3306"
+          DB_USER: root
+          DB_PASSWORD: root
+          DB_NAME: post_catering
+          MENU_DATA_SOURCE: db
+          CORS_ALLOW_ORIGIN: http://127.0.0.1:5173
+          FLASK_SECRET_KEY: ci-secret-key
+        run: |
+          nohup python api/server.py > backend.log 2>&1 &
+          echo $! > backend.pid
+
+      - name: Wait for backend health
+        run: |
+          for i in {1..30}; do
+            if curl -sf http://127.0.0.1:5000/api/health > /dev/null; then
+              echo "Backend is healthy."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Backend failed to become healthy."
+          cat backend.log
+          exit 1
+
+      - name: Run frontend E2E tests
+        working-directory: client
+        run: npm run test:e2e
+
+      - name: Stop backend
+        if: always()
+        run: |
+          if [ -f backend.pid ]; then
+            kill "$(cat backend.pid)" || true
+          fi
+
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: |
+            backend.log
+            client/playwright-report
+            client/test-results

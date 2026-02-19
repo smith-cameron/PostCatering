@@ -70,7 +70,7 @@ Generated/runtime folders such as `api/venv`, `client/node_modules`, and `client
 
 ### Prerequisites
 
-- Node.js 20+ and npm
+- Node.js 20.x (LTS) and npm
 - Python 3.10+ (3.11 recommended)
 - MySQL 8+ (or compatible)
 
@@ -118,6 +118,11 @@ npm run dev
 
 Vite defaults to `http://localhost:5173` and proxies `/api` to `http://localhost:5000`.
 
+## Deployment
+
+- AWS EC2 runbook: `docs/deployment-aws-ec2.md`
+- Owner-account launch-day checklist: `docs/pre-cutover-checklist.md`
+
 ## Testing
 
 Backend unit/integration tests:
@@ -134,9 +139,22 @@ cd client
 npm run test
 ```
 
+Browser E2E inquiry smoke test:
+
+```powershell
+cd client
+npx playwright install chromium
+npm run test:e2e
+```
+
+The E2E suite launches the frontend dev server automatically and expects backend API to be running locally:
+- Frontend (auto-started by Playwright): `http://127.0.0.1:5173`
+- Backend API: `http://localhost:5000` (or `http://127.0.0.1:5000`)
+
 Current frontend coverage includes:
 - `client/src/components/Landing.test.jsx` (slide API load/fallback)
 - `client/src/components/Inquiry.test.jsx` (required validation + successful submit payload)
+- `client/e2e/customer-inquiry.spec.js` (browser flow from open inquiry modal to successful submission)
 
 ## Pre-commit Hooks
 
@@ -167,6 +185,7 @@ Checks executed:
 - Frontend lint (`npm run lint`)
 - Frontend tests (`npm run test`)
 - Frontend production build (`npm run build`)
+- Frontend browser E2E smoke test (`npm run test:e2e`) against Flask + MySQL
 
 ## Environment Variables
 
@@ -376,6 +395,9 @@ Backend:
 -->
 
 ## Known Gaps
+
+### Audit findings (2026-02-19)
+- First remote run of the new `frontend-e2e` CI job is pending (will validate on next push/PR in GitHub Actions).
 
 ### Stretch goals
 - Priority 1: Build a dedicated admin dashboard for menu and media operations with authenticated admin access (instead of browser calls with a static token).
