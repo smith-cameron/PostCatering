@@ -385,6 +385,7 @@ Backend:
   - Upload and manage photos and videos for homepage and gallery content.
   - Choose and manage display order for menu sections, items, and slides.
   - Manage slide metadata (`title`, `caption`, `alt_text`) and activation state.
+  - Show the `Homepage Slide` moniker in the admin media manager only (not on public gallery tiles).
   - Add search/filter tools for faster menu maintenance at scale.
   - Add change confirmation and basic audit history for admin edits.
 - Deferred (Production Readiness): Adopt Flask app-factory + blueprint structure for clearer initialization and easier testing.

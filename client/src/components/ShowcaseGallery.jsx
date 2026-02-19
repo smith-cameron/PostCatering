@@ -144,7 +144,6 @@ const ShowcaseGallery = () => {
 
               <div className="showcase-tile-meta">
                 <span className="showcase-tile-title">{String(item.title || "").trim() || FALLBACK_LABEL}</span>
-                {item.is_slide ? <span className="badge text-bg-secondary">Homepage Slide</span> : null}
               </div>
             </button>
           ))}
