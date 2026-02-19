@@ -50,7 +50,7 @@ const ServiceMenu = () => {
         <h2 className="mb-1">{normalizeMenuTitle(data.pageTitle)}</h2>
         {data.subtitle ? <p className="mb-0">{normalizeMenuText(data.subtitle)}</p> : null}
         <div className="mt-3">
-          <Button variant="secondary" onClick={() => openInquiryModal(menuKey)}>
+          <Button className="btn-inquiry-action" variant="secondary" onClick={() => openInquiryModal(menuKey)}>
             Send Inquiry About This Menu
           </Button>
         </div>
