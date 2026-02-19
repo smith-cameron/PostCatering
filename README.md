@@ -99,6 +99,26 @@ npm run dev
 
 Vite defaults to `http://localhost:5173` and proxies `/api` to `http://localhost:5000`.
 
+## Testing
+
+Backend unit/integration tests:
+
+```powershell
+cd api
+.\venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+Frontend component/form tests:
+
+```powershell
+cd client
+npm run test
+```
+
+Current frontend coverage includes:
+- `client/src/components/Landing.test.jsx` (slide API load/fallback)
+- `client/src/components/Inquiry.test.jsx` (required validation + successful submit payload)
+
 ## Environment Variables
 
 Use `api/.env.example` as the source of truth for variable names.
@@ -311,7 +331,7 @@ Backend:
 - ~~Expand health checks to verify DB connectivity, not just process status.~~
 
 #### Testing
-- Add backend unit/integration tests and frontend component/form tests.
+- ~~Add backend unit/integration tests and frontend component/form tests.~~
 
 #### Tooling
 - Add CI checks for lint/test/build to prevent regressions.
