@@ -28,24 +28,39 @@ PostCatering/
   api/
     server.py
     .env.example
+    requirements.txt
     flask_api/
       controllers/
       services/
       models/
       validators/
       config/
+      static/
+        slides/
     sql/
       schema.sql
       menu_seed_payload.json
       menu_seed.sql
     scripts/
       menu_admin_sync.py
+    tests/
+      test_*.py
   client/
     src/
+      components/
+      hooks/
+      test/
     public/
     package.json
+    package-lock.json
+    vite.config.js
+    eslint.config.js
+  docs/
+    reference/
   README.md
 ```
+
+Generated/runtime folders such as `api/venv`, `client/node_modules`, and `client/dist` are intentionally omitted.
 
 ## Local Development Setup
 
@@ -334,11 +349,11 @@ Backend:
 - ~~Add backend unit/integration tests and frontend component/form tests.~~
 
 #### Tooling
-- Add CI checks for lint/test/build to prevent regressions.
+- ~~Add CI checks for lint/test/build to prevent regressions.~~
 - Add pre-commit formatting/lint hooks (e.g., `ruff`/`black` for Python plus ESLint).
 
 #### Docs
-- Reconcile outdated docs/comments (e.g., `api/sql/menu_seed.sql` still references auto-seed behavior).
+- ~~Reconcile outdated docs/comments (e.g., `api/sql/menu_seed.sql` still references auto-seed behavior).~~
 - ~~Define and enforce API naming conventions at boundaries (snake_case vs camelCase).~~
 
 #### Stretch Goals
