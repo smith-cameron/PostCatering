@@ -414,8 +414,8 @@ WHERE constraint_key LIKE '%\\_min' ESCAPE '\\'
 
 INSERT INTO slides (title, caption, image_url, alt_text, display_order, is_active)
 VALUES
-  ('First slide label', 'Nulla vitae elit libero, a pharetra augue mollis interdum.', '/api/assets/slides/homeslider3.jpg', 'First slide', 1, 1),
-  ('Second slide label', 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.', '/api/assets/slides/gratisography-cut-the-cake-800x525.jpg', 'Second slide', 2, 1),
-  ('Third slide label', 'Praesent commodo cursus magna, vel scelerisque nisl consectetur.', '/api/assets/slides/gettyimages-1283712032-612x612.jpg', 'Third slide', 3, 1),
-  ('Fourth slide label', 'Suscipit architecto veritatis quae sit distinctio corporis beatae?.', '/api/assets/slides/cooking-2132874_1280.jpg', 'Fourth slide', 4, 1),
-  ('Fifth slide label', 'Eos, nisi sit, possimus maiores autem minima error eligendi repudiandae praesentium veritatis nam tempore modi vero maxime dolores perferendis aperiam? Necessitatibus, quas.', '/api/assets/slides/closeup-spaghetti-meatballs-tomato-sauce-260nw-2468747773.jpg', 'Fifth slide', 5, 1);
+  ('First slide label', 'Nulla vitae elit libero, a pharetra augue mollis interdum.', '/api/assets/slides/20231114_152614.jpg', 'First slide', 1, 1),
+  ('Second slide label', 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.', '/api/assets/slides/123_1 (1).jpg', 'Second slide', 2, 1),
+  ('Third slide label', 'Praesent commodo cursus magna, vel scelerisque nisl consectetur.', '/api/assets/slides/20241128_171936.jpg', 'Third slide', 3, 1),
+  ('Fourth slide label', 'Suscipit architecto veritatis quae sit distinctio corporis beatae?.', '/api/assets/slides/20250106_173518.jpg', 'Fourth slide', 4, 1),
+  ('Fifth slide label', 'Eos, nisi sit, possimus maiores autem minima error eligendi repudiandae praesentium veritatis nam tempore modi vero maxime dolores perferendis aperiam? Necessitatibus, quas.', '/api/assets/slides/20250313_145844.jpg', 'Fifth slide', 5, 1);
