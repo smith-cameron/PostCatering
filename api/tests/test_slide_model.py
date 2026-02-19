@@ -1,4 +1,5 @@
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -68,6 +69,30 @@ class SlideModelTests(unittest.TestCase):
         self.assertTrue(slides[0]["is_slide"])
         self.assertEqual(slides[0]["media_type"], "image")
         self.assertEqual(mock_query_db.call_count, 2)
+
+    @patch("flask_api.models.slide.query_db")
+    def test_get_active_dicts_resolves_prefixed_asset_filenames(self, mock_query_db):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            prefixed_asset = Path(temp_dir) / "520231114_152614.jpg"
+            prefixed_asset.write_bytes(b"img")
+
+            mock_query_db.return_value = [
+                {
+                    "id": 1,
+                    "title": "Legacy slide",
+                    "caption": "Legacy caption",
+                    "image_url": "/api/assets/slides/20231114_152614.jpg",
+                    "alt_text": "Legacy",
+                    "display_order": 1,
+                    "is_slide": 1,
+                    "media_type": "image",
+                }
+            ]
+
+            with patch("flask_api.models.slide.SLIDES_ASSET_DIR", Path(temp_dir)):
+                slides = Slide.get_active_dicts()
+
+        self.assertEqual(slides[0]["src"], "/api/assets/slides/520231114_152614.jpg")
 
 
 if __name__ == "__main__":

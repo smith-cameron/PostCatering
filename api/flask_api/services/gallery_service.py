@@ -31,13 +31,33 @@ class GalleryService:
         return stem.replace("-", " ").replace("_", " ").strip() or filename
 
     @classmethod
+    def _resolve_asset_filename(cls, filename):
+        if not filename or not cls.GALLERY_ASSET_DIR.exists():
+            return filename
+
+        exact_path = cls.GALLERY_ASSET_DIR / filename
+        if exact_path.exists():
+            return filename
+
+        lowered_filename = filename.lower()
+        matches = sorted(
+            (
+                asset_path.name
+                for asset_path in cls.GALLERY_ASSET_DIR.iterdir()
+                if asset_path.is_file() and asset_path.name.lower().endswith(lowered_filename)
+            ),
+            key=lambda name: (len(name), name.lower()),
+        )
+        return matches[0] if matches else filename
+
+    @classmethod
     def get_gallery_items(cls):
         db_rows = Slide.get_active_media_rows()
-        rows_by_filename = {
-            cls._asset_filename_from_url(row.get("image_url")): row
-            for row in db_rows
-            if cls._asset_filename_from_url(row.get("image_url"))
-        }
+        rows_by_filename = {}
+        for row in db_rows:
+            candidate_filename = cls._resolve_asset_filename(cls._asset_filename_from_url(row.get("image_url")))
+            if candidate_filename:
+                rows_by_filename[candidate_filename] = row
 
         if not cls.GALLERY_ASSET_DIR.exists():
             return []

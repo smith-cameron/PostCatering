@@ -14,7 +14,7 @@ from flask_api.services.gallery_service import GalleryService  # noqa: E402
 class GalleryServiceTests(unittest.TestCase):
     def test_get_gallery_items_merges_static_assets_with_slide_flags(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            image_path = Path(temp_dir) / "gallery-photo.jpg"
+            image_path = Path(temp_dir) / "5gallery-photo.jpg"
             video_path = Path(temp_dir) / "events-reel.mp4"
             image_path.write_bytes(b"img")
             video_path.write_bytes(b"video")
@@ -38,8 +38,8 @@ class GalleryServiceTests(unittest.TestCase):
 
         by_filename = {item["filename"]: item for item in items}
         self.assertEqual(len(items), 2)
-        self.assertTrue(by_filename["gallery-photo.jpg"]["is_slide"])
-        self.assertEqual(by_filename["gallery-photo.jpg"]["id"], 99)
+        self.assertTrue(by_filename["5gallery-photo.jpg"]["is_slide"])
+        self.assertEqual(by_filename["5gallery-photo.jpg"]["id"], 99)
         self.assertEqual(by_filename["events-reel.mp4"]["media_type"], "video")
         self.assertFalse(by_filename["events-reel.mp4"]["is_slide"])
 
