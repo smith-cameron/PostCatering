@@ -504,7 +504,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
           </Modal.Body>
 
           <Modal.Footer>
-            <Button variant="outline-secondary" onClick={handleCloseModal}>
+            <Button className="btn-inquiry-action" variant="secondary" onClick={handleCloseModal}>
               Cancel
             </Button>
             <Button className="btn-inquiry-action" variant="secondary" type="submit" disabled={loading}>

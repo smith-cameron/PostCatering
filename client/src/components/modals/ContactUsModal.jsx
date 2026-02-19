@@ -18,7 +18,7 @@ const ContactUsModal = ({ show, onHide }) => {
         </p>
       </Modal.Body>
       <Modal.Footer>
-        <Button variant="secondary" onClick={onHide}>
+        <Button className="btn-inquiry-action" variant="secondary" onClick={onHide}>
           Close
         </Button>
       </Modal.Footer>

@@ -11,7 +11,7 @@ const InquirySuccessModal = ({ show, onHide }) => (
       </Alert>
     </Modal.Body>
     <Modal.Footer>
-      <Button variant="secondary" onClick={onHide}>
+      <Button className="btn-inquiry-action" variant="secondary" onClick={onHide}>
         Close
       </Button>
     </Modal.Footer>

@@ -11,7 +11,7 @@ const InfoModal = ({ show, onHide, title, subtitle, children }) => {
       </Modal.Header>
       <Modal.Body>{children}</Modal.Body>
       <Modal.Footer>
-        <Button variant="secondary" onClick={onHide}>
+        <Button className="btn-inquiry-action" variant="secondary" onClick={onHide}>
           Close
         </Button>
       </Modal.Footer>

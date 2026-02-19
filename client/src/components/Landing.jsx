@@ -54,7 +54,7 @@ const Landing = () => {
       </p>
       <div className="my-4 px-3">
         <Button
-          className="fw-semibold"
+          className="fw-semibold btn-inquiry-action"
           variant="secondary"
           onClick={() => handleShowModal("aboutUs")}
         >
@@ -67,7 +67,7 @@ const Landing = () => {
       </div>
       <div className="my-4 px-3">
         <Button
-          className="fw-semibold"
+          className="fw-semibold btn-inquiry-action"
           variant="secondary"
           onClick={() => handleShowModal("mmp")}
         >
