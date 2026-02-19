@@ -307,7 +307,7 @@ Backend:
 
 #### Data Access
 - ~~Refactor DB access to avoid opening a new connection per query; support transaction/connection reuse per request.~~
-- Optimize `Menu.seed_from_payload` to reduce N+1 lookups and batch writes.
+- ~~Optimize `Menu.seed_from_payload` to reduce N+1 lookups and batch writes.~~
 - ~~Expand health checks to verify DB connectivity, not just process status.~~
 
 #### Testing

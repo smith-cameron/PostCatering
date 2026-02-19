@@ -132,3 +132,25 @@ def query_db(query, data=None, fetch="all", connection=None, auto_commit=True):
   finally:
     if should_close:
       resolved_connection.close()
+
+
+def query_db_many(query, rows, connection=None, auto_commit=True):
+  if not rows:
+    return 0
+
+  resolved_connection, should_close = _resolve_connection(connection=connection)
+  in_transaction = _in_request_transaction() and connection is None and not should_close
+  try:
+    with resolved_connection.cursor() as cursor:
+      affected = cursor.executemany(query, rows)
+
+    if auto_commit and not in_transaction:
+      resolved_connection.commit()
+    return affected
+  except Exception:
+    if not in_transaction:
+      resolved_connection.rollback()
+    raise
+  finally:
+    if should_close:
+      resolved_connection.close()

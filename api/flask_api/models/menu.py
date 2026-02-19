@@ -2,7 +2,7 @@ import json
 import numbers
 import re
 
-from flask_api.config.mysqlconnection import query_db
+from flask_api.config.mysqlconnection import query_db, query_db_many
 
 
 class Menu:
@@ -707,29 +707,30 @@ class Menu:
           for bullet in tier.get("bullets", []):
             item_names.add(bullet)
 
-    for item_name in item_names:
-      query_db(
-        """
-        INSERT INTO menu_items (item_key, item_name, is_active)
-        VALUES (%(item_key)s, %(item_name)s, 1)
-        ON DUPLICATE KEY UPDATE
-          item_key = VALUES(item_key),
-          is_active = 1,
-          updated_at = CURRENT_TIMESTAMP;
-        """,
-        {"item_key": cls._slug(item_name), "item_name": item_name},
-        fetch="none",
-      )
+    query_db_many(
+      """
+      INSERT INTO menu_items (item_key, item_name, is_active)
+      VALUES (%(item_key)s, %(item_name)s, 1)
+      ON DUPLICATE KEY UPDATE
+        item_key = VALUES(item_key),
+        is_active = 1,
+        updated_at = CURRENT_TIMESTAMP;
+      """,
+      [{"item_key": cls._slug(item_name), "item_name": item_name} for item_name in sorted(item_names)],
+    )
 
     items = query_db("SELECT id, item_name FROM menu_items;")
     item_ids = {row["item_name"]: row["id"] for row in items}
+    option_group_ids = {}
 
+    option_group_item_rows = []
     for idx, (option_key, option_group) in enumerate(menu_options.items(), start=1):
-      query_db(
+      group_id = query_db(
         """
         INSERT INTO menu_option_groups (option_key, option_id, category, title, display_order, is_active)
         VALUES (%(option_key)s, %(option_id)s, %(category)s, %(title)s, %(display_order)s, 1)
         ON DUPLICATE KEY UPDATE
+          id = LAST_INSERT_ID(id),
           option_id = VALUES(option_id),
           category = VALUES(category),
           title = VALUES(title),
@@ -746,38 +747,37 @@ class Menu:
         },
         fetch="none",
       )
-
-      group_id_row = query_db(
-        "SELECT id FROM menu_option_groups WHERE option_key = %(option_key)s;",
-        {"option_key": option_key},
-        fetch="one",
-      )
-      if not group_id_row:
+      if not group_id:
         continue
-      group_id = group_id_row["id"]
+      option_group_ids[option_key] = group_id
       for item_order, item_name in enumerate(option_group.get("items", []), start=1):
         item_id = item_ids.get(item_name)
         if item_id is None:
           continue
-        query_db(
-          """
-          INSERT INTO menu_option_group_items (group_id, item_id, display_order, is_active)
-          VALUES (%(group_id)s, %(item_id)s, %(display_order)s, 1)
-          ON DUPLICATE KEY UPDATE
-            display_order = VALUES(display_order),
-            is_active = 1,
-            updated_at = CURRENT_TIMESTAMP;
-          """,
-          {"group_id": group_id, "item_id": item_id, "display_order": item_order},
-          fetch="none",
+        option_group_item_rows.append(
+          {"group_id": group_id, "item_id": item_id, "display_order": item_order}
         )
 
+    query_db_many(
+      """
+      INSERT INTO menu_option_group_items (group_id, item_id, display_order, is_active)
+      VALUES (%(group_id)s, %(item_id)s, %(display_order)s, 1)
+      ON DUPLICATE KEY UPDATE
+        display_order = VALUES(display_order),
+        is_active = 1,
+        updated_at = CURRENT_TIMESTAMP;
+      """,
+      option_group_item_rows,
+    )
+
+    formal_detail_rows = []
+    formal_constraint_rows = []
     for idx, option in enumerate(formal_plan_options, start=1):
       normalized_option_price = cls._normalize_price_fields(
         option.get("price"),
         option.get("priceMeta") or option.get("price_meta"),
       )
-      query_db(
+      plan_id = query_db(
         """
         INSERT INTO formal_plan_options (
           plan_key,
@@ -804,6 +804,7 @@ class Menu:
           1
         )
         ON DUPLICATE KEY UPDATE
+          id = LAST_INSERT_ID(id),
           option_level = VALUES(option_level),
           title = VALUES(title),
           price = VALUES(price),
@@ -828,55 +829,55 @@ class Menu:
         },
         fetch="none",
       )
-      plan_row = query_db(
-        "SELECT id FROM formal_plan_options WHERE plan_key = %(plan_key)s;",
-        {"plan_key": option.get("id")},
-        fetch="one",
-      )
-      if not plan_row:
+      if not plan_id:
         continue
-      plan_id = plan_row["id"]
 
       for detail_order, detail_text in enumerate(option.get("details", []), start=1):
-        query_db(
-          """
-          INSERT INTO formal_plan_option_details (plan_option_id, detail_text, display_order, is_active)
-          VALUES (%(plan_option_id)s, %(detail_text)s, %(display_order)s, 1)
-          ON DUPLICATE KEY UPDATE
-            detail_text = VALUES(detail_text),
-            is_active = 1,
-            updated_at = CURRENT_TIMESTAMP;
-          """,
-          {"plan_option_id": plan_id, "detail_text": detail_text, "display_order": detail_order},
-          fetch="none",
+        formal_detail_rows.append(
+          {"plan_option_id": plan_id, "detail_text": detail_text, "display_order": detail_order}
         )
 
       for constraint_key, limits in option.get("constraints", {}).items():
-        query_db(
-          """
-          INSERT INTO formal_plan_option_constraints (plan_option_id, constraint_key, min_select, max_select, is_active)
-          VALUES (%(plan_option_id)s, %(constraint_key)s, %(min_select)s, %(max_select)s, 1)
-          ON DUPLICATE KEY UPDATE
-            min_select = VALUES(min_select),
-            max_select = VALUES(max_select),
-            is_active = 1,
-            updated_at = CURRENT_TIMESTAMP;
-          """,
+        formal_constraint_rows.append(
           {
             "plan_option_id": plan_id,
             "constraint_key": constraint_key,
             "min_select": limits.get("min", 0),
             "max_select": limits.get("max", 0),
-          },
-          fetch="none",
+          }
         )
 
+    query_db_many(
+      """
+      INSERT INTO formal_plan_option_details (plan_option_id, detail_text, display_order, is_active)
+      VALUES (%(plan_option_id)s, %(detail_text)s, %(display_order)s, 1)
+      ON DUPLICATE KEY UPDATE
+        detail_text = VALUES(detail_text),
+        is_active = 1,
+        updated_at = CURRENT_TIMESTAMP;
+      """,
+      formal_detail_rows,
+    )
+    query_db_many(
+      """
+      INSERT INTO formal_plan_option_constraints (plan_option_id, constraint_key, min_select, max_select, is_active)
+      VALUES (%(plan_option_id)s, %(constraint_key)s, %(min_select)s, %(max_select)s, 1)
+      ON DUPLICATE KEY UPDATE
+        min_select = VALUES(min_select),
+        max_select = VALUES(max_select),
+        is_active = 1,
+        updated_at = CURRENT_TIMESTAMP;
+      """,
+      formal_constraint_rows,
+    )
+
     for catalog_order, (catalog_key, catalog_data) in enumerate(menu.items(), start=1):
-      query_db(
+      catalog_id = query_db(
         """
         INSERT INTO menu_catalogs (catalog_key, page_title, subtitle, display_order, is_active)
         VALUES (%(catalog_key)s, %(page_title)s, %(subtitle)s, %(display_order)s, 1)
         ON DUPLICATE KEY UPDATE
+          id = LAST_INSERT_ID(id),
           page_title = VALUES(page_title),
           subtitle = VALUES(subtitle),
           display_order = VALUES(display_order),
@@ -891,21 +892,16 @@ class Menu:
         },
         fetch="none",
       )
-      catalog_row = query_db(
-        "SELECT id FROM menu_catalogs WHERE catalog_key = %(catalog_key)s;",
-        {"catalog_key": catalog_key},
-        fetch="one",
-      )
-      if not catalog_row:
+      if not catalog_id:
         continue
-      catalog_id = catalog_row["id"]
 
       for block_order, block in enumerate(catalog_data.get("introBlocks", []), start=1):
-        query_db(
+        block_id = query_db(
           """
           INSERT INTO menu_intro_blocks (catalog_id, title, display_order, is_active)
           VALUES (%(catalog_id)s, %(title)s, %(display_order)s, 1)
           ON DUPLICATE KEY UPDATE
+            id = LAST_INSERT_ID(id),
             title = VALUES(title),
             is_active = 1,
             updated_at = CURRENT_TIMESTAMP;
@@ -913,16 +909,7 @@ class Menu:
           {"catalog_id": catalog_id, "title": block.get("title"), "display_order": block_order},
           fetch="none",
         )
-        block_row = query_db(
-          """
-          SELECT id
-          FROM menu_intro_blocks
-          WHERE catalog_id = %(catalog_id)s AND display_order = %(display_order)s;
-          """,
-          {"catalog_id": catalog_id, "display_order": block_order},
-          fetch="one",
-        )
-        if not block_row:
+        if not block_id:
           continue
         for bullet_order, bullet in enumerate(block.get("bullets", []), start=1):
           query_db(
@@ -934,7 +921,7 @@ class Menu:
               is_active = 1,
               updated_at = CURRENT_TIMESTAMP;
             """,
-            {"intro_block_id": block_row["id"], "bullet_text": bullet, "display_order": bullet_order},
+            {"intro_block_id": block_id, "bullet_text": bullet, "display_order": bullet_order},
             fetch="none",
           )
 
@@ -943,7 +930,7 @@ class Menu:
           section.get("price"),
           section.get("priceMeta") or section.get("price_meta"),
         )
-        query_db(
+        section_id = query_db(
           """
           INSERT INTO menu_sections (
             catalog_id,
@@ -978,6 +965,7 @@ class Menu:
             1
           )
           ON DUPLICATE KEY UPDATE
+            id = LAST_INSERT_ID(id),
             section_type = VALUES(section_type),
             title = VALUES(title),
             description = VALUES(description),
@@ -1009,14 +997,8 @@ class Menu:
           },
           fetch="none",
         )
-        section_row = query_db(
-          "SELECT id FROM menu_sections WHERE section_key = %(section_key)s;",
-          {"section_key": section.get("sectionId")},
-          fetch="one",
-        )
-        if not section_row:
+        if not section_id:
           continue
-        section_id = section_row["id"]
 
         for constraint_key, limits in section.get("constraints", {}).items():
           if isinstance(limits, int):
@@ -1092,12 +1074,17 @@ class Menu:
           )
 
         for include_order, include_key in enumerate(section.get("includeKeys", []), start=1):
-          group_row = query_db(
-            "SELECT id FROM menu_option_groups WHERE option_key = %(option_key)s;",
-            {"option_key": include_key},
-            fetch="one",
-          )
-          if not group_row:
+          group_id = option_group_ids.get(include_key)
+          if group_id is None:
+            group_row = query_db(
+              "SELECT id FROM menu_option_groups WHERE option_key = %(option_key)s;",
+              {"option_key": include_key},
+              fetch="one",
+            )
+            group_id = group_row.get("id") if group_row else None
+            if group_id is not None:
+              option_group_ids[include_key] = group_id
+          if group_id is None:
             continue
           query_db(
             """
@@ -1108,7 +1095,7 @@ class Menu:
               is_active = 1,
               updated_at = CURRENT_TIMESTAMP;
             """,
-            {"section_id": section_id, "group_id": group_row["id"], "display_order": include_order},
+            {"section_id": section_id, "group_id": group_id, "display_order": include_order},
             fetch="none",
           )
 
@@ -1117,7 +1104,7 @@ class Menu:
             tier.get("price"),
             tier.get("priceMeta") or tier.get("price_meta"),
           )
-          query_db(
+          tier_id = query_db(
             """
             INSERT INTO menu_section_tiers (
               section_id,
@@ -1142,6 +1129,7 @@ class Menu:
               1
             )
             ON DUPLICATE KEY UPDATE
+              id = LAST_INSERT_ID(id),
               tier_title = VALUES(tier_title),
               price = VALUES(price),
               price_amount_min = VALUES(price_amount_min),
@@ -1163,18 +1151,8 @@ class Menu:
             },
             fetch="none",
           )
-          tier_row = query_db(
-            """
-            SELECT id
-            FROM menu_section_tiers
-            WHERE section_id = %(section_id)s AND display_order = %(display_order)s;
-            """,
-            {"section_id": section_id, "display_order": tier_order},
-            fetch="one",
-          )
-          if not tier_row:
+          if not tier_id:
             continue
-          tier_id = tier_row["id"]
 
           for constraint_key, constraint_value in tier.get("constraints", {}).items():
             min_select = None
