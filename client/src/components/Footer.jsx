@@ -1,10 +1,12 @@
 import { Container, Nav } from "react-bootstrap";
-import { useContext } from "react";
+import { useContext, useState } from "react";
 import { Link } from "react-router-dom";
 import Context from "../context";
+import ContactUsModal from "./modals/ContactUsModal";
 
 const Footer = () => {
   const { openInquiryModal } = useContext(Context);
+  const [showContactModal, setShowContactModal] = useState(false);
   const currentYear = new Date().getFullYear();
 
   return (
@@ -36,8 +38,18 @@ const Footer = () => {
               Inquiry
             </Nav.Link>
           </Nav.Item>
+          <Nav.Item as="li">
+            <Nav.Link
+              as="button"
+              type="button"
+              className="px-2 py-0"
+              onClick={() => setShowContactModal(true)}>
+              Contact Us
+            </Nav.Link>
+          </Nav.Item>
         </Nav>
       </Container>
+      <ContactUsModal show={showContactModal} onHide={() => setShowContactModal(false)} />
     </footer>
   );
 };
