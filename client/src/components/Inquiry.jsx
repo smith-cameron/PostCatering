@@ -7,7 +7,6 @@ import InquiryServicePlanSection from "./inquiry/InquiryServicePlanSection";
 import InquirySuccessModal from "./inquiry/InquirySuccessModal";
 import {
   EMPTY_FORM,
-  formatBudgetWithCommas,
   getMinEventDateISO,
   getSelectionCategoryKeyFromText,
 } from "./inquiry/inquiryUtils";
@@ -95,10 +94,6 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
     if (name === "phone") {
       const sanitizedPhone = value.replace(/[^0-9+()\-\s.]/g, "");
       setForm((prev) => ({ ...prev, [name]: sanitizedPhone }));
-      return;
-    }
-    if (name === "budget") {
-      setForm((prev) => ({ ...prev, [name]: formatBudgetWithCommas(value) }));
       return;
     }
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -437,7 +432,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
 
             <Form.Group className="mb-3">
               <Form.Label>Budget ($)</Form.Label>
-              <Form.Control name="budget" value={form.budget} onChange={onChange} placeholder="e.g. $2,500" />
+              <Form.Control name="budget" value={form.budget} onChange={onChange} placeholder="e.g. $2,500-$5,000" />
             </Form.Group>
 
             <Form.Group className="mb-3">
@@ -500,7 +495,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
             <Button variant="outline-secondary" onClick={handleCloseModal}>
               Cancel
             </Button>
-            <Button variant="secondary" type="submit" disabled={loading}>
+            <Button className="btn-inquiry-action" variant="secondary" type="submit" disabled={loading}>
               {loading ? (
                 <>
                   <Spinner size="sm" className="me-2" />

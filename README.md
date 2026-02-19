@@ -189,6 +189,8 @@ Use `api/.env.example` as the source of truth for variable names.
 - `SMTP_USE_TLS`: `true`/`false` for TLS
 - `INQUIRY_TO_EMAIL`: destination inbox for inquiry notifications
 - `INQUIRY_FROM_EMAIL`: sender address used by outbound inquiry emails
+- `INQUIRY_REPLY_TO_EMAIL`: reply destination for customer confirmation emails (defaults to `INQUIRY_TO_EMAIL`)
+- `INQUIRY_CONFIRMATION_ENABLED`: `true`/`false` to send customer confirmation emails
 - `INQUIRY_RATE_LIMIT_PER_IP_PER_MINUTE`: short-window inquiry submit limit per client IP
 - `INQUIRY_RATE_LIMIT_PER_IP_PER_HOUR`: hourly inquiry submit limit per client IP
 - `INQUIRY_DUPLICATE_WINDOW_SECONDS`: duplicate payload suppression window
@@ -204,6 +206,32 @@ Security notes:
 - Rotate `MENU_ADMIN_TOKEN` and SMTP credentials if exposed.
 - Keep CORS restricted to known origins.
 - Keep anti-automation integrity settings internal and do not publish implementation details.
+
+### Inquiry Email Content Settings
+
+Inquiry email copy is stored in MySQL `menu_config` (single source of truth), using:
+- `config_key = inquiry_email_content`
+- `config_json` fields:
+  - `confirmation_subject`
+  - `owner_note`
+
+Default values are used when this record is missing.
+
+Example SQL:
+
+```sql
+INSERT INTO menu_config (config_key, config_json)
+VALUES (
+  'inquiry_email_content',
+  JSON_OBJECT(
+    'confirmation_subject', 'Post 468 Catering Team - We received your inquiry',
+    'owner_note', 'Thank you for reaching out. Our catering staff will follow up with scheduling details shortly.'
+  )
+)
+ON DUPLICATE KEY UPDATE
+  config_json = VALUES(config_json),
+  updated_at = CURRENT_TIMESTAMP;
+```
 
 ## API Overview
 
@@ -317,7 +345,7 @@ Backend:
 - Validates US phone format
 - Applies anti-abuse controls (rate limiting, duplicate suppression, message heuristics, domain checks)
 - Stores inquiry in `inquiries` table
-- Attempts SMTP email and records email status
+- Attempts owner notification + customer confirmation emails and records owner-email status
 
 <!--
 ## Troubleshooting
@@ -342,6 +370,8 @@ Backend:
 
 ### Stretch goals
 - Build a dedicated admin dashboard for menu/slide operations with authenticated admin access (instead of browser calls with a static token).
+- Migrate inquiry email transport from SMTP to Mailgun HTTP API for richer delivery telemetry, event/webhook handling, and provider-specific controls.
+- Add production file-based logging (for example `api/logs/app.log`) alongside console logging for persistent operational/audit troubleshooting.
 
 ## Program And Menu Reference (Current Data)
 

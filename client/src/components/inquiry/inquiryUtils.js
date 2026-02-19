@@ -30,12 +30,6 @@ const splitSidesAndSalads = (items = []) =>
 
 const isPricedValue = (value) => /\$/.test(String(value || ""));
 
-export const formatBudgetWithCommas = (value) => {
-  const digitsOnly = String(value || "").replace(/\D/g, "");
-  if (!digitsOnly) return "";
-  return Number(digitsOnly).toLocaleString("en-US");
-};
-
 export const getMinEventDateISO = () => {
   const now = new Date();
   now.setDate(now.getDate() + 7);

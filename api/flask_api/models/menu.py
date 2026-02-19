@@ -6,247 +6,250 @@ from flask_api.config.mysqlconnection import query_db, query_db_many
 
 
 class Menu:
-  CACHE_CONFIG_KEY = "catalog_payload_v1"
-  PRICE_TOKEN_REGEX = re.compile(r"\$?\s*([0-9][0-9,]*(?:\.\d{1,2})?)\s*([kK])?\+?")
+    CACHE_CONFIG_KEY = "catalog_payload_v1"
+    PRICE_TOKEN_REGEX = re.compile(r"\$?\s*([0-9][0-9,]*(?:\.\d{1,2})?)\s*([kK])?\+?")
 
-  @staticmethod
-  def _slug(value):
-    slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
-    return slug[:120] if slug else None
+    @staticmethod
+    def _slug(value):
+        slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+        return slug[:120] if slug else None
 
-  @staticmethod
-  def _coerce_price_number(value):
-    if value in (None, ""):
-      return None
-    if isinstance(value, bool):
-      return None
-    if isinstance(value, numbers.Number):
-      return round(float(value), 2)
-    if not isinstance(value, str):
-      return None
+    @staticmethod
+    def _coerce_price_number(value):
+        if value in (None, ""):
+            return None
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, numbers.Number):
+            return round(float(value), 2)
+        if not isinstance(value, str):
+            return None
 
-    cleaned = value.strip().replace("$", "").replace(",", "")
-    if cleaned.endswith("+"):
-      cleaned = cleaned[:-1]
-    if cleaned.lower().endswith("k"):
-      cleaned = cleaned[:-1]
-      try:
-        return round(float(cleaned) * 1000, 2)
-      except ValueError:
+        cleaned = value.strip().replace("$", "").replace(",", "")
+        if cleaned.endswith("+"):
+            cleaned = cleaned[:-1]
+        if cleaned.lower().endswith("k"):
+            cleaned = cleaned[:-1]
+            try:
+                return round(float(cleaned) * 1000, 2)
+            except ValueError:
+                return None
+
+        try:
+            return round(float(cleaned), 2)
+        except ValueError:
+            return None
+
+    @classmethod
+    def _extract_price_amounts(cls, text):
+        if not isinstance(text, str):
+            return []
+
+        values = []
+        for match in cls.PRICE_TOKEN_REGEX.finditer(text):
+            raw_amount = match.group(1).replace(",", "")
+            suffix = (match.group(2) or "").lower()
+            try:
+                amount = float(raw_amount)
+            except ValueError:
+                continue
+            if suffix == "k":
+                amount *= 1000
+            values.append(round(amount, 2))
+        return values
+
+    @staticmethod
+    def _infer_price_currency(text):
+        if not isinstance(text, str):
+            return None
+        lower = text.lower()
+        if "$" in text or "usd" in lower:
+            return "USD"
         return None
 
-    try:
-      return round(float(cleaned), 2)
-    except ValueError:
-      return None
+    @staticmethod
+    def _infer_price_unit(text):
+        if not isinstance(text, str):
+            return None
+        lower = text.lower()
+        if "per person" in lower or "/person" in lower:
+            return "per_person"
+        if "per tray" in lower or "/tray" in lower:
+            return "per_tray"
+        if "per hour" in lower or "/hour" in lower:
+            return "per_hour"
+        if "flat rate" in lower or "flat fee" in lower:
+            return "flat"
+        return None
 
-  @classmethod
-  def _extract_price_amounts(cls, text):
-    if not isinstance(text, str):
-      return []
+    @classmethod
+    def _normalize_price_fields(cls, price_value, price_meta=None):
+        meta = price_meta if isinstance(price_meta, dict) else {}
 
-    values = []
-    for match in cls.PRICE_TOKEN_REGEX.finditer(text):
-      raw_amount = match.group(1).replace(",", "")
-      suffix = (match.group(2) or "").lower()
-      try:
-        amount = float(raw_amount)
-      except ValueError:
-        continue
-      if suffix == "k":
-        amount *= 1000
-      values.append(round(amount, 2))
-    return values
+        display_price = None
+        if isinstance(price_value, str):
+            display_price = price_value.strip() or None
+        elif isinstance(price_value, bool):
+            display_price = None
+        elif isinstance(price_value, numbers.Number):
+            amount = round(float(price_value), 2)
+            display_price = f"${int(amount):,}" if amount.is_integer() else f"${amount:,.2f}".rstrip("0").rstrip(".")
+        elif price_value is not None:
+            display_price = str(price_value).strip() or None
 
-  @staticmethod
-  def _infer_price_currency(text):
-    if not isinstance(text, str):
-      return None
-    lower = text.lower()
-    if "$" in text or "usd" in lower:
-      return "USD"
-    return None
+        amount_min = cls._coerce_price_number(
+            meta.get("amountMin")
+            if "amountMin" in meta
+            else meta.get("amount_min", meta.get("min", meta.get("price_min")))
+        )
+        amount_max = cls._coerce_price_number(
+            meta.get("amountMax")
+            if "amountMax" in meta
+            else meta.get("amount_max", meta.get("max", meta.get("price_max")))
+        )
+        currency = (
+            str(meta.get("currency") or meta.get("priceCurrency") or meta.get("price_currency") or "").strip().upper()
+            or None
+        )
+        unit = str(meta.get("unit") or meta.get("priceUnit") or meta.get("price_unit") or "").strip().lower() or None
+        if unit:
+            unit = unit.replace("-", "_").replace(" ", "_")
 
-  @staticmethod
-  def _infer_price_unit(text):
-    if not isinstance(text, str):
-      return None
-    lower = text.lower()
-    if "per person" in lower or "/person" in lower:
-      return "per_person"
-    if "per tray" in lower or "/tray" in lower:
-      return "per_tray"
-    if "per hour" in lower or "/hour" in lower:
-      return "per_hour"
-    if "flat rate" in lower or "flat fee" in lower:
-      return "flat"
-    return None
+        parsed_amounts = cls._extract_price_amounts(display_price or "")
+        if parsed_amounts:
+            parsed_min = min(parsed_amounts)
+            parsed_max = max(parsed_amounts)
+            if amount_min is None:
+                amount_min = parsed_min
+            if amount_max is None:
+                amount_max = parsed_max
 
-  @classmethod
-  def _normalize_price_fields(cls, price_value, price_meta=None):
-    meta = price_meta if isinstance(price_meta, dict) else {}
+        if amount_min is not None and amount_max is None:
+            amount_max = amount_min
+        if amount_max is not None and amount_min is None:
+            amount_min = amount_max
+        if amount_min is not None and amount_max is not None and amount_max < amount_min:
+            amount_min, amount_max = amount_max, amount_min
 
-    display_price = None
-    if isinstance(price_value, str):
-      display_price = price_value.strip() or None
-    elif isinstance(price_value, bool):
-      display_price = None
-    elif isinstance(price_value, numbers.Number):
-      amount = round(float(price_value), 2)
-      display_price = f"${int(amount):,}" if amount.is_integer() else f"${amount:,.2f}".rstrip("0").rstrip(".")
-    elif price_value is not None:
-      display_price = str(price_value).strip() or None
+        if not currency:
+            currency = cls._infer_price_currency(display_price or "")
+        if not currency and (amount_min is not None or amount_max is not None):
+            currency = "USD"
 
-    amount_min = cls._coerce_price_number(
-      meta.get("amountMin")
-      if "amountMin" in meta
-      else meta.get("amount_min", meta.get("min", meta.get("price_min")))
-    )
-    amount_max = cls._coerce_price_number(
-      meta.get("amountMax")
-      if "amountMax" in meta
-      else meta.get("amount_max", meta.get("max", meta.get("price_max")))
-    )
-    currency = str(meta.get("currency") or meta.get("priceCurrency") or meta.get("price_currency") or "").strip().upper() or None
-    unit = str(meta.get("unit") or meta.get("priceUnit") or meta.get("price_unit") or "").strip().lower() or None
-    if unit:
-      unit = unit.replace("-", "_").replace(" ", "_")
+        if not unit:
+            unit = cls._infer_price_unit(display_price or "")
 
-    parsed_amounts = cls._extract_price_amounts(display_price or "")
-    if parsed_amounts:
-      parsed_min = min(parsed_amounts)
-      parsed_max = max(parsed_amounts)
-      if amount_min is None:
-        amount_min = parsed_min
-      if amount_max is None:
-        amount_max = parsed_max
+        return {
+            "price": display_price,
+            "price_amount_min": amount_min,
+            "price_amount_max": amount_max,
+            "price_currency": currency,
+            "price_unit": unit,
+        }
 
-    if amount_min is not None and amount_max is None:
-      amount_max = amount_min
-    if amount_max is not None and amount_min is None:
-      amount_min = amount_max
-    if amount_min is not None and amount_max is not None and amount_max < amount_min:
-      amount_min, amount_max = amount_max, amount_min
+    @classmethod
+    def _attach_price_meta_to_payload(cls, target, price_value, price_meta=None):
+        normalized = cls._normalize_price_fields(price_value, price_meta=price_meta)
+        if normalized["price"] is not None:
+            target["price"] = normalized["price"]
 
-    if not currency:
-      currency = cls._infer_price_currency(display_price or "")
-    if not currency and (amount_min is not None or amount_max is not None):
-      currency = "USD"
+        if any(
+            normalized[key] is not None
+            for key in ("price_amount_min", "price_amount_max", "price_currency", "price_unit")
+        ):
+            target["priceMeta"] = {
+                "amountMin": normalized["price_amount_min"],
+                "amountMax": normalized["price_amount_max"],
+                "currency": normalized["price_currency"],
+                "unit": normalized["price_unit"],
+            }
 
-    if not unit:
-      unit = cls._infer_price_unit(display_price or "")
+    @staticmethod
+    def _normalize_tier_constraints(rows):
+        constraints = {}
+        for row in rows:
+            key = str(row.get("constraint_key") or "").strip()
+            if not key:
+                continue
 
-    return {
-      "price": display_price,
-      "price_amount_min": amount_min,
-      "price_amount_max": amount_max,
-      "price_currency": currency,
-      "price_unit": unit,
-    }
+            min_select = row.get("min_select")
+            max_select = row.get("max_select")
+            legacy_value = row.get("constraint_value")
 
-  @classmethod
-  def _attach_price_meta_to_payload(cls, target, price_value, price_meta=None):
-    normalized = cls._normalize_price_fields(price_value, price_meta=price_meta)
-    if normalized["price"] is not None:
-      target["price"] = normalized["price"]
+            try:
+                min_select = int(min_select) if min_select is not None else None
+            except (TypeError, ValueError):
+                min_select = None
+            try:
+                max_select = int(max_select) if max_select is not None else None
+            except (TypeError, ValueError):
+                max_select = None
+            try:
+                legacy_value = int(legacy_value) if legacy_value is not None else None
+            except (TypeError, ValueError):
+                legacy_value = None
 
-    if any(
-      normalized[key] is not None
-      for key in ("price_amount_min", "price_amount_max", "price_currency", "price_unit")
-    ):
-      target["priceMeta"] = {
-        "amountMin": normalized["price_amount_min"],
-        "amountMax": normalized["price_amount_max"],
-        "currency": normalized["price_currency"],
-        "unit": normalized["price_unit"],
-      }
+            # Backward compatibility for legacy suffix rows.
+            if key.endswith("_min") and legacy_value is not None:
+                base_key = key[:-4]
+                constraints.setdefault(base_key, {"min": 0, "max": 0})["min"] = legacy_value
+                continue
+            if key.endswith("_max") and legacy_value is not None:
+                base_key = key[:-4]
+                constraints.setdefault(base_key, {"min": 0, "max": 0})["max"] = legacy_value
+                continue
 
-  @staticmethod
-  def _normalize_tier_constraints(rows):
-    constraints = {}
-    for row in rows:
-      key = str(row.get("constraint_key") or "").strip()
-      if not key:
-        continue
+            if legacy_value is not None:
+                if min_select is None or (min_select == 0 and (max_select is None or max_select == 0)):
+                    min_select = legacy_value
+                if max_select is None or (max_select == 0 and (min_select is None or min_select == legacy_value)):
+                    max_select = legacy_value
 
-      min_select = row.get("min_select")
-      max_select = row.get("max_select")
-      legacy_value = row.get("constraint_value")
+            constraints[key] = {
+                "min": int(min_select or 0),
+                "max": int(max_select or 0),
+            }
 
-      try:
-        min_select = int(min_select) if min_select is not None else None
-      except (TypeError, ValueError):
-        min_select = None
-      try:
-        max_select = int(max_select) if max_select is not None else None
-      except (TypeError, ValueError):
-        max_select = None
-      try:
-        legacy_value = int(legacy_value) if legacy_value is not None else None
-      except (TypeError, ValueError):
-        legacy_value = None
+        return constraints
 
-      # Backward compatibility for legacy suffix rows.
-      if key.endswith("_min") and legacy_value is not None:
-        base_key = key[:-4]
-        constraints.setdefault(base_key, {"min": 0, "max": 0})["min"] = legacy_value
-        continue
-      if key.endswith("_max") and legacy_value is not None:
-        base_key = key[:-4]
-        constraints.setdefault(base_key, {"min": 0, "max": 0})["max"] = legacy_value
-        continue
+    @staticmethod
+    def _normalize_min_max_constraints(rows):
+        constraints = {}
+        for row in rows:
+            key = row.get("constraint_key")
+            if not key:
+                continue
+            constraints[str(key)] = {
+                "min": int(row.get("min_select") or 0),
+                "max": int(row.get("max_select") or 0),
+            }
+        return constraints
 
-      if legacy_value is not None:
-        if min_select is None or (min_select == 0 and (max_select is None or max_select == 0)):
-          min_select = legacy_value
-        if max_select is None or (max_select == 0 and (min_select is None or min_select == legacy_value)):
-          max_select = legacy_value
+    @classmethod
+    def _normalize_payload_constraints(cls, constraints):
+        if not isinstance(constraints, dict):
+            return {}
 
-      constraints[key] = {
-        "min": int(min_select or 0),
-        "max": int(max_select or 0),
-      }
+        normalized = {}
+        for key, value in constraints.items():
+            if isinstance(value, int):
+                normalized[str(key)] = {"min": value, "max": value}
+            elif isinstance(value, dict):
+                min_value = value.get("min")
+                max_value = value.get("max")
+                if isinstance(min_value, int) or isinstance(max_value, int):
+                    normalized[str(key)] = {
+                        "min": min_value or 0,
+                        "max": max_value or 0,
+                    }
 
-    return constraints
+        if "sides_salads" in normalized and "sides" not in normalized and "salads" not in normalized:
+            normalized["sides"] = normalized.pop("sides_salads")
+        return normalized
 
-  @staticmethod
-  def _normalize_min_max_constraints(rows):
-    constraints = {}
-    for row in rows:
-      key = row.get("constraint_key")
-      if not key:
-        continue
-      constraints[str(key)] = {
-        "min": int(row.get("min_select") or 0),
-        "max": int(row.get("max_select") or 0),
-      }
-    return constraints
-
-  @classmethod
-  def _normalize_payload_constraints(cls, constraints):
-    if not isinstance(constraints, dict):
-      return {}
-
-    normalized = {}
-    for key, value in constraints.items():
-      if isinstance(value, int):
-        normalized[str(key)] = {"min": value, "max": value}
-      elif isinstance(value, dict):
-        min_value = value.get("min")
-        max_value = value.get("max")
-        if isinstance(min_value, int) or isinstance(max_value, int):
-          normalized[str(key)] = {
-            "min": min_value or 0,
-            "max": max_value or 0,
-          }
-
-    if "sides_salads" in normalized and "sides" not in normalized and "salads" not in normalized:
-      normalized["sides"] = normalized.pop("sides_salads")
-    return normalized
-
-  @classmethod
-  def _get_menu_options(cls):
-    query = """
+    @classmethod
+    def _get_menu_options(cls):
+        query = """
       SELECT
         g.id AS group_id,
         g.option_key,
@@ -264,106 +267,106 @@ class Menu:
       WHERE g.is_active = 1
       ORDER BY g.display_order ASC, g.id ASC, gi.display_order ASC, gi.id ASC;
     """
-    rows = query_db(query)
-    if not rows:
-      return {}
+        rows = query_db(query)
+        if not rows:
+            return {}
 
-    payload = {}
-    seen = set()
-    for row in rows:
-      key = row["option_key"]
-      if key not in seen:
-        payload[key] = {
-          "id": row["option_id"],
-          "category": row["category"],
-          "title": row["title"],
-          "items": [],
-        }
-        seen.add(key)
+        payload = {}
+        seen = set()
+        for row in rows:
+            key = row["option_key"]
+            if key not in seen:
+                payload[key] = {
+                    "id": row["option_id"],
+                    "category": row["category"],
+                    "title": row["title"],
+                    "items": [],
+                }
+                seen.add(key)
 
-      if row["item_name"]:
-        payload[key]["items"].append(row["item_name"])
+            if row["item_name"]:
+                payload[key]["items"].append(row["item_name"])
 
-    return payload
+        return payload
 
-  @classmethod
-  def _get_formal_plan_options(cls):
-    plans = query_db(
-      """
+    @classmethod
+    def _get_formal_plan_options(cls):
+        plans = query_db(
+            """
       SELECT id, plan_key, option_level, title, price
       FROM formal_plan_options
       WHERE is_active = 1
       ORDER BY display_order ASC, id ASC;
       """
-    )
-    if not plans:
-      return []
+        )
+        if not plans:
+            return []
 
-    details = query_db(
-      """
+        details = query_db(
+            """
       SELECT plan_option_id, detail_text
       FROM formal_plan_option_details
       WHERE is_active = 1
       ORDER BY plan_option_id ASC, display_order ASC, id ASC;
       """
-    )
-    constraints = query_db(
-      """
+        )
+        constraints = query_db(
+            """
       SELECT plan_option_id, constraint_key, min_select, max_select
       FROM formal_plan_option_constraints
       WHERE is_active = 1
       ORDER BY plan_option_id ASC, id ASC;
       """
-    )
+        )
 
-    details_by_plan = {}
-    for row in details:
-      details_by_plan.setdefault(row["plan_option_id"], []).append(row["detail_text"])
+        details_by_plan = {}
+        for row in details:
+            details_by_plan.setdefault(row["plan_option_id"], []).append(row["detail_text"])
 
-    constraints_by_plan = {}
-    for row in constraints:
-      constraints_by_plan.setdefault(row["plan_option_id"], {})[row["constraint_key"]] = {
-        "min": row["min_select"],
-        "max": row["max_select"],
-      }
+        constraints_by_plan = {}
+        for row in constraints:
+            constraints_by_plan.setdefault(row["plan_option_id"], {})[row["constraint_key"]] = {
+                "min": row["min_select"],
+                "max": row["max_select"],
+            }
 
-    payload = []
-    for row in plans:
-      plan = {
-        "id": row["plan_key"],
-        "level": row["option_level"],
-        "title": row["title"],
-        "details": details_by_plan.get(row["id"], []),
-        "constraints": constraints_by_plan.get(row["id"], {}),
-      }
-      cls._attach_price_meta_to_payload(plan, row.get("price"))
-      payload.append(plan)
-    return payload
+        payload = []
+        for row in plans:
+            plan = {
+                "id": row["plan_key"],
+                "level": row["option_level"],
+                "title": row["title"],
+                "details": details_by_plan.get(row["id"], []),
+                "constraints": constraints_by_plan.get(row["id"], {}),
+            }
+            cls._attach_price_meta_to_payload(plan, row.get("price"))
+            payload.append(plan)
+        return payload
 
-  @classmethod
-  def _get_menu_catalog(cls):
-    catalogs = query_db(
-      """
+    @classmethod
+    def _get_menu_catalog(cls):
+        catalogs = query_db(
+            """
       SELECT id, catalog_key, page_title, subtitle
       FROM menu_catalogs
       WHERE is_active = 1
       ORDER BY display_order ASC, id ASC;
       """
-    )
-    if not catalogs:
-      return {}
+        )
+        if not catalogs:
+            return {}
 
-    payload = {}
-    catalog_ids = {}
-    for row in catalogs:
-      payload[row["catalog_key"]] = {
-        "pageTitle": row["page_title"],
-        "subtitle": row["subtitle"],
-      }
-      catalog_ids[row["id"]] = row["catalog_key"]
+        payload = {}
+        catalog_ids = {}
+        for row in catalogs:
+            payload[row["catalog_key"]] = {
+                "pageTitle": row["page_title"],
+                "subtitle": row["subtitle"],
+            }
+            catalog_ids[row["id"]] = row["catalog_key"]
 
-    intro_rows = query_db(
-      """
+        intro_rows = query_db(
+            """
       SELECT
         b.catalog_id,
         b.id AS block_id,
@@ -377,25 +380,25 @@ class Menu:
       WHERE b.is_active = 1
       ORDER BY b.catalog_id ASC, b.display_order ASC, b.id ASC, ib.display_order ASC, ib.id ASC;
       """
-    )
+        )
 
-    intro_by_catalog = {}
-    for row in intro_rows:
-      catalog_key = catalog_ids.get(row["catalog_id"])
-      if not catalog_key:
-        continue
+        intro_by_catalog = {}
+        for row in intro_rows:
+            catalog_key = catalog_ids.get(row["catalog_id"])
+            if not catalog_key:
+                continue
 
-      block_bucket = intro_by_catalog.setdefault(catalog_key, {})
-      if row["block_id"] not in block_bucket:
-        block_bucket[row["block_id"]] = {"title": row["block_title"], "bullets": []}
-      if row["bullet_text"] is not None:
-        block_bucket[row["block_id"]]["bullets"].append(row["bullet_text"])
+            block_bucket = intro_by_catalog.setdefault(catalog_key, {})
+            if row["block_id"] not in block_bucket:
+                block_bucket[row["block_id"]] = {"title": row["block_title"], "bullets": []}
+            if row["bullet_text"] is not None:
+                block_bucket[row["block_id"]]["bullets"].append(row["bullet_text"])
 
-    for catalog_key, blocks in intro_by_catalog.items():
-      payload[catalog_key]["introBlocks"] = list(blocks.values())
+        for catalog_key, blocks in intro_by_catalog.items():
+            payload[catalog_key]["introBlocks"] = list(blocks.values())
 
-    section_rows = query_db(
-      """
+        section_rows = query_db(
+            """
       SELECT
         s.id AS section_id,
         s.catalog_id,
@@ -410,78 +413,78 @@ class Menu:
       WHERE s.is_active = 1
       ORDER BY s.catalog_id ASC, s.display_order ASC, s.id ASC;
       """
-    )
+        )
 
-    section_by_id = {}
-    for row in section_rows:
-      catalog_key = catalog_ids.get(row["catalog_id"])
-      if not catalog_key:
-        continue
+        section_by_id = {}
+        for row in section_rows:
+            catalog_key = catalog_ids.get(row["catalog_id"])
+            if not catalog_key:
+                continue
 
-      section = {"sectionId": row["section_key"]}
-      if row["section_type"] is not None:
-        section["type"] = row["section_type"]
-      if row["course_type"] is not None:
-        section["courseType"] = row["course_type"]
-      if row["category"] is not None:
-        section["category"] = row["category"]
-      section["title"] = row["title"]
-      if row["description"] is not None:
-        section["description"] = row["description"]
-      cls._attach_price_meta_to_payload(section, row.get("price"))
+            section = {"sectionId": row["section_key"]}
+            if row["section_type"] is not None:
+                section["type"] = row["section_type"]
+            if row["course_type"] is not None:
+                section["courseType"] = row["course_type"]
+            if row["category"] is not None:
+                section["category"] = row["category"]
+            section["title"] = row["title"]
+            if row["description"] is not None:
+                section["description"] = row["description"]
+            cls._attach_price_meta_to_payload(section, row.get("price"))
 
-      payload[catalog_key].setdefault("sections", []).append(section)
-      section_by_id[row["section_id"]] = section
+            payload[catalog_key].setdefault("sections", []).append(section)
+            section_by_id[row["section_id"]] = section
 
-    section_columns = query_db(
-      """
+        section_columns = query_db(
+            """
       SELECT section_id, column_label
       FROM menu_section_columns
       WHERE is_active = 1
       ORDER BY section_id ASC, display_order ASC, id ASC;
       """
-    )
-    for row in section_columns:
-      section = section_by_id.get(row["section_id"])
-      if section is None:
-        continue
-      section.setdefault("columns", []).append(row["column_label"])
+        )
+        for row in section_columns:
+            section = section_by_id.get(row["section_id"])
+            if section is None:
+                continue
+            section.setdefault("columns", []).append(row["column_label"])
 
-    section_pricing_rows = query_db(
-      """
+        section_pricing_rows = query_db(
+            """
       SELECT r.section_id, i.item_name, r.value_1, r.value_2
       FROM menu_section_rows r
       JOIN menu_items i ON i.id = r.item_id AND i.is_active = 1
       WHERE r.is_active = 1
       ORDER BY r.section_id ASC, r.display_order ASC, r.id ASC;
       """
-    )
-    for row in section_pricing_rows:
-      section = section_by_id.get(row["section_id"])
-      if section is None:
-        continue
-      section.setdefault("rows", []).append([row["item_name"], row["value_1"], row["value_2"]])
+        )
+        for row in section_pricing_rows:
+            section = section_by_id.get(row["section_id"])
+            if section is None:
+                continue
+            section.setdefault("rows", []).append([row["item_name"], row["value_1"], row["value_2"]])
 
-    section_constraint_rows = query_db(
-      """
+        section_constraint_rows = query_db(
+            """
       SELECT section_id, constraint_key, min_select, max_select
       FROM menu_section_constraints
       WHERE is_active = 1
       ORDER BY section_id ASC, id ASC;
       """
-    )
-    constraints_by_section_id = {}
-    for row in section_constraint_rows:
-      constraints_by_section_id.setdefault(row["section_id"], []).append(row)
+        )
+        constraints_by_section_id = {}
+        for row in section_constraint_rows:
+            constraints_by_section_id.setdefault(row["section_id"], []).append(row)
 
-    for section_id, rows in constraints_by_section_id.items():
-      section = section_by_id.get(section_id)
-      if section is None:
-        continue
-      section["constraints"] = cls._normalize_min_max_constraints(rows)
+        for section_id, rows in constraints_by_section_id.items():
+            section = section_by_id.get(section_id)
+            if section is None:
+                continue
+            section["constraints"] = cls._normalize_min_max_constraints(rows)
 
-    include_rows = query_db(
-      """
+        include_rows = query_db(
+            """
       SELECT ig.section_id, g.option_key
       FROM menu_section_include_groups ig
       JOIN menu_option_groups g
@@ -489,52 +492,52 @@ class Menu:
       WHERE ig.is_active = 1
       ORDER BY ig.section_id ASC, ig.display_order ASC, ig.id ASC;
       """
-    )
-    for row in include_rows:
-      section = section_by_id.get(row["section_id"])
-      if section is None:
-        continue
-      section.setdefault("includeKeys", []).append(row["option_key"])
+        )
+        for row in include_rows:
+            section = section_by_id.get(row["section_id"])
+            if section is None:
+                continue
+            section.setdefault("includeKeys", []).append(row["option_key"])
 
-    tier_rows = query_db(
-      """
+        tier_rows = query_db(
+            """
       SELECT id, section_id, tier_title, price
       FROM menu_section_tiers
       WHERE is_active = 1
       ORDER BY section_id ASC, display_order ASC, id ASC;
       """
-    )
-    tiers_by_id = {}
-    for row in tier_rows:
-      section = section_by_id.get(row["section_id"])
-      if section is None:
-        continue
-      tier = {"tierTitle": row["tier_title"]}
-      cls._attach_price_meta_to_payload(tier, row.get("price"))
-      tier["bullets"] = []
-      tiers_by_id[row["id"]] = tier
-      section.setdefault("tiers", []).append(tier)
+        )
+        tiers_by_id = {}
+        for row in tier_rows:
+            section = section_by_id.get(row["section_id"])
+            if section is None:
+                continue
+            tier = {"tierTitle": row["tier_title"]}
+            cls._attach_price_meta_to_payload(tier, row.get("price"))
+            tier["bullets"] = []
+            tiers_by_id[row["id"]] = tier
+            section.setdefault("tiers", []).append(tier)
 
-    tier_constraint_rows = query_db(
-      """
+        tier_constraint_rows = query_db(
+            """
       SELECT tier_id, constraint_key, min_select, max_select, constraint_value
       FROM menu_section_tier_constraints
       WHERE is_active = 1
       ORDER BY tier_id ASC, id ASC;
       """
-    )
-    tier_constraints_by_id = {}
-    for row in tier_constraint_rows:
-      tier_constraints_by_id.setdefault(row["tier_id"], []).append(row)
+        )
+        tier_constraints_by_id = {}
+        for row in tier_constraint_rows:
+            tier_constraints_by_id.setdefault(row["tier_id"], []).append(row)
 
-    for tier_id, rows in tier_constraints_by_id.items():
-      tier = tiers_by_id.get(tier_id)
-      if tier is None:
-        continue
-      tier["constraints"] = cls._normalize_tier_constraints(rows)
+        for tier_id, rows in tier_constraints_by_id.items():
+            tier = tiers_by_id.get(tier_id)
+            if tier is None:
+                continue
+            tier["constraints"] = cls._normalize_tier_constraints(rows)
 
-    tier_bullet_rows = query_db(
-      """
+        tier_bullet_rows = query_db(
+            """
       SELECT b.tier_id, COALESCE(i.item_name, b.bullet_text) AS bullet_text
       FROM menu_section_tier_bullets b
       LEFT JOIN menu_items i
@@ -543,97 +546,97 @@ class Menu:
         AND (b.item_id IS NULL OR i.id IS NOT NULL)
       ORDER BY b.tier_id ASC, b.display_order ASC, b.id ASC;
       """
-    )
-    for row in tier_bullet_rows:
-      tier = tiers_by_id.get(row["tier_id"])
-      if tier is None:
-        continue
-      tier.setdefault("bullets", []).append(row["bullet_text"])
+        )
+        for row in tier_bullet_rows:
+            tier = tiers_by_id.get(row["tier_id"])
+            if tier is None:
+                continue
+            tier.setdefault("bullets", []).append(row["bullet_text"])
 
-    return payload
+        return payload
 
-  @classmethod
-  def get_config_payload(cls):
-    menu_options = cls._get_menu_options()
-    formal_plan_options = cls._get_formal_plan_options()
-    menu = cls._get_menu_catalog()
+    @classmethod
+    def get_config_payload(cls):
+        menu_options = cls._get_menu_options()
+        formal_plan_options = cls._get_formal_plan_options()
+        menu = cls._get_menu_catalog()
 
-    if not menu_options or not formal_plan_options or not menu:
-      return None
+        if not menu_options or not formal_plan_options or not menu:
+            return None
 
-    return {
-      "menu_options": menu_options,
-      "formal_plan_options": formal_plan_options,
-      "menu": menu,
-    }
+        return {
+            "menu_options": menu_options,
+            "formal_plan_options": formal_plan_options,
+            "menu": menu,
+        }
 
-  @classmethod
-  def get_cached_config_payload(cls):
-    row = query_db(
-      """
+    @classmethod
+    def get_cached_config_payload(cls):
+        row = query_db(
+            """
       SELECT config_json
       FROM menu_config
       WHERE config_key = %(config_key)s
       LIMIT 1;
       """,
-      {"config_key": cls.CACHE_CONFIG_KEY},
-      fetch="one",
-    )
-    if not row:
-      return None
+            {"config_key": cls.CACHE_CONFIG_KEY},
+            fetch="one",
+        )
+        if not row:
+            return None
 
-    cached = row.get("config_json")
-    if isinstance(cached, dict):
-      return cached
-    if isinstance(cached, str):
-      try:
-        parsed = json.loads(cached)
-      except json.JSONDecodeError:
+        cached = row.get("config_json")
+        if isinstance(cached, dict):
+            return cached
+        if isinstance(cached, str):
+            try:
+                parsed = json.loads(cached)
+            except json.JSONDecodeError:
+                return None
+            return parsed if isinstance(parsed, dict) else None
         return None
-      return parsed if isinstance(parsed, dict) else None
-    return None
 
-  @classmethod
-  def upsert_cached_config_payload(cls, payload):
-    query_db(
-      """
+    @classmethod
+    def upsert_cached_config_payload(cls, payload):
+        query_db(
+            """
       INSERT INTO menu_config (config_key, config_json)
       VALUES (%(config_key)s, CAST(%(config_json)s AS JSON))
       ON DUPLICATE KEY UPDATE
         config_json = VALUES(config_json),
         updated_at = CURRENT_TIMESTAMP;
       """,
-      {
-        "config_key": cls.CACHE_CONFIG_KEY,
-        "config_json": json.dumps(payload, ensure_ascii=False),
-      },
-      fetch="none",
-    )
+            {
+                "config_key": cls.CACHE_CONFIG_KEY,
+                "config_json": json.dumps(payload, ensure_ascii=False),
+            },
+            fetch="none",
+        )
 
-  @classmethod
-  def clear_cached_config_payload(cls):
-    query_db(
-      """
+    @classmethod
+    def clear_cached_config_payload(cls):
+        query_db(
+            """
       DELETE FROM menu_config
       WHERE config_key = %(config_key)s;
       """,
-      {"config_key": cls.CACHE_CONFIG_KEY},
-      fetch="none",
-    )
+            {"config_key": cls.CACHE_CONFIG_KEY},
+            fetch="none",
+        )
 
-  @classmethod
-  def get_effective_service_constraints(cls, service_selection):
-    if not isinstance(service_selection, dict):
-      return {}
+    @classmethod
+    def get_effective_service_constraints(cls, service_selection):
+        if not isinstance(service_selection, dict):
+            return {}
 
-    plan_id = str(service_selection.get("id") or "").strip()
-    level = str(service_selection.get("level") or "").strip().lower()
-    section_key = str(service_selection.get("sectionId") or "").strip()
-    title = str(service_selection.get("title") or "").strip()
+        plan_id = str(service_selection.get("id") or "").strip()
+        level = str(service_selection.get("level") or "").strip().lower()
+        section_key = str(service_selection.get("sectionId") or "").strip()
+        title = str(service_selection.get("title") or "").strip()
 
-    if plan_id:
-      formal_rows = query_db(
-        """
+        if plan_id:
+            formal_rows = query_db(
+                """
         SELECT c.constraint_key, c.min_select, c.max_select
         FROM formal_plan_options p
         JOIN formal_plan_option_constraints c
@@ -642,35 +645,67 @@ class Menu:
           AND p.plan_key = %(plan_key)s
         ORDER BY c.id ASC;
         """,
-        {"plan_key": plan_id},
-      )
-      formal_constraints = cls._normalize_min_max_constraints(formal_rows or [])
-      if formal_constraints:
-        return formal_constraints
+                {"plan_key": plan_id},
+            )
+            formal_constraints = cls._normalize_min_max_constraints(formal_rows or [])
+            if formal_constraints:
+                return formal_constraints
 
-    if section_key and level == "tier" and title:
-      tier_rows = query_db(
-        """
-        SELECT c.constraint_key, c.min_select, c.max_select, c.constraint_value
-        FROM menu_sections s
-        JOIN menu_section_tiers t
-          ON t.section_id = s.id AND t.is_active = 1
-        JOIN menu_section_tier_constraints c
-          ON c.tier_id = t.id AND c.is_active = 1
-        WHERE s.is_active = 1
-          AND s.section_key = %(section_key)s
-          AND t.tier_title = %(tier_title)s
-        ORDER BY c.id ASC;
-        """,
-        {"section_key": section_key, "tier_title": title},
-      )
-      tier_constraints = cls._normalize_tier_constraints(tier_rows or [])
-      if tier_constraints:
-        return cls._normalize_payload_constraints(tier_constraints)
+        if section_key and level == "tier" and title:
+            query_payload = {"section_key": section_key, "tier_title": title}
+            tier_rows = None
+            try:
+                tier_rows = query_db(
+                    """
+          SELECT c.constraint_key, c.min_select, c.max_select, c.constraint_value
+          FROM menu_sections s
+          JOIN menu_section_tiers t
+            ON t.section_id = s.id AND t.is_active = 1
+          JOIN menu_section_tier_constraints c
+            ON c.tier_id = t.id AND c.is_active = 1
+          WHERE s.is_active = 1
+            AND s.section_key = %(section_key)s
+            AND t.tier_title = %(tier_title)s
+          ORDER BY c.id ASC;
+          """,
+                    query_payload,
+                )
+            except Exception as exc:
+                error_text = str(exc).lower()
+                if "unknown column" not in error_text or "min_select" not in error_text:
+                    raise
+                # Backward compatibility for legacy environments before min/max rollout.
+                legacy_rows = query_db(
+                    """
+          SELECT c.constraint_key, c.constraint_value
+          FROM menu_sections s
+          JOIN menu_section_tiers t
+            ON t.section_id = s.id AND t.is_active = 1
+          JOIN menu_section_tier_constraints c
+            ON c.tier_id = t.id AND c.is_active = 1
+          WHERE s.is_active = 1
+            AND s.section_key = %(section_key)s
+            AND t.tier_title = %(tier_title)s
+          ORDER BY c.id ASC;
+          """,
+                    query_payload,
+                )
+                tier_rows = [
+                    {
+                        "constraint_key": row.get("constraint_key"),
+                        "min_select": None,
+                        "max_select": None,
+                        "constraint_value": row.get("constraint_value"),
+                    }
+                    for row in (legacy_rows or [])
+                ]
+            tier_constraints = cls._normalize_tier_constraints(tier_rows or [])
+            if tier_constraints:
+                return cls._normalize_payload_constraints(tier_constraints)
 
-    if section_key and level == "package":
-      package_rows = query_db(
-        """
+        if section_key and level == "package":
+            package_rows = query_db(
+                """
         SELECT c.constraint_key, c.min_select, c.max_select
         FROM menu_sections s
         JOIN menu_section_constraints c
@@ -679,36 +714,36 @@ class Menu:
           AND s.section_key = %(section_key)s
         ORDER BY c.id ASC;
         """,
-        {"section_key": section_key},
-      )
-      package_constraints = cls._normalize_min_max_constraints(package_rows or [])
-      if package_constraints:
-        return package_constraints
+                {"section_key": section_key},
+            )
+            package_constraints = cls._normalize_min_max_constraints(package_rows or [])
+            if package_constraints:
+                return package_constraints
 
-    # Fallback for legacy payloads while clients converge on DB-backed constraints.
-    return cls._normalize_payload_constraints(service_selection.get("constraints"))
+        # Fallback for legacy payloads while clients converge on DB-backed constraints.
+        return cls._normalize_payload_constraints(service_selection.get("constraints"))
 
-  @classmethod
-  def seed_from_payload(cls, payload):
-    menu_options = payload.get("menu_options") or payload.get("MENU_OPTIONS") or {}
-    formal_plan_options = payload.get("formal_plan_options") or payload.get("FORMAL_PLAN_OPTIONS") or []
-    menu = payload.get("menu") or payload.get("MENU") or {}
+    @classmethod
+    def seed_from_payload(cls, payload):
+        menu_options = payload.get("menu_options") or payload.get("MENU_OPTIONS") or {}
+        formal_plan_options = payload.get("formal_plan_options") or payload.get("FORMAL_PLAN_OPTIONS") or []
+        menu = payload.get("menu") or payload.get("MENU") or {}
 
-    item_names = set()
-    for option_group in menu_options.values():
-      for item in option_group.get("items", []):
-        item_names.add(item)
-    for catalog in menu.values():
-      for section in catalog.get("sections", []):
-        for row in section.get("rows", []):
-          if row and row[0]:
-            item_names.add(row[0])
-        for tier in section.get("tiers", []):
-          for bullet in tier.get("bullets", []):
-            item_names.add(bullet)
+        item_names = set()
+        for option_group in menu_options.values():
+            for item in option_group.get("items", []):
+                item_names.add(item)
+        for catalog in menu.values():
+            for section in catalog.get("sections", []):
+                for row in section.get("rows", []):
+                    if row and row[0]:
+                        item_names.add(row[0])
+                for tier in section.get("tiers", []):
+                    for bullet in tier.get("bullets", []):
+                        item_names.add(bullet)
 
-    query_db_many(
-      """
+        query_db_many(
+            """
       INSERT INTO menu_items (item_key, item_name, is_active)
       VALUES (%(item_key)s, %(item_name)s, 1)
       ON DUPLICATE KEY UPDATE
@@ -716,17 +751,17 @@ class Menu:
         is_active = 1,
         updated_at = CURRENT_TIMESTAMP;
       """,
-      [{"item_key": cls._slug(item_name), "item_name": item_name} for item_name in sorted(item_names)],
-    )
+            [{"item_key": cls._slug(item_name), "item_name": item_name} for item_name in sorted(item_names)],
+        )
 
-    items = query_db("SELECT id, item_name FROM menu_items;")
-    item_ids = {row["item_name"]: row["id"] for row in items}
-    option_group_ids = {}
+        items = query_db("SELECT id, item_name FROM menu_items;")
+        item_ids = {row["item_name"]: row["id"] for row in items}
+        option_group_ids = {}
 
-    option_group_item_rows = []
-    for idx, (option_key, option_group) in enumerate(menu_options.items(), start=1):
-      group_id = query_db(
-        """
+        option_group_item_rows = []
+        for idx, (option_key, option_group) in enumerate(menu_options.items(), start=1):
+            group_id = query_db(
+                """
         INSERT INTO menu_option_groups (option_key, option_id, category, title, display_order, is_active)
         VALUES (%(option_key)s, %(option_id)s, %(category)s, %(title)s, %(display_order)s, 1)
         ON DUPLICATE KEY UPDATE
@@ -738,28 +773,26 @@ class Menu:
           is_active = 1,
           updated_at = CURRENT_TIMESTAMP;
         """,
-        {
-          "option_key": option_key,
-          "option_id": option_group.get("id"),
-          "category": option_group.get("category"),
-          "title": option_group.get("title"),
-          "display_order": idx,
-        },
-        fetch="none",
-      )
-      if not group_id:
-        continue
-      option_group_ids[option_key] = group_id
-      for item_order, item_name in enumerate(option_group.get("items", []), start=1):
-        item_id = item_ids.get(item_name)
-        if item_id is None:
-          continue
-        option_group_item_rows.append(
-          {"group_id": group_id, "item_id": item_id, "display_order": item_order}
-        )
+                {
+                    "option_key": option_key,
+                    "option_id": option_group.get("id"),
+                    "category": option_group.get("category"),
+                    "title": option_group.get("title"),
+                    "display_order": idx,
+                },
+                fetch="none",
+            )
+            if not group_id:
+                continue
+            option_group_ids[option_key] = group_id
+            for item_order, item_name in enumerate(option_group.get("items", []), start=1):
+                item_id = item_ids.get(item_name)
+                if item_id is None:
+                    continue
+                option_group_item_rows.append({"group_id": group_id, "item_id": item_id, "display_order": item_order})
 
-    query_db_many(
-      """
+        query_db_many(
+            """
       INSERT INTO menu_option_group_items (group_id, item_id, display_order, is_active)
       VALUES (%(group_id)s, %(item_id)s, %(display_order)s, 1)
       ON DUPLICATE KEY UPDATE
@@ -767,18 +800,18 @@ class Menu:
         is_active = 1,
         updated_at = CURRENT_TIMESTAMP;
       """,
-      option_group_item_rows,
-    )
+            option_group_item_rows,
+        )
 
-    formal_detail_rows = []
-    formal_constraint_rows = []
-    for idx, option in enumerate(formal_plan_options, start=1):
-      normalized_option_price = cls._normalize_price_fields(
-        option.get("price"),
-        option.get("priceMeta") or option.get("price_meta"),
-      )
-      plan_id = query_db(
-        """
+        formal_detail_rows = []
+        formal_constraint_rows = []
+        for idx, option in enumerate(formal_plan_options, start=1):
+            normalized_option_price = cls._normalize_price_fields(
+                option.get("price"),
+                option.get("priceMeta") or option.get("price_meta"),
+            )
+            plan_id = query_db(
+                """
         INSERT INTO formal_plan_options (
           plan_key,
           option_level,
@@ -816,39 +849,39 @@ class Menu:
           is_active = 1,
           updated_at = CURRENT_TIMESTAMP;
         """,
-        {
-          "plan_key": option.get("id"),
-          "option_level": option.get("level"),
-          "title": option.get("title"),
-          "price": normalized_option_price["price"],
-          "price_amount_min": normalized_option_price["price_amount_min"],
-          "price_amount_max": normalized_option_price["price_amount_max"],
-          "price_currency": normalized_option_price["price_currency"],
-          "price_unit": normalized_option_price["price_unit"],
-          "display_order": idx,
-        },
-        fetch="none",
-      )
-      if not plan_id:
-        continue
+                {
+                    "plan_key": option.get("id"),
+                    "option_level": option.get("level"),
+                    "title": option.get("title"),
+                    "price": normalized_option_price["price"],
+                    "price_amount_min": normalized_option_price["price_amount_min"],
+                    "price_amount_max": normalized_option_price["price_amount_max"],
+                    "price_currency": normalized_option_price["price_currency"],
+                    "price_unit": normalized_option_price["price_unit"],
+                    "display_order": idx,
+                },
+                fetch="none",
+            )
+            if not plan_id:
+                continue
 
-      for detail_order, detail_text in enumerate(option.get("details", []), start=1):
-        formal_detail_rows.append(
-          {"plan_option_id": plan_id, "detail_text": detail_text, "display_order": detail_order}
-        )
+            for detail_order, detail_text in enumerate(option.get("details", []), start=1):
+                formal_detail_rows.append(
+                    {"plan_option_id": plan_id, "detail_text": detail_text, "display_order": detail_order}
+                )
 
-      for constraint_key, limits in option.get("constraints", {}).items():
-        formal_constraint_rows.append(
-          {
-            "plan_option_id": plan_id,
-            "constraint_key": constraint_key,
-            "min_select": limits.get("min", 0),
-            "max_select": limits.get("max", 0),
-          }
-        )
+            for constraint_key, limits in option.get("constraints", {}).items():
+                formal_constraint_rows.append(
+                    {
+                        "plan_option_id": plan_id,
+                        "constraint_key": constraint_key,
+                        "min_select": limits.get("min", 0),
+                        "max_select": limits.get("max", 0),
+                    }
+                )
 
-    query_db_many(
-      """
+        query_db_many(
+            """
       INSERT INTO formal_plan_option_details (plan_option_id, detail_text, display_order, is_active)
       VALUES (%(plan_option_id)s, %(detail_text)s, %(display_order)s, 1)
       ON DUPLICATE KEY UPDATE
@@ -856,10 +889,10 @@ class Menu:
         is_active = 1,
         updated_at = CURRENT_TIMESTAMP;
       """,
-      formal_detail_rows,
-    )
-    query_db_many(
-      """
+            formal_detail_rows,
+        )
+        query_db_many(
+            """
       INSERT INTO formal_plan_option_constraints (plan_option_id, constraint_key, min_select, max_select, is_active)
       VALUES (%(plan_option_id)s, %(constraint_key)s, %(min_select)s, %(max_select)s, 1)
       ON DUPLICATE KEY UPDATE
@@ -868,12 +901,12 @@ class Menu:
         is_active = 1,
         updated_at = CURRENT_TIMESTAMP;
       """,
-      formal_constraint_rows,
-    )
+            formal_constraint_rows,
+        )
 
-    for catalog_order, (catalog_key, catalog_data) in enumerate(menu.items(), start=1):
-      catalog_id = query_db(
-        """
+        for catalog_order, (catalog_key, catalog_data) in enumerate(menu.items(), start=1):
+            catalog_id = query_db(
+                """
         INSERT INTO menu_catalogs (catalog_key, page_title, subtitle, display_order, is_active)
         VALUES (%(catalog_key)s, %(page_title)s, %(subtitle)s, %(display_order)s, 1)
         ON DUPLICATE KEY UPDATE
@@ -884,20 +917,20 @@ class Menu:
           is_active = 1,
           updated_at = CURRENT_TIMESTAMP;
         """,
-        {
-          "catalog_key": catalog_key,
-          "page_title": catalog_data.get("pageTitle"),
-          "subtitle": catalog_data.get("subtitle"),
-          "display_order": catalog_order,
-        },
-        fetch="none",
-      )
-      if not catalog_id:
-        continue
+                {
+                    "catalog_key": catalog_key,
+                    "page_title": catalog_data.get("pageTitle"),
+                    "subtitle": catalog_data.get("subtitle"),
+                    "display_order": catalog_order,
+                },
+                fetch="none",
+            )
+            if not catalog_id:
+                continue
 
-      for block_order, block in enumerate(catalog_data.get("introBlocks", []), start=1):
-        block_id = query_db(
-          """
+            for block_order, block in enumerate(catalog_data.get("introBlocks", []), start=1):
+                block_id = query_db(
+                    """
           INSERT INTO menu_intro_blocks (catalog_id, title, display_order, is_active)
           VALUES (%(catalog_id)s, %(title)s, %(display_order)s, 1)
           ON DUPLICATE KEY UPDATE
@@ -906,14 +939,14 @@ class Menu:
             is_active = 1,
             updated_at = CURRENT_TIMESTAMP;
           """,
-          {"catalog_id": catalog_id, "title": block.get("title"), "display_order": block_order},
-          fetch="none",
-        )
-        if not block_id:
-          continue
-        for bullet_order, bullet in enumerate(block.get("bullets", []), start=1):
-          query_db(
-            """
+                    {"catalog_id": catalog_id, "title": block.get("title"), "display_order": block_order},
+                    fetch="none",
+                )
+                if not block_id:
+                    continue
+                for bullet_order, bullet in enumerate(block.get("bullets", []), start=1):
+                    query_db(
+                        """
             INSERT INTO menu_intro_bullets (intro_block_id, bullet_text, display_order, is_active)
             VALUES (%(intro_block_id)s, %(bullet_text)s, %(display_order)s, 1)
             ON DUPLICATE KEY UPDATE
@@ -921,17 +954,17 @@ class Menu:
               is_active = 1,
               updated_at = CURRENT_TIMESTAMP;
             """,
-            {"intro_block_id": block_id, "bullet_text": bullet, "display_order": bullet_order},
-            fetch="none",
-          )
+                        {"intro_block_id": block_id, "bullet_text": bullet, "display_order": bullet_order},
+                        fetch="none",
+                    )
 
-      for section_order, section in enumerate(catalog_data.get("sections", []), start=1):
-        normalized_section_price = cls._normalize_price_fields(
-          section.get("price"),
-          section.get("priceMeta") or section.get("price_meta"),
-        )
-        section_id = query_db(
-          """
+            for section_order, section in enumerate(catalog_data.get("sections", []), start=1):
+                normalized_section_price = cls._normalize_price_fields(
+                    section.get("price"),
+                    section.get("priceMeta") or section.get("price_meta"),
+                )
+                section_id = query_db(
+                    """
           INSERT INTO menu_sections (
             catalog_id,
             section_key,
@@ -980,38 +1013,38 @@ class Menu:
             is_active = 1,
             updated_at = CURRENT_TIMESTAMP;
           """,
-          {
-            "catalog_id": catalog_id,
-            "section_key": section.get("sectionId"),
-            "section_type": section.get("type"),
-            "title": section.get("title"),
-            "description": section.get("description"),
-            "price": normalized_section_price["price"],
-            "price_amount_min": normalized_section_price["price_amount_min"],
-            "price_amount_max": normalized_section_price["price_amount_max"],
-            "price_currency": normalized_section_price["price_currency"],
-            "price_unit": normalized_section_price["price_unit"],
-            "category": section.get("category"),
-            "course_type": section.get("courseType"),
-            "display_order": section_order,
-          },
-          fetch="none",
-        )
-        if not section_id:
-          continue
+                    {
+                        "catalog_id": catalog_id,
+                        "section_key": section.get("sectionId"),
+                        "section_type": section.get("type"),
+                        "title": section.get("title"),
+                        "description": section.get("description"),
+                        "price": normalized_section_price["price"],
+                        "price_amount_min": normalized_section_price["price_amount_min"],
+                        "price_amount_max": normalized_section_price["price_amount_max"],
+                        "price_currency": normalized_section_price["price_currency"],
+                        "price_unit": normalized_section_price["price_unit"],
+                        "category": section.get("category"),
+                        "course_type": section.get("courseType"),
+                        "display_order": section_order,
+                    },
+                    fetch="none",
+                )
+                if not section_id:
+                    continue
 
-        for constraint_key, limits in section.get("constraints", {}).items():
-          if isinstance(limits, int):
-            min_select = 0
-            max_select = limits
-          elif isinstance(limits, dict):
-            min_select = limits.get("min", 0)
-            max_select = limits.get("max", 0)
-          else:
-            continue
+                for constraint_key, limits in section.get("constraints", {}).items():
+                    if isinstance(limits, int):
+                        min_select = 0
+                        max_select = limits
+                    elif isinstance(limits, dict):
+                        min_select = limits.get("min", 0)
+                        max_select = limits.get("max", 0)
+                    else:
+                        continue
 
-          query_db(
-            """
+                    query_db(
+                        """
             INSERT INTO menu_section_constraints (section_id, constraint_key, min_select, max_select, is_active)
             VALUES (%(section_id)s, %(constraint_key)s, %(min_select)s, %(max_select)s, 1)
             ON DUPLICATE KEY UPDATE
@@ -1020,18 +1053,18 @@ class Menu:
               is_active = 1,
               updated_at = CURRENT_TIMESTAMP;
             """,
-            {
-              "section_id": section_id,
-              "constraint_key": constraint_key,
-              "min_select": min_select,
-              "max_select": max_select,
-            },
-            fetch="none",
-          )
+                        {
+                            "section_id": section_id,
+                            "constraint_key": constraint_key,
+                            "min_select": min_select,
+                            "max_select": max_select,
+                        },
+                        fetch="none",
+                    )
 
-        for col_order, col_label in enumerate(section.get("columns", []), start=1):
-          query_db(
-            """
+                for col_order, col_label in enumerate(section.get("columns", []), start=1):
+                    query_db(
+                        """
             INSERT INTO menu_section_columns (section_id, column_label, display_order, is_active)
             VALUES (%(section_id)s, %(column_label)s, %(display_order)s, 1)
             ON DUPLICATE KEY UPDATE
@@ -1039,21 +1072,21 @@ class Menu:
               is_active = 1,
               updated_at = CURRENT_TIMESTAMP;
             """,
-            {"section_id": section_id, "column_label": col_label, "display_order": col_order},
-            fetch="none",
-          )
+                        {"section_id": section_id, "column_label": col_label, "display_order": col_order},
+                        fetch="none",
+                    )
 
-        for row_order, row_values in enumerate(section.get("rows", []), start=1):
-          if not row_values:
-            continue
-          item_name = row_values[0]
-          item_id = item_ids.get(item_name)
-          if item_id is None:
-            continue
-          value_1 = row_values[1] if len(row_values) > 1 else None
-          value_2 = row_values[2] if len(row_values) > 2 else None
-          query_db(
-            """
+                for row_order, row_values in enumerate(section.get("rows", []), start=1):
+                    if not row_values:
+                        continue
+                    item_name = row_values[0]
+                    item_id = item_ids.get(item_name)
+                    if item_id is None:
+                        continue
+                    value_1 = row_values[1] if len(row_values) > 1 else None
+                    value_2 = row_values[2] if len(row_values) > 2 else None
+                    query_db(
+                        """
             INSERT INTO menu_section_rows (section_id, item_id, value_1, value_2, display_order, is_active)
             VALUES (%(section_id)s, %(item_id)s, %(value_1)s, %(value_2)s, %(display_order)s, 1)
             ON DUPLICATE KEY UPDATE
@@ -1063,31 +1096,31 @@ class Menu:
               is_active = 1,
               updated_at = CURRENT_TIMESTAMP;
             """,
-            {
-              "section_id": section_id,
-              "item_id": item_id,
-              "value_1": value_1,
-              "value_2": value_2,
-              "display_order": row_order,
-            },
-            fetch="none",
-          )
+                        {
+                            "section_id": section_id,
+                            "item_id": item_id,
+                            "value_1": value_1,
+                            "value_2": value_2,
+                            "display_order": row_order,
+                        },
+                        fetch="none",
+                    )
 
-        for include_order, include_key in enumerate(section.get("includeKeys", []), start=1):
-          group_id = option_group_ids.get(include_key)
-          if group_id is None:
-            group_row = query_db(
-              "SELECT id FROM menu_option_groups WHERE option_key = %(option_key)s;",
-              {"option_key": include_key},
-              fetch="one",
-            )
-            group_id = group_row.get("id") if group_row else None
-            if group_id is not None:
-              option_group_ids[include_key] = group_id
-          if group_id is None:
-            continue
-          query_db(
-            """
+                for include_order, include_key in enumerate(section.get("includeKeys", []), start=1):
+                    group_id = option_group_ids.get(include_key)
+                    if group_id is None:
+                        group_row = query_db(
+                            "SELECT id FROM menu_option_groups WHERE option_key = %(option_key)s;",
+                            {"option_key": include_key},
+                            fetch="one",
+                        )
+                        group_id = group_row.get("id") if group_row else None
+                        if group_id is not None:
+                            option_group_ids[include_key] = group_id
+                    if group_id is None:
+                        continue
+                    query_db(
+                        """
             INSERT INTO menu_section_include_groups (section_id, group_id, display_order, is_active)
             VALUES (%(section_id)s, %(group_id)s, %(display_order)s, 1)
             ON DUPLICATE KEY UPDATE
@@ -1095,17 +1128,17 @@ class Menu:
               is_active = 1,
               updated_at = CURRENT_TIMESTAMP;
             """,
-            {"section_id": section_id, "group_id": group_id, "display_order": include_order},
-            fetch="none",
-          )
+                        {"section_id": section_id, "group_id": group_id, "display_order": include_order},
+                        fetch="none",
+                    )
 
-        for tier_order, tier in enumerate(section.get("tiers", []), start=1):
-          normalized_tier_price = cls._normalize_price_fields(
-            tier.get("price"),
-            tier.get("priceMeta") or tier.get("price_meta"),
-          )
-          tier_id = query_db(
-            """
+                for tier_order, tier in enumerate(section.get("tiers", []), start=1):
+                    normalized_tier_price = cls._normalize_price_fields(
+                        tier.get("price"),
+                        tier.get("priceMeta") or tier.get("price_meta"),
+                    )
+                    tier_id = query_db(
+                        """
             INSERT INTO menu_section_tiers (
               section_id,
               tier_title,
@@ -1139,45 +1172,45 @@ class Menu:
               is_active = 1,
               updated_at = CURRENT_TIMESTAMP;
             """,
-            {
-              "section_id": section_id,
-              "tier_title": tier.get("tierTitle"),
-              "price": normalized_tier_price["price"],
-              "price_amount_min": normalized_tier_price["price_amount_min"],
-              "price_amount_max": normalized_tier_price["price_amount_max"],
-              "price_currency": normalized_tier_price["price_currency"],
-              "price_unit": normalized_tier_price["price_unit"],
-              "display_order": tier_order,
-            },
-            fetch="none",
-          )
-          if not tier_id:
-            continue
+                        {
+                            "section_id": section_id,
+                            "tier_title": tier.get("tierTitle"),
+                            "price": normalized_tier_price["price"],
+                            "price_amount_min": normalized_tier_price["price_amount_min"],
+                            "price_amount_max": normalized_tier_price["price_amount_max"],
+                            "price_currency": normalized_tier_price["price_currency"],
+                            "price_unit": normalized_tier_price["price_unit"],
+                            "display_order": tier_order,
+                        },
+                        fetch="none",
+                    )
+                    if not tier_id:
+                        continue
 
-          for constraint_key, constraint_value in tier.get("constraints", {}).items():
-            min_select = None
-            max_select = None
+                    for constraint_key, constraint_value in tier.get("constraints", {}).items():
+                        min_select = None
+                        max_select = None
 
-            if isinstance(constraint_value, dict):
-              min_value = constraint_value.get("min")
-              max_value = constraint_value.get("max")
-              if isinstance(min_value, int):
-                min_select = min_value
-              if isinstance(max_value, int):
-                max_select = max_value
-            elif isinstance(constraint_value, int):
-              min_select = constraint_value
-              max_select = constraint_value
+                        if isinstance(constraint_value, dict):
+                            min_value = constraint_value.get("min")
+                            max_value = constraint_value.get("max")
+                            if isinstance(min_value, int):
+                                min_select = min_value
+                            if isinstance(max_value, int):
+                                max_select = max_value
+                        elif isinstance(constraint_value, int):
+                            min_select = constraint_value
+                            max_select = constraint_value
 
-            if min_select is None and max_select is None:
-              continue
-            if min_select is None:
-              min_select = int(max_select)
-            if max_select is None:
-              max_select = int(min_select)
+                        if min_select is None and max_select is None:
+                            continue
+                        if min_select is None:
+                            min_select = int(max_select)
+                        if max_select is None:
+                            max_select = int(min_select)
 
-            query_db(
-              """
+                        query_db(
+                            """
               INSERT INTO menu_section_tier_constraints (
                 tier_id,
                 constraint_key,
@@ -1201,19 +1234,19 @@ class Menu:
                 is_active = 1,
                 updated_at = CURRENT_TIMESTAMP;
               """,
-              {
-                "tier_id": tier_id,
-                "constraint_key": constraint_key,
-                "min_select": min_select,
-                "max_select": max_select,
-              },
-              fetch="none",
-            )
+                            {
+                                "tier_id": tier_id,
+                                "constraint_key": constraint_key,
+                                "min_select": min_select,
+                                "max_select": max_select,
+                            },
+                            fetch="none",
+                        )
 
-          for bullet_order, bullet in enumerate(tier.get("bullets", []), start=1):
-            item_id = item_ids.get(bullet)
-            query_db(
-              """
+                    for bullet_order, bullet in enumerate(tier.get("bullets", []), start=1):
+                        item_id = item_ids.get(bullet)
+                        query_db(
+                            """
               INSERT INTO menu_section_tier_bullets (tier_id, item_id, bullet_text, display_order, is_active)
               VALUES (%(tier_id)s, %(item_id)s, %(bullet_text)s, %(display_order)s, 1)
               ON DUPLICATE KEY UPDATE
@@ -1222,11 +1255,11 @@ class Menu:
                 is_active = 1,
                 updated_at = CURRENT_TIMESTAMP;
               """,
-              {
-                "tier_id": tier_id,
-                "item_id": item_id,
-                "bullet_text": None if item_id is not None else bullet,
-                "display_order": bullet_order,
-              },
-              fetch="none",
-            )
+                            {
+                                "tier_id": tier_id,
+                                "item_id": item_id,
+                                "bullet_text": None if item_id is not None else bullet,
+                                "display_order": bullet_order,
+                            },
+                            fetch="none",
+                        )

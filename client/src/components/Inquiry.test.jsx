@@ -143,7 +143,7 @@ describe("Inquiry", () => {
       target: { value: "50" },
     });
     fireEvent.change(getField('input[name="budget"]'), {
-      target: { value: "2500" },
+      target: { value: "$2,500-$5,000" },
     });
     fireEvent.change(getField('select[name="service_interest"]'), {
       target: { value: "togo" },
@@ -163,7 +163,7 @@ describe("Inquiry", () => {
     expect(submittedPayload.full_name).toBe("Taylor Client");
     expect(submittedPayload.email).toBe("taylor@example.com");
     expect(submittedPayload.service_interest).toBe("To-Go Catering");
-    expect(submittedPayload.budget).toBe("2,500");
+    expect(submittedPayload.budget).toBe("$2,500-$5,000");
     expect(submittedPayload.message).toBe("Please include setup.");
     expect(submittedPayload.desired_menu_items).toEqual([
       {
