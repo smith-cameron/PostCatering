@@ -71,7 +71,7 @@ export const normalizeCommunityTierConstraints = (sectionId, tierTitle, constrai
 
   const normalizedConstraints = Object.entries(constraints).reduce((acc, [key, value]) => {
     if (typeof value === "number") {
-      acc[key] = { max: value };
+      acc[key] = { min: value, max: value };
     } else if (value && typeof value === "object") {
       acc[key] = value;
     }
@@ -89,7 +89,10 @@ export const toCommunityTierBullet = (label, limits) => {
   if (!limits?.max) return null;
   const min = limits?.min || 0;
   const max = limits.max;
-  if (min && min === max) return `${max} ${label}`;
+  if (min && min === max) {
+    const singularLabel = max === 1 ? label.replace(/s$/i, "") : label;
+    return `${max} ${singularLabel}`;
+  }
   if (min && min < max) return `${min}-${max} ${label}`;
   return `${max} ${label}`;
 };
