@@ -431,3 +431,15 @@ sketch
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/flask,react,python,visualstudiocode,node
+
+# Deployment secrets and cutover artifacts
+*.pem
+*.key
+*.p12
+*.pfx
+*_cutover.sql
+*_cutover.sql.gz
+*_backup.sql
+*_backup.sql.gz
+route53-cutover.json
+route53-rollback.json
