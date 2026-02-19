@@ -1,0 +1,35 @@
+minimum_pre_commit_version: "3.6.0"
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.10
+    hooks:
+      - id: ruff
+        args:
+          - --fix
+          - --exit-non-zero-on-fix
+        files: ^api/.*\.py$
+
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        files: ^api/.*\.py$
+        args:
+          - --line-length=120
+
+  - repo: local
+    hooks:
+      - id: eslint-client
+        name: eslint (client)
+        language: system
+        entry: npm --prefix client run lint
+        pass_filenames: false
+        files: ^client/.*\.(js|jsx)$

@@ -1,6 +1,6 @@
 # American Legion Post 468 Catering Application
 
-Web application for American Legion Post 468 catering services and community food programs.  
+Web application for American Legion Post 468 catering services and community food programs.
 This repository includes a React frontend, a Flask backend, and a MySQL data layer for menus, inquiries, and homepage slides.
 
 ## Mission And Program Context
@@ -25,6 +25,10 @@ This README is for:
 
 ```text
 PostCatering/
+  .github/
+    workflows/
+      ci.yml
+  .pre-commit-config.yaml
   api/
     server.py
     .env.example
@@ -134,6 +138,21 @@ Current frontend coverage includes:
 - `client/src/components/Landing.test.jsx` (slide API load/fallback)
 - `client/src/components/Inquiry.test.jsx` (required validation + successful submit payload)
 
+## Pre-commit Hooks
+
+Install and enable hooks from the repository root:
+
+```powershell
+python -m pip install pre-commit
+python -m pre_commit install
+python -m pre_commit run --all-files
+```
+
+Configured hooks:
+- Python lint/fix with `ruff` (API files)
+- Python formatting with `black` (API files)
+- Frontend lint with ESLint (`client/`)
+
 ## Environment Variables
 
 Use `api/.env.example` as the source of truth for variable names.
@@ -173,22 +192,22 @@ Security notes:
 
 ## API Overview
 
-- `GET /api/health`  
+- `GET /api/health`
   Health check including DB connectivity.
 
-- `GET /api/slides`  
+- `GET /api/slides`
   Returns active homepage slides.
 
-- `GET /api/assets/slides/<filename>`  
+- `GET /api/assets/slides/<filename>`
   Serves slide assets from backend static storage.
 
-- `GET /api/menus`  
+- `GET /api/menus`
   Returns menu payload consumed by the frontend.
 
-- `POST /api/inquiries`  
+- `POST /api/inquiries`
   Validates and stores inquiry submissions; attempts SMTP notification.
 
-- `POST /api/admin/menu/sync`  
+- `POST /api/admin/menu/sync`
   Protected endpoint for schema apply/reset/seed operations. Requires `MENU_ADMIN_TOKEN` in header.
 
 ## API Naming Conventions
@@ -350,7 +369,7 @@ Backend:
 
 #### Tooling
 - ~~Add CI checks for lint/test/build to prevent regressions.~~
-- Add pre-commit formatting/lint hooks (e.g., `ruff`/`black` for Python plus ESLint).
+- ~~Add pre-commit formatting/lint hooks (e.g., `ruff`/`black` for Python plus ESLint).~~
 
 #### Docs
 - ~~Reconcile outdated docs/comments (e.g., `api/sql/menu_seed.sql` still references auto-seed behavior).~~
@@ -437,7 +456,7 @@ Drop-off or buffet setup. Minimums apply.
 
 #### Taco Bar (Carne Asada or Chicken)
 
-Includes Spanish rice, refried beans, tortillas, toppings.  
+Includes Spanish rice, refried beans, tortillas, toppings.
 $18-$25 per person
 
 #### Hearty Homestyle Packages
