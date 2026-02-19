@@ -42,6 +42,39 @@ class GalleryServiceTests(unittest.TestCase):
         self.assertEqual(by_filename["5gallery-photo.jpg"]["id"], 99)
         self.assertEqual(by_filename["events-reel.mp4"]["media_type"], "video")
         self.assertFalse(by_filename["events-reel.mp4"]["is_slide"])
+        self.assertEqual(by_filename["events-reel.mp4"]["title"], "Post 468 Catering")
+        self.assertEqual(
+            by_filename["events-reel.mp4"]["slide_text"],
+            "Photos and videos from events, service, and community programs.",
+        )
+
+    def test_get_gallery_items_replaces_filename_style_labels(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = Path(temp_dir) / "gallery-photo.jpg"
+            image_path.write_bytes(b"img")
+
+            with patch.object(GalleryService, "GALLERY_ASSET_DIR", Path(temp_dir)):
+                with patch("flask_api.services.gallery_service.Slide.get_active_media_rows") as mock_rows:
+                    mock_rows.return_value = [
+                        {
+                            "id": 55,
+                            "title": "gallery-photo.jpg",
+                            "caption": "gallery-photo.jpg",
+                            "image_url": "/api/assets/slides/gallery-photo.jpg",
+                            "media_type": "image",
+                            "alt_text": "gallery-photo.jpg",
+                            "display_order": 1,
+                            "is_slide": 1,
+                        }
+                    ]
+
+                    items = GalleryService.get_gallery_items()
+
+        self.assertEqual(items[0]["title"], "Post 468 Catering")
+        self.assertEqual(
+            items[0]["slide_text"],
+            "Photos and videos from events, service, and community programs.",
+        )
 
 
 if __name__ == "__main__":

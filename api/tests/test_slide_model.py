@@ -94,6 +94,48 @@ class SlideModelTests(unittest.TestCase):
 
         self.assertEqual(slides[0]["src"], "/api/assets/slides/520231114_152614.jpg")
 
+    @patch("flask_api.models.slide.query_db")
+    def test_get_active_dicts_applies_default_title_and_text(self, mock_query_db):
+        mock_query_db.return_value = [
+            {
+                "id": 9,
+                "title": "",
+                "caption": "",
+                "image_url": "/api/assets/slides/blank.jpg",
+                "alt_text": "",
+                "display_order": 1,
+                "is_slide": 1,
+                "media_type": "image",
+            }
+        ]
+
+        slides = Slide.get_active_dicts()
+
+        self.assertEqual(slides[0]["title"], "Post 468 Catering")
+        self.assertEqual(slides[0]["text"], "Photos and videos from events, service, and community programs.")
+        self.assertEqual(slides[0]["alt"], "Post 468 Catering")
+
+    @patch("flask_api.models.slide.query_db")
+    def test_get_active_dicts_replaces_filename_like_title_and_caption(self, mock_query_db):
+        mock_query_db.return_value = [
+            {
+                "id": 10,
+                "title": "gallery-photo.jpg",
+                "caption": "gallery-photo.jpg",
+                "image_url": "/api/assets/slides/gallery-photo.jpg",
+                "alt_text": "gallery-photo.jpg",
+                "display_order": 1,
+                "is_slide": 1,
+                "media_type": "image",
+            }
+        ]
+
+        slides = Slide.get_active_dicts()
+
+        self.assertEqual(slides[0]["title"], "Post 468 Catering")
+        self.assertEqual(slides[0]["caption"], "Photos and videos from events, service, and community programs.")
+        self.assertEqual(slides[0]["alt"], "Post 468 Catering")
+
 
 if __name__ == "__main__":
     unittest.main()

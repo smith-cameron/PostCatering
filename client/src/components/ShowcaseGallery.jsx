@@ -3,6 +3,32 @@ import { Alert, Button, Modal, Spinner } from "react-bootstrap";
 import { useSearchParams } from "react-router-dom";
 
 const MEDIA_PARAM_KEY = "media";
+const KNOWN_MEDIA_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".mp4", ".webm", ".mov", ".m4v", ".ogv"];
+
+const getFilenameFromMedia = (item) => {
+  if (item?.filename) return String(item.filename);
+  const source = String(item?.src || "");
+  const parts = source.split("/");
+  return decodeURIComponent(parts[parts.length - 1] || "");
+};
+
+const isFilenameLikeLabel = (label, item) => {
+  const normalizedLabel = String(label || "").trim().toLowerCase();
+  if (!normalizedLabel) return false;
+  const filename = getFilenameFromMedia(item).toLowerCase();
+  const stem = filename.includes(".") ? filename.slice(0, filename.lastIndexOf(".")) : filename;
+  if (normalizedLabel === filename || normalizedLabel === stem) return true;
+  return KNOWN_MEDIA_EXTENSIONS.some((ext) => normalizedLabel.endsWith(ext));
+};
+
+const getMediaDisplayLabel = (item, index) => {
+  const directLabel = String(item?.title || "").trim();
+  if (directLabel && !isFilenameLikeLabel(directLabel, item)) {
+    return directLabel;
+  }
+  const mediaPrefix = item?.media_type === "video" ? "Video" : "Photo";
+  return `${mediaPrefix} ${index + 1}`;
+};
 
 const ShowcaseGallery = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -52,6 +78,7 @@ const ShowcaseGallery = () => {
   }, [activeMediaId, mediaItems]);
 
   const activeMedia = activeIndex >= 0 ? mediaItems[activeIndex] : null;
+  const activeMediaLabel = activeMedia ? getMediaDisplayLabel(activeMedia, activeIndex) : "Showcase Media";
 
   const openMedia = useCallback((item) => {
     const nextSearchParams = new URLSearchParams(searchParams);
@@ -94,7 +121,7 @@ const ShowcaseGallery = () => {
   return (
     <main className="showcase-page container-fluid py-4">
       <header className="text-center mb-4">
-        <h2>Post 468 Showcase</h2>
+        <h2>Post 468 Catering</h2>
         <p className="text-secondary mb-0">
           Photos and videos from events, service, and community programs.
         </p>
@@ -127,21 +154,21 @@ const ShowcaseGallery = () => {
                     muted
                     playsInline
                     preload="metadata"
-                    aria-label={item.title || `Showcase video ${index + 1}`}>
+                    aria-label={getMediaDisplayLabel(item, index)}>
                     <source src={item.src} />
                   </video>
                 ) : (
                   <img
                     className="showcase-grid-media"
                     src={item.thumbnail_src || item.src}
-                    alt={item.alt || item.title || `Showcase image ${index + 1}`}
+                    alt={item.alt || getMediaDisplayLabel(item, index)}
                     loading="lazy"
                   />
                 )}
               </div>
 
               <div className="showcase-tile-meta">
-                <span className="showcase-tile-title">{item.title || item.filename || `Media ${index + 1}`}</span>
+                <span className="showcase-tile-title">{getMediaDisplayLabel(item, index)}</span>
                 {item.is_slide ? <span className="badge text-bg-secondary">Homepage Slide</span> : null}
               </div>
             </button>
@@ -157,7 +184,7 @@ const ShowcaseGallery = () => {
         animation={false}
         dialogClassName="showcase-modal-dialog">
         <Modal.Header closeButton>
-          <Modal.Title>{activeMedia?.title || "Showcase Media"}</Modal.Title>
+          <Modal.Title>{activeMediaLabel}</Modal.Title>
         </Modal.Header>
         <Modal.Body className="showcase-modal-body">
           {activeMedia ? (

@@ -32,24 +32,24 @@ const Header = ({ onOpenInquiry }) => {
         Formal Events Catering
       </NavDropdown.Item>
 
-      <NavDropdown.Item as={Link} to="/showcase">
-        Showcase
-      </NavDropdown.Item>
-
       <NavDropdown.Divider />
-
-      <NavDropdown.Item
-        as="button"
-        type="button"
-        onClick={() => onOpenInquiry?.()}>
-        Send Catering Inquiry
-      </NavDropdown.Item>
 
       <NavDropdown.Item
         as="button"
         type="button"
         onClick={() => setShowContactModal(true)}>
         Contact Us
+      </NavDropdown.Item>
+
+      <NavDropdown.Item as={Link} to="/showcase">
+        Photo Showcase
+      </NavDropdown.Item>
+
+      <NavDropdown.Item
+        as="button"
+        type="button"
+        onClick={() => onOpenInquiry?.()}>
+        Send Catering Inquiry
       </NavDropdown.Item>
     </>
   );

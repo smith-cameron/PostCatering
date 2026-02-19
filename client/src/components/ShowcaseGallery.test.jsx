@@ -102,4 +102,55 @@ describe("ShowcaseGallery", () => {
       expect(modalVideo).toBeInTheDocument();
     });
   });
+
+  it("does not display filename when media label is missing", async () => {
+    globalThis.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        media: [
+          {
+            id: 21,
+            title: "",
+            caption: "",
+            alt: "Unlabeled showcase media",
+            filename: "2026-private-file.jpg",
+            src: "/api/assets/slides/2026-private-file.jpg",
+            media_type: "image",
+            is_slide: false,
+          },
+        ],
+      }),
+    });
+
+    renderShowcase();
+
+    expect(await screen.findByAltText("Unlabeled showcase media")).toBeInTheDocument();
+    expect(screen.queryByText("2026-private-file.jpg")).not.toBeInTheDocument();
+    expect(screen.getByText("Photo 1")).toBeInTheDocument();
+  });
+
+  it("replaces filename-like labels with default media labels", async () => {
+    globalThis.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        media: [
+          {
+            id: 31,
+            title: "2026-private-file.jpg",
+            caption: "",
+            alt: "Filename style label",
+            filename: "2026-private-file.jpg",
+            src: "/api/assets/slides/2026-private-file.jpg",
+            media_type: "image",
+            is_slide: false,
+          },
+        ],
+      }),
+    });
+
+    renderShowcase();
+
+    expect(await screen.findByText("Photo 1")).toBeInTheDocument();
+    expect(screen.queryByText("2026-private-file.jpg")).not.toBeInTheDocument();
+  });
 });

@@ -8,6 +8,8 @@ class GalleryService:
     IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"}
     VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".m4v", ".ogv"}
     GALLERY_ASSET_DIR = Path(__file__).resolve().parent.parent / "static" / "slides"
+    DEFAULT_SLIDE_TITLE = "Post 468 Catering"
+    DEFAULT_SLIDE_TEXT = "Photos and videos from events, service, and community programs."
 
     @classmethod
     def _infer_media_type(cls, filename):
@@ -24,11 +26,6 @@ class GalleryService:
             return ""
         parsed = urlparse(image_url)
         return unquote(Path(parsed.path).name)
-
-    @classmethod
-    def _default_title(cls, filename):
-        stem = Path(filename).stem
-        return stem.replace("-", " ").replace("_", " ").strip() or filename
 
     @classmethod
     def _resolve_asset_filename(cls, filename):
@@ -49,6 +46,35 @@ class GalleryService:
             key=lambda name: (len(name), name.lower()),
         )
         return matches[0] if matches else filename
+
+    @classmethod
+    def _normalize_text(cls, value):
+        return str(value or "").strip()
+
+    @classmethod
+    def _is_filename_like(cls, text, filename):
+        normalized = cls._normalize_text(text).lower()
+        if not normalized:
+            return False
+        reference_name = cls._normalize_text(filename).lower()
+        reference_stem = Path(reference_name).stem if reference_name else ""
+        if normalized in {reference_name, reference_stem}:
+            return True
+        return bool(Path(normalized).suffix.lower())
+
+    @classmethod
+    def _build_slide_title(cls, raw_title, filename):
+        normalized_title = cls._normalize_text(raw_title)
+        if not normalized_title or cls._is_filename_like(normalized_title, filename):
+            return cls.DEFAULT_SLIDE_TITLE
+        return normalized_title
+
+    @classmethod
+    def _build_slide_text(cls, raw_caption, filename):
+        normalized_caption = cls._normalize_text(raw_caption)
+        if not normalized_caption or cls._is_filename_like(normalized_caption, filename):
+            return cls.DEFAULT_SLIDE_TEXT
+        return normalized_caption
 
     @classmethod
     def get_gallery_items(cls):
@@ -73,9 +99,12 @@ class GalleryService:
 
             row = rows_by_filename.get(asset_path.name, {})
             item_id = row.get("id", f"asset:{asset_path.name}")
-            title = row.get("title") or cls._default_title(asset_path.name)
-            caption = row.get("caption") or ""
-            alt_text = row.get("alt_text") or title
+            slide_title = cls._build_slide_title(row.get("title"), asset_path.name)
+            slide_text = cls._build_slide_text(row.get("caption"), asset_path.name)
+            caption = cls._normalize_text(row.get("caption"))
+            alt_text = cls._normalize_text(row.get("alt_text")) or slide_title
+            if cls._is_filename_like(alt_text, asset_path.name):
+                alt_text = slide_title
             resolved_media_type = row.get("media_type") or media_type
             source_url = f"/api/assets/slides/{asset_path.name}"
 
@@ -85,9 +114,11 @@ class GalleryService:
                     "src": source_url,
                     "thumbnail_src": source_url,
                     "filename": asset_path.name,
-                    "title": title,
+                    "title": slide_title,
+                    "slide_title": slide_title,
+                    "slide_text": slide_text,
                     "caption": caption,
-                    "text": caption,
+                    "text": slide_text,
                     "alt": alt_text,
                     "alt_text": alt_text,
                     "display_order": row.get("display_order"),
