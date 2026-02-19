@@ -157,7 +157,7 @@ export const MENU = {
       {
         sectionId: "community_taco_bar",
         type: "package",
-        title: "Taco Bar (Carne Asada, Chicken, Carnitas, or Marinated Pork)",
+        title: "Taco Bar (Carne Asada, Chicken, or Marinated Pork)",
         description: "Includes Spanish rice, refried beans, tortillas, toppings",
         price: "$18-$25 per person",
       },
@@ -278,4 +278,3 @@ export const MENU = {
   },
 
 };
-

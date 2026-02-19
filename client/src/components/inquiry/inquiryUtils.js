@@ -40,7 +40,7 @@ export const formatBudgetInput = (value) => {
   return `${firstPart}-${secondPart}`;
 };
 
-export const COMMUNITY_TACO_BAR_OPTIONS = ["Carne Asada", "Chicken", "Carnitas", "Marinated Pork"];
+export const COMMUNITY_TACO_BAR_OPTIONS = ["Carne Asada", "Chicken", "Marinated Pork"];
 
 export const toIdPart = (value) => String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-");
 const isSaladName = (value) => String(value || "").toLowerCase().includes("salad");
@@ -157,7 +157,7 @@ const getCommunityPackageDetails = (plan) => {
   if (!plan) return [];
   const normalizedTitle = String(plan.title || "").toLowerCase();
   if (normalizedTitle.includes("hearty homestyle")) {
-    return ["Choose 1 Entree/Protein", "Choose 2 Sides", "Bread"];
+    return ["1 Entree/Protein", "2 Sides", "Bread"];
   }
   return parseCommunityPackageDetails(plan.details);
 };

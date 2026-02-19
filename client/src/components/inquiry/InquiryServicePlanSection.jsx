@@ -74,7 +74,7 @@ const InquiryServicePlanSection = ({
             })}
           </ul>
           {serviceInterest === "community" && selectedServicePlan.level === "tier" ? (
-            <div className="mt-2">Special chef requests can be added in the Message field.</div>
+            <div className="mt-2">Special requests can be added in the Message field.</div>
           ) : null}
         </div>
       ) : null}
