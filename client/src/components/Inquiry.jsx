@@ -7,6 +7,7 @@ import InquiryServicePlanSection from "./inquiry/InquiryServicePlanSection";
 import InquirySuccessModal from "./inquiry/InquirySuccessModal";
 import {
   EMPTY_FORM,
+  formatBudgetInput,
   getMinEventDateISO,
   getSelectionCategoryKeyFromText,
 } from "./inquiry/inquiryUtils";
@@ -94,6 +95,11 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
     if (name === "phone") {
       const sanitizedPhone = value.replace(/[^0-9+()\-\s.]/g, "");
       setForm((prev) => ({ ...prev, [name]: sanitizedPhone }));
+      return;
+    }
+    if (name === "budget") {
+      const sanitizedBudget = formatBudgetInput(value);
+      setForm((prev) => ({ ...prev, [name]: sanitizedBudget }));
       return;
     }
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -432,7 +438,13 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
 
             <Form.Group className="mb-3">
               <Form.Label>Budget ($)</Form.Label>
-              <Form.Control name="budget" value={form.budget} onChange={onChange} placeholder="e.g. $2,500-$5,000" />
+              <Form.Control
+                name="budget"
+                inputMode="numeric"
+                value={form.budget}
+                onChange={onChange}
+                placeholder="e.g. $2,500-$5,000"
+              />
             </Form.Group>
 
             <Form.Group className="mb-3">

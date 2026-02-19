@@ -174,4 +174,28 @@ describe("Inquiry", () => {
       },
     ]);
   });
+
+  it("sanitizes budget input and adds thousands separators", async () => {
+    render(
+      <MemoryRouter>
+        <Inquiry forceOpen onRequestClose={() => {}} />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(document.querySelector('input[name="budget"]')).toBeInTheDocument();
+    });
+
+    const budgetField = getField('input[name="budget"]');
+
+    fireEvent.change(budgetField, {
+      target: { value: "cheap2500usd" },
+    });
+    expect(budgetField.value).toBe("2,500");
+
+    fireEvent.change(budgetField, {
+      target: { value: "$2500-5000abc" },
+    });
+    expect(budgetField.value).toBe("$2,500-$5,000");
+  });
 });

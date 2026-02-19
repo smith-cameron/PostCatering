@@ -11,6 +11,35 @@ export const EMPTY_FORM = {
   message: "",
 };
 
+const formatBudgetDigits = (digits) => {
+  const normalized = String(digits || "").replace(/^0+(?=\d)/, "");
+  return normalized.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+};
+
+const formatBudgetPart = (part, useDollarPrefix = false) => {
+  const raw = String(part || "");
+  const hasDollar = useDollarPrefix || raw.includes("$");
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return hasDollar ? "$" : "";
+  const formattedDigits = formatBudgetDigits(digits);
+  return `${hasDollar ? "$" : ""}${formattedDigits}`;
+};
+
+export const formatBudgetInput = (value) => {
+  const raw = String(value || "");
+  const cleaned = raw.replace(/[^0-9,$\-\s]/g, "");
+  if (!cleaned.trim()) return "";
+
+  const [firstRaw = "", secondRaw = ""] = cleaned.split("-", 2);
+  const firstPart = formatBudgetPart(firstRaw);
+  if (!cleaned.includes("-")) return firstPart;
+
+  const secondDigits = secondRaw.replace(/\D/g, "");
+  const useDollarOnSecond = cleaned.includes("$") && Boolean(secondDigits);
+  const secondPart = formatBudgetPart(secondRaw, useDollarOnSecond);
+  return `${firstPart}-${secondPart}`;
+};
+
 export const COMMUNITY_TACO_BAR_OPTIONS = ["Carne Asada", "Chicken", "Carnitas", "Marinated Pork"];
 
 export const toIdPart = (value) => String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-");
