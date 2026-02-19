@@ -3,32 +3,7 @@ import { Alert, Button, Modal, Spinner } from "react-bootstrap";
 import { useSearchParams } from "react-router-dom";
 
 const MEDIA_PARAM_KEY = "media";
-const KNOWN_MEDIA_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".mp4", ".webm", ".mov", ".m4v", ".ogv"];
-
-const getFilenameFromMedia = (item) => {
-  if (item?.filename) return String(item.filename);
-  const source = String(item?.src || "");
-  const parts = source.split("/");
-  return decodeURIComponent(parts[parts.length - 1] || "");
-};
-
-const isFilenameLikeLabel = (label, item) => {
-  const normalizedLabel = String(label || "").trim().toLowerCase();
-  if (!normalizedLabel) return false;
-  const filename = getFilenameFromMedia(item).toLowerCase();
-  const stem = filename.includes(".") ? filename.slice(0, filename.lastIndexOf(".")) : filename;
-  if (normalizedLabel === filename || normalizedLabel === stem) return true;
-  return KNOWN_MEDIA_EXTENSIONS.some((ext) => normalizedLabel.endsWith(ext));
-};
-
-const getMediaDisplayLabel = (item, index) => {
-  const directLabel = String(item?.title || "").trim();
-  if (directLabel && !isFilenameLikeLabel(directLabel, item)) {
-    return directLabel;
-  }
-  const mediaPrefix = item?.media_type === "video" ? "Video" : "Photo";
-  return `${mediaPrefix} ${index + 1}`;
-};
+const FALLBACK_LABEL = "placeholder title";
 
 const ShowcaseGallery = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -78,7 +53,7 @@ const ShowcaseGallery = () => {
   }, [activeMediaId, mediaItems]);
 
   const activeMedia = activeIndex >= 0 ? mediaItems[activeIndex] : null;
-  const activeMediaLabel = activeMedia ? getMediaDisplayLabel(activeMedia, activeIndex) : "Showcase Media";
+  const activeMediaLabel = (activeMedia && String(activeMedia.title || "").trim()) || FALLBACK_LABEL;
 
   const openMedia = useCallback((item) => {
     const nextSearchParams = new URLSearchParams(searchParams);
@@ -154,21 +129,21 @@ const ShowcaseGallery = () => {
                     muted
                     playsInline
                     preload="metadata"
-                    aria-label={getMediaDisplayLabel(item, index)}>
+                    aria-label={String(item.title || "").trim() || FALLBACK_LABEL}>
                     <source src={item.src} />
                   </video>
                 ) : (
                   <img
                     className="showcase-grid-media"
                     src={item.thumbnail_src || item.src}
-                    alt={item.alt || getMediaDisplayLabel(item, index)}
+                    alt={item.alt || String(item.title || "").trim() || FALLBACK_LABEL}
                     loading="lazy"
                   />
                 )}
               </div>
 
               <div className="showcase-tile-meta">
-                <span className="showcase-tile-title">{getMediaDisplayLabel(item, index)}</span>
+                <span className="showcase-tile-title">{String(item.title || "").trim() || FALLBACK_LABEL}</span>
                 {item.is_slide ? <span className="badge text-bg-secondary">Homepage Slide</span> : null}
               </div>
             </button>
@@ -210,10 +185,10 @@ const ShowcaseGallery = () => {
           {activeMedia?.caption ? <p className="mt-3 mb-0 text-secondary">{activeMedia.caption}</p> : null}
         </Modal.Body>
         <Modal.Footer className="justify-content-between">
-          <Button variant="outline-secondary" onClick={() => moveMedia(-1)} disabled={mediaItems.length < 2}>
+          <Button className="btn-inquiry-action" variant="secondary" onClick={() => moveMedia(-1)} disabled={mediaItems.length < 2}>
             Previous
           </Button>
-          <Button variant="outline-secondary" onClick={() => moveMedia(1)} disabled={mediaItems.length < 2}>
+          <Button className="btn-inquiry-action" variant="secondary" onClick={() => moveMedia(1)} disabled={mediaItems.length < 2}>
             Next
           </Button>
         </Modal.Footer>

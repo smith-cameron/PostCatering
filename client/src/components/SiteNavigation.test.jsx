@@ -6,7 +6,7 @@ import Footer from "./Footer";
 import Header from "./Header";
 
 describe("Site navigation links", () => {
-  it("includes photo showcase in the header services dropdown between contact and inquiry", () => {
+  it("orders contact, photo showcase, then inquiry in the header services dropdown", () => {
     render(
       <MemoryRouter>
         <Header onOpenInquiry={vi.fn()} />

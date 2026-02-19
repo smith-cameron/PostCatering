@@ -296,21 +296,33 @@ Content-Type: application/json
 
 ## Updating Homepage Photos
 
-Current canonical location:
-- `api/flask_api/static/slides`
-- Frontend loads slide metadata from `GET /api/slides` and renders each slide `src` as returned.
+Media metadata is database-first:
+- `GET /api/slides` and `GET /api/gallery` both read labels/text from MySQL `slides`.
+- Filenames are treated as storage details only and should not be used as display labels.
+
+Current canonical media storage:
+- files: `api/flask_api/static/slides`
+- metadata: `slides` table (`title`, `caption`, `alt_text`, `image_url`, `media_type`, `is_slide`, `display_order`, `is_active`)
 
 Step-by-step (current setup):
-1. Prepare each image (recommended landscape ratio, web-compressed JPG/WEBP).
-2. Add new files to `api/flask_api/static/slides` with stable, descriptive filenames.
-3. Update slide records in MySQL `slides` table:
-   - `image_url` should point to `/api/assets/slides/<filename>`
-   - Set `title`, `caption`, `alt_text`, `display_order`, and `is_active`
-4. Disable retired slides with `is_active = 0` (instead of deleting rows) to preserve history.
+1. Add files to `api/flask_api/static/slides`.
+2. Sync/normalize DB metadata (adds missing rows and writes placeholders for missing labels/text):
+
+```powershell
+cd api
+python scripts/sync_gallery_media.py
+```
+
+3. Replace placeholder metadata with owner-provided values in `slides`:
+   - `title` (label shown in gallery/modal)
+   - `caption` (description text)
+   - `alt_text` (accessibility text)
+   - `is_slide` (`1` to include on landing carousel, `0` to keep only in gallery)
+4. Disable retired media with `is_active = 0` instead of deleting rows.
 5. Verify in browser:
-   - `GET /api/slides` returns expected order and URLs
-   - Homepage carousel shows updated images/text
-6. Commit image file changes (if files are in repo) and any migration/SQL changes used to update records.
+   - `GET /api/gallery` returns expected labels/text and ordering
+   - `GET /api/slides` returns only rows where `is_slide = 1`
+   - Homepage carousel and `/showcase` reflect metadata updates
 
 Example SQL update:
 
@@ -365,13 +377,20 @@ Backend:
 
 ## Known Gaps
 
-### Open items
-- Deferred (Production Readiness): Adopt Flask app-factory + blueprint structure for clearer initialization and easier testing.
-
 ### Stretch goals
-- Build a dedicated admin dashboard for menu/slide operations with authenticated admin access (instead of browser calls with a static token).
+- Priority 1: Build a dedicated admin dashboard for menu and media operations with authenticated admin access (instead of browser calls with a static token).
+  - Create new menu items across service/package/tier groupings.
+  - Update existing menu items, pricing, descriptions, and inclusion rules.
+  - Update menu item visibility (`is_active`) without deleting records.
+  - Upload and manage photos and videos for homepage and gallery content.
+  - Choose and manage display order for menu sections, items, and slides.
+  - Manage slide metadata (`title`, `caption`, `alt_text`) and activation state.
+  - Add search/filter tools for faster menu maintenance at scale.
+  - Add change confirmation and basic audit history for admin edits.
+- Deferred (Production Readiness): Adopt Flask app-factory + blueprint structure for clearer initialization and easier testing.
 - Migrate inquiry email transport from SMTP to Mailgun HTTP API for richer delivery telemetry, event/webhook handling, and provider-specific controls.
 - Add production file-based logging (for example `api/logs/app.log`) alongside console logging for persistent operational/audit troubleshooting.
+- Implement Docker containers for backend, frontend, and MySQL (with a `docker-compose` workflow for local and deployment parity).
 
 ## Program And Menu Reference (Current Data)
 

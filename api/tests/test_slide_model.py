@@ -1,5 +1,4 @@
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -71,52 +70,7 @@ class SlideModelTests(unittest.TestCase):
         self.assertEqual(mock_query_db.call_count, 2)
 
     @patch("flask_api.models.slide.query_db")
-    def test_get_active_dicts_resolves_prefixed_asset_filenames(self, mock_query_db):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            prefixed_asset = Path(temp_dir) / "520231114_152614.jpg"
-            prefixed_asset.write_bytes(b"img")
-
-            mock_query_db.return_value = [
-                {
-                    "id": 1,
-                    "title": "Legacy slide",
-                    "caption": "Legacy caption",
-                    "image_url": "/api/assets/slides/20231114_152614.jpg",
-                    "alt_text": "Legacy",
-                    "display_order": 1,
-                    "is_slide": 1,
-                    "media_type": "image",
-                }
-            ]
-
-            with patch("flask_api.models.slide.SLIDES_ASSET_DIR", Path(temp_dir)):
-                slides = Slide.get_active_dicts()
-
-        self.assertEqual(slides[0]["src"], "/api/assets/slides/520231114_152614.jpg")
-
-    @patch("flask_api.models.slide.query_db")
-    def test_get_active_dicts_applies_default_title_and_text(self, mock_query_db):
-        mock_query_db.return_value = [
-            {
-                "id": 9,
-                "title": "",
-                "caption": "",
-                "image_url": "/api/assets/slides/blank.jpg",
-                "alt_text": "",
-                "display_order": 1,
-                "is_slide": 1,
-                "media_type": "image",
-            }
-        ]
-
-        slides = Slide.get_active_dicts()
-
-        self.assertEqual(slides[0]["title"], "Post 468 Catering")
-        self.assertEqual(slides[0]["text"], "Photos and videos from events, service, and community programs.")
-        self.assertEqual(slides[0]["alt"], "Post 468 Catering")
-
-    @patch("flask_api.models.slide.query_db")
-    def test_get_active_dicts_replaces_filename_like_title_and_caption(self, mock_query_db):
+    def test_get_active_dicts_returns_database_metadata_without_runtime_overrides(self, mock_query_db):
         mock_query_db.return_value = [
             {
                 "id": 10,
@@ -132,9 +86,9 @@ class SlideModelTests(unittest.TestCase):
 
         slides = Slide.get_active_dicts()
 
-        self.assertEqual(slides[0]["title"], "Post 468 Catering")
-        self.assertEqual(slides[0]["caption"], "Photos and videos from events, service, and community programs.")
-        self.assertEqual(slides[0]["alt"], "Post 468 Catering")
+        self.assertEqual(slides[0]["title"], "gallery-photo.jpg")
+        self.assertEqual(slides[0]["caption"], "gallery-photo.jpg")
+        self.assertEqual(slides[0]["alt"], "gallery-photo.jpg")
 
 
 if __name__ == "__main__":

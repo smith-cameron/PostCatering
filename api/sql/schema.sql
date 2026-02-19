@@ -378,6 +378,24 @@ WHERE is_active = 1
     ) seeded_slides
   );
 
+UPDATE slides
+SET title = 'placeholder title'
+WHERE title IS NULL
+   OR TRIM(title) = ''
+   OR LOWER(TRIM(title)) REGEXP '(^|/)[^/]+\\.(jpg|jpeg|png|webp|gif|avif|mp4|webm|mov|m4v|ogv)$';
+
+UPDATE slides
+SET caption = 'placeholder text'
+WHERE caption IS NULL
+   OR TRIM(caption) = ''
+   OR LOWER(TRIM(caption)) REGEXP '(^|/)[^/]+\\.(jpg|jpeg|png|webp|gif|avif|mp4|webm|mov|m4v|ogv)$';
+
+UPDATE slides
+SET alt_text = title
+WHERE alt_text IS NULL
+   OR TRIM(alt_text) = ''
+   OR LOWER(TRIM(alt_text)) REGEXP '(^|/)[^/]+\\.(jpg|jpeg|png|webp|gif|avif|mp4|webm|mov|m4v|ogv)$';
+
 INSERT INTO menu_section_tier_constraints (
   tier_id,
   constraint_key,
