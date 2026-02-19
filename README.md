@@ -120,16 +120,26 @@ Use `api/.env.example` as the source of truth for variable names.
 - `SMTP_USE_TLS`: `true`/`false` for TLS
 - `INQUIRY_TO_EMAIL`: destination inbox for inquiry notifications
 - `INQUIRY_FROM_EMAIL`: sender address used by outbound inquiry emails
+- `INQUIRY_RATE_LIMIT_PER_IP_PER_MINUTE`: short-window inquiry submit limit per client IP
+- `INQUIRY_RATE_LIMIT_PER_IP_PER_HOUR`: hourly inquiry submit limit per client IP
+- `INQUIRY_DUPLICATE_WINDOW_SECONDS`: duplicate payload suppression window
+- `INQUIRY_MAX_LINKS`: max links allowed in inquiry free-text fields
+- `INQUIRY_BLOCKED_EMAIL_DOMAINS`: comma-separated blocked email domains
+- `INQUIRY_ALLOWED_EMAIL_DOMAINS`: optional allowlist for email domains (empty disables allowlist)
+- `INQUIRY_REQUIRE_EMAIL_DOMAIN_DNS`: optional DNS reachability check for email domains
+- `INQUIRY_ABUSE_ALERT_THRESHOLD_PER_MINUTE`: threshold for elevated abuse log events
+- `INQUIRY_ABUSE_ALERT_WINDOW_SECONDS`: rolling window for abuse alert threshold
 
 Security notes:
 - Never commit `.env` files or secret values.
 - Rotate `MENU_ADMIN_TOKEN` and SMTP credentials if exposed.
 - Keep CORS restricted to known origins.
+- Keep anti-automation integrity settings internal and do not publish implementation details.
 
 ## API Overview
 
 - `GET /api/health`  
-  Health check.
+  Health check including DB connectivity.
 
 - `GET /api/slides`  
   Returns active homepage slides.
@@ -236,6 +246,7 @@ Backend:
 - Validates required fields and service selection rules
 - Enforces event date at least 7 days out
 - Validates US phone format
+- Applies anti-abuse controls (rate limiting, duplicate suppression, message heuristics, domain checks)
 - Stores inquiry in `inquiries` table
 - Attempts SMTP email and records email status
 
@@ -278,26 +289,26 @@ Backend:
 
 #### Backend Standards
 - ~~Add a tracked backend dependency manifest (`api/requirements.txt` or `api/pyproject.toml`) with pinned versions.~~
-- Adopt Flask app-factory + blueprint structure for clearer initialization and easier testing.
+- Deferred (Production Readiness): Adopt Flask app-factory + blueprint structure for clearer initialization and easier testing.
 - ~~Use safer defaults (`FLASK_DEBUG=false`, restrictive CORS defaults) for production readiness.~~
-- Include `X-Menu-Admin-Token` in CORS allowed headers for browser-based admin calls.
+- ~~Include `X-Menu-Admin-Token` in CORS allowed headers for browser-based admin calls.~~ (Superseded by dedicated admin dashboard stretch goal.)
 
 #### Backend Logic
-- Persist inquiry selections as structured data (JSON columns or related tables) instead of appending everything into `message`.
+- ~~Persist inquiry selections as structured data (JSON columns or related tables) instead of appending everything into `message`.~~
 - ~~Strengthen server-side validation and normalization for email/phone/budget fields.~~
-- Add abuse controls for `/api/inquiries` (rate limiting/spam protection, optional CAPTCHA).
-- Add structured logging and clearer SMTP failure diagnostics (without exposing secrets).
+- ~~Add abuse controls for `/api/inquiries` (rate limiting/spam protection, optional CAPTCHA).~~
+- ~~Add structured logging and clearer SMTP failure diagnostics (without exposing secrets).~~
 
 #### Data Model
 - ~~Reassess menu-table normalization depth; consider a hybrid model to reduce complexity and query assembly cost.~~
-- Resolve the unused `menu_config` path (remove dead table/path or make it an intentional cached canonical representation).
-- Normalize price storage for machine use (numeric fields + currency) instead of mostly formatted text strings.
-- Make constraint storage consistent (`formal_plan_option_constraints` vs suffix-based tier constraint keys).
+- ~~Resolve the unused `menu_config` path (remove dead table/path or make it an intentional cached canonical representation).~~
+- ~~Normalize price storage for machine use (numeric fields + currency) instead of mostly formatted text strings.~~
+- ~~Make constraint storage consistent (`formal_plan_option_constraints` vs suffix-based tier constraint keys).~~
 
 #### Data Access
-- Refactor DB access to avoid opening a new connection per query; support transaction/connection reuse per request.
+- ~~Refactor DB access to avoid opening a new connection per query; support transaction/connection reuse per request.~~
 - Optimize `Menu.seed_from_payload` to reduce N+1 lookups and batch writes.
-- Expand health checks to verify DB connectivity, not just process status.
+- ~~Expand health checks to verify DB connectivity, not just process status.~~
 
 #### Testing
 - Add backend unit/integration tests and frontend component/form tests.
@@ -309,6 +320,9 @@ Backend:
 #### Docs
 - Reconcile outdated docs/comments (e.g., `api/sql/menu_seed.sql` still references auto-seed behavior).
 - ~~Define and enforce API naming conventions at boundaries (snake_case vs camelCase).~~
+
+#### Stretch Goals
+- Build a dedicated admin dashboard for menu/slide operations with authenticated admin access (instead of browser calls with a static token).
 
 ## Program And Menu Reference (Current Data)
 

@@ -85,5 +85,13 @@ def create_inquiry():
   if request.method == "OPTIONS":
     return ("", 204)
 
-  response_body, status_code = InquiryService.submit(request.get_json(silent=True) or {})
+  forwarded_for = request.headers.get("X-Forwarded-For", "")
+  client_ip = (forwarded_for.split(",")[0].strip() if forwarded_for else "") or (request.remote_addr or "")
+  user_agent = request.headers.get("User-Agent", "")
+
+  response_body, status_code = InquiryService.submit(
+    request.get_json(silent=True) or {},
+    client_ip=client_ip,
+    user_agent=user_agent,
+  )
   return jsonify(response_body), status_code

@@ -3,6 +3,8 @@ import socket
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 API_ROOT = Path(__file__).resolve().parents[1]
 if str(API_ROOT) not in sys.path:
@@ -52,6 +54,52 @@ class InquiryServiceFormattingTests(unittest.TestCase):
   def test_diagnose_smtp_failure_generic(self):
     diagnosis = InquiryService._diagnose_smtp_failure(RuntimeError("boom"))
     self.assertEqual(diagnosis["reason_code"], "email_send_failed")
+
+  @patch("flask_api.services.inquiry_service.Inquiry.from_payload")
+  @patch("flask_api.services.inquiry_service.InquiryAbuseGuard.evaluate")
+  def test_submit_returns_error_on_abuse_block(self, mock_abuse_evaluate, mock_from_payload):
+    mock_from_payload.return_value = SimpleNamespace(
+      service_selection={},
+      desired_menu_items=[],
+      message="",
+      validate=lambda: [],
+    )
+    mock_abuse_evaluate.return_value = {
+      "allow": False,
+      "status_code": 429,
+      "warning": "Please wait before submitting another inquiry.",
+      "warning_code": "rate_limit_minute",
+      "silent_accept": False,
+      "alert": False,
+      "meta": {"ip_hash": "abc", "user_agent_hash": "def"},
+    }
+
+    body, status_code = InquiryService.submit({}, client_ip="1.2.3.4", user_agent="ua")
+    self.assertEqual(status_code, 429)
+    self.assertEqual(body, {"errors": ["Please wait before submitting another inquiry."]})
+
+  @patch("flask_api.services.inquiry_service.Inquiry.from_payload")
+  @patch("flask_api.services.inquiry_service.InquiryAbuseGuard.evaluate")
+  def test_submit_silent_accept_on_abuse_soft_block(self, mock_abuse_evaluate, mock_from_payload):
+    mock_from_payload.return_value = SimpleNamespace(
+      service_selection={},
+      desired_menu_items=[],
+      message="",
+      validate=lambda: [],
+    )
+    mock_abuse_evaluate.return_value = {
+      "allow": False,
+      "status_code": 202,
+      "warning": None,
+      "warning_code": "duplicate_submission_window",
+      "silent_accept": True,
+      "alert": False,
+      "meta": {"ip_hash": "abc", "user_agent_hash": "def"},
+    }
+
+    body, status_code = InquiryService.submit({}, client_ip="1.2.3.4", user_agent="ua")
+    self.assertEqual(status_code, 202)
+    self.assertEqual(body, {"inquiry_id": None, "email_sent": False})
 
 
 if __name__ == "__main__":

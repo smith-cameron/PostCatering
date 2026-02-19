@@ -207,6 +207,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
         phone: form.phone.trim(),
         event_date: form.event_date.trim(),
         service_interest: form.service_interest.trim(),
+        company_website: form.company_website.trim(),
         budget: form.budget.trim(),
         message: form.message.trim(),
       };
@@ -482,6 +483,17 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
                 Message is for special chef requests, dietary notes, service details, or anything not captured above.
               </Form.Text>
             </Form.Group>
+
+            <Form.Control
+              type="text"
+              name="company_website"
+              value={form.company_website}
+              onChange={onChange}
+              autoComplete="off"
+              tabIndex={-1}
+              className="d-none"
+              aria-hidden="true"
+            />
           </Modal.Body>
 
           <Modal.Footer>

@@ -6,6 +6,7 @@ import smtplib
 from email.message import EmailMessage
 
 from flask_api.models.inquiry import Inquiry
+from flask_api.services.inquiry_abuse_guard import InquiryAbuseGuard
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +177,7 @@ class InquiryService:
       return False, diagnosis["warning"], diagnosis["reason_code"]
 
   @classmethod
-  def submit(cls, raw_payload):
+  def submit(cls, raw_payload, client_ip="", user_agent=""):
     inquiry = Inquiry.from_payload(raw_payload)
     cls._log_event(
       logging.INFO,
@@ -185,6 +186,27 @@ class InquiryService:
       desired_item_count=len(inquiry.desired_menu_items),
       has_message=bool(inquiry.message),
     )
+
+    abuse_check = InquiryAbuseGuard.evaluate(
+      inquiry=inquiry,
+      raw_payload=raw_payload,
+      client_ip=client_ip,
+      user_agent=user_agent,
+    )
+    if not abuse_check["allow"]:
+      log_level = logging.ERROR if abuse_check.get("alert") else logging.WARNING
+      cls._log_event(
+        log_level,
+        "inquiry_submit_blocked",
+        reason_code=abuse_check.get("warning_code"),
+        status_code=abuse_check.get("status_code"),
+        ip_hash=abuse_check.get("meta", {}).get("ip_hash"),
+        user_agent_hash=abuse_check.get("meta", {}).get("user_agent_hash"),
+      )
+
+      if abuse_check.get("silent_accept"):
+        return {"inquiry_id": None, "email_sent": False}, abuse_check["status_code"]
+      return {"errors": [abuse_check.get("warning") or "Unable to process inquiry."]}, abuse_check["status_code"]
 
     validation_errors = inquiry.validate()
     if validation_errors:
