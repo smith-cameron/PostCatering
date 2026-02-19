@@ -1,16 +1,64 @@
-# React + Vite
+# Client Frontend (React + Vite)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This frontend renders the public-facing catering site, including service menus, inquiry modal flow, landing slides, and the Showcase media gallery.
 
-Currently, two official plugins are available:
+## Run Locally
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+```powershell
+cd client
+npm install
+npm run dev
+```
 
-## React Compiler
+Frontend defaults to `http://localhost:5173` and proxies `/api` to `http://localhost:5000`.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Routes
 
-## Expanding the ESLint configuration
+- `/` home/landing page with carousel slides from `GET /api/slides`
+- `/services/:menuKey` dynamic service menu pages
+- `/showcase` photo/video gallery page with modal viewer
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Showcase Gallery
+
+The Showcase page (`client/src/components/ShowcaseGallery.jsx`) loads media from `GET /api/gallery`.
+
+Expected API shape:
+
+```json
+{
+  "media": [
+    {
+      "id": 11,
+      "src": "/api/assets/slides/20231114_152614.jpg",
+      "thumbnail_src": "/api/assets/slides/20231114_152614.jpg",
+      "title": "Community Dinner",
+      "caption": "Seasonal favorites",
+      "alt": "Community dinner service line",
+      "media_type": "image",
+      "is_slide": true
+    }
+  ]
+}
+```
+
+Behavior:
+
+- Landing slides are sourced from `GET /api/slides` and can link into `/showcase?media=<id>`.
+- In Showcase modal:
+  - `image` media uses large contained rendering.
+  - `video` media uses native playback controls.
+- Modal supports previous/next navigation.
+
+## Testing
+
+```powershell
+cd client
+npm run test
+```
+
+Current component tests include:
+
+- `src/components/Landing.test.jsx`
+- `src/components/ShowcaseGallery.test.jsx`
+- `src/components/SiteNavigation.test.jsx`
+- `src/components/Inquiry.test.jsx`

@@ -6,13 +6,16 @@ CREATE TABLE IF NOT EXISTS slides (
   title VARCHAR(150) NULL,
   caption TEXT NULL,
   image_url VARCHAR(1024) NOT NULL,
+  media_type ENUM('image', 'video') NOT NULL DEFAULT 'image',
   alt_text VARCHAR(255) NULL,
   display_order INT NOT NULL DEFAULT 0,
+  is_slide TINYINT(1) NOT NULL DEFAULT 0,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_slides_active_order (is_active, display_order),
+  KEY idx_slides_active_flagged_order (is_active, is_slide, display_order),
   UNIQUE KEY uq_slides_image_url (image_url(191))
 );
 
@@ -353,6 +356,28 @@ ALTER TABLE menu_section_tier_constraints
   ADD COLUMN IF NOT EXISTS max_select INT NOT NULL DEFAULT 0 AFTER min_select,
   MODIFY COLUMN constraint_value INT NULL;
 
+ALTER TABLE slides
+  ADD COLUMN IF NOT EXISTS media_type ENUM('image', 'video') NOT NULL DEFAULT 'image' AFTER image_url,
+  ADD COLUMN IF NOT EXISTS is_slide TINYINT(1) NOT NULL DEFAULT 0 AFTER display_order;
+
+UPDATE slides
+SET media_type = 'image'
+WHERE media_type IS NULL OR media_type = '';
+
+UPDATE slides
+SET is_slide = 1
+WHERE is_active = 1
+  AND is_slide = 0
+  AND NOT EXISTS (
+    SELECT 1
+    FROM (
+      SELECT id
+      FROM slides
+      WHERE is_slide = 1
+      LIMIT 1
+    ) seeded_slides
+  );
+
 INSERT INTO menu_section_tier_constraints (
   tier_id,
   constraint_key,
@@ -412,10 +437,10 @@ SET is_active = 0
 WHERE constraint_key LIKE '%\\_min' ESCAPE '\\'
    OR constraint_key LIKE '%\\_max' ESCAPE '\\';
 
-INSERT INTO slides (title, caption, image_url, alt_text, display_order, is_active)
+INSERT INTO slides (title, caption, image_url, media_type, alt_text, display_order, is_slide, is_active)
 VALUES
-  ('First slide label', 'Nulla vitae elit libero, a pharetra augue mollis interdum.', '/api/assets/slides/20231114_152614.jpg', 'First slide', 1, 1),
-  ('Second slide label', 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.', '/api/assets/slides/123_1 (1).jpg', 'Second slide', 2, 1),
-  ('Third slide label', 'Praesent commodo cursus magna, vel scelerisque nisl consectetur.', '/api/assets/slides/20241128_171936.jpg', 'Third slide', 3, 1),
-  ('Fourth slide label', 'Suscipit architecto veritatis quae sit distinctio corporis beatae?.', '/api/assets/slides/20250106_173518.jpg', 'Fourth slide', 4, 1),
-  ('Fifth slide label', 'Eos, nisi sit, possimus maiores autem minima error eligendi repudiandae praesentium veritatis nam tempore modi vero maxime dolores perferendis aperiam? Necessitatibus, quas.', '/api/assets/slides/20250313_145844.jpg', 'Fifth slide', 5, 1);
+  ('First slide label', 'Nulla vitae elit libero, a pharetra augue mollis interdum.', '/api/assets/slides/20231114_152614.jpg', 'image', 'First slide', 1, 1, 1),
+  ('Second slide label', 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.', '/api/assets/slides/123_1 (1).jpg', 'image', 'Second slide', 2, 1, 1),
+  ('Third slide label', 'Praesent commodo cursus magna, vel scelerisque nisl consectetur.', '/api/assets/slides/20241128_171936.jpg', 'image', 'Third slide', 3, 1, 1),
+  ('Fourth slide label', 'Suscipit architecto veritatis quae sit distinctio corporis beatae?.', '/api/assets/slides/20250106_173518.jpg', 'image', 'Fourth slide', 4, 1, 1),
+  ('Fifth slide label', 'Eos, nisi sit, possimus maiores autem minima error eligendi repudiandae praesentium veritatis nam tempore modi vero maxime dolores perferendis aperiam? Necessitatibus, quas.', '/api/assets/slides/20250313_145844.jpg', 'image', 'Fifth slide', 5, 1, 1);

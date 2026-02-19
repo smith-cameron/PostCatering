@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button, Carousel } from "react-bootstrap";
+import { Link } from "react-router-dom";
 import AboutUsModal from "./modals/AboutUsModal";
 import MondayMealModal from "./modals/MondayMealModal";
 
@@ -77,7 +78,12 @@ const Landing = () => {
       <Carousel>
         {slides.map((slide) => (
           <Carousel.Item key={slide.id ?? slide.src} className="carousel-item">
-            <img className="d-block carousel-img" src={slide.src} alt={slide.alt} />
+            <Link
+              to={`/showcase?media=${encodeURIComponent(String(slide.id ?? slide.src))}`}
+              className="carousel-media-link"
+              aria-label={`Open ${slide.title || "slide"} in the showcase`}>
+              <img className="d-block carousel-img" src={slide.src} alt={slide.alt} />
+            </Link>
             <Carousel.Caption className="bg-dark bg-opacity-50 text-white p-3">
               <h3>{slide.title}</h3>
               <p>{slide.text}</p>

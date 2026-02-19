@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import Landing from "./Landing";
 
 describe("Landing", () => {
@@ -28,7 +29,11 @@ describe("Landing", () => {
       }),
     });
 
-    render(<Landing />);
+    render(
+      <MemoryRouter>
+        <Landing />
+      </MemoryRouter>
+    );
 
     expect(globalThis.fetch).toHaveBeenCalledWith("/api/slides");
     expect(await screen.findByText("Community Dinner")).toBeInTheDocument();
@@ -36,12 +41,19 @@ describe("Landing", () => {
       "src",
       "/api/assets/slides/20231114_152614.jpg"
     );
+    expect(
+      screen.getByRole("link", { name: /open community dinner in the showcase/i })
+    ).toHaveAttribute("href", "/showcase?media=11");
   });
 
   it("keeps the page usable when slide loading fails", async () => {
     globalThis.fetch.mockRejectedValueOnce(new Error("network"));
 
-    render(<Landing />);
+    render(
+      <MemoryRouter>
+        <Landing />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(globalThis.fetch).toHaveBeenCalledTimes(1);

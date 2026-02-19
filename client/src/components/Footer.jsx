@@ -30,6 +30,11 @@ const Footer = () => {
             </Nav.Link>
           </Nav.Item>
           <Nav.Item as="li">
+            <Nav.Link as={Link} to="/showcase" className="px-2 py-0">
+              Showcase
+            </Nav.Link>
+          </Nav.Item>
+          <Nav.Item as="li">
             <Nav.Link
               as="button"
               type="button"

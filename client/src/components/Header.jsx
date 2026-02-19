@@ -32,6 +32,10 @@ const Header = ({ onOpenInquiry }) => {
         Formal Events Catering
       </NavDropdown.Item>
 
+      <NavDropdown.Item as={Link} to="/showcase">
+        Showcase
+      </NavDropdown.Item>
+
       <NavDropdown.Divider />
 
       <NavDropdown.Item
@@ -73,6 +77,10 @@ const Header = ({ onOpenInquiry }) => {
 
                 <Nav.Link as={Link} to="/services/formal">
                   Formal Events Catering
+                </Nav.Link>
+
+                <Nav.Link as={Link} to="/showcase">
+                  Showcase
                 </Nav.Link>
 
                 <Nav.Link
