@@ -1,6 +1,7 @@
 # Owner Account Cutover Command Sheet
 
 Command-focused checklist for launch day.
+Target production domain: `post460catering.com`
 
 ## 0) Fill These Variables
 
@@ -19,7 +20,7 @@ export DB_USER=postcatering_app
 export DB_PASS='CHANGE_ME_STRONG_PASSWORD'
 
 # Domain verification
-export DOMAIN=your-domain.com
+export DOMAIN=post460catering.com
 ```
 
 ## 1) Final Backup From Source
@@ -69,7 +70,7 @@ Create `route53-cutover.json`:
     {
       "Action": "UPSERT",
       "ResourceRecordSet": {
-        "Name": "your-domain.com",
+        "Name": "post460catering.com",
         "Type": "A",
         "TTL": 60,
         "ResourceRecords": [{ "Value": "OWNER_PUBLIC_IP" }]
@@ -78,7 +79,7 @@ Create `route53-cutover.json`:
     {
       "Action": "UPSERT",
       "ResourceRecordSet": {
-        "Name": "www.your-domain.com",
+        "Name": "www.post460catering.com",
         "Type": "A",
         "TTL": 60,
         "ResourceRecords": [{ "Value": "OWNER_PUBLIC_IP" }]
