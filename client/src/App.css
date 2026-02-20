@@ -91,6 +91,17 @@ body {
   /* text-align: center; */
 }
 
+.landing-info-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+}
+
+.landing-info-action {
+  min-width: 220px;
+}
+
 /* =========================
    Carousel
    ========================= */
@@ -193,6 +204,34 @@ button:hover {
   --bs-btn-disabled-color: #fff;
   --bs-btn-disabled-bg: #3473a4;
   --bs-btn-disabled-border-color: #3473a4;
+}
+
+.info-modal-copy {
+  color: #1f2937;
+  line-height: 1.65;
+}
+
+.info-modal-copy .lead {
+  font-weight: 500;
+  margin-bottom: 1rem;
+}
+
+.info-modal-section-title {
+  margin: 1rem 0 0.5rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #374151;
+}
+
+.info-modal-list {
+  margin: 0 0 0.85rem 1.2rem;
+  padding: 0;
+}
+
+.info-modal-list li {
+  margin-bottom: 0.45rem;
 }
 
 /* =========================
@@ -306,6 +345,27 @@ button:hover {
 }
 
 @media (max-width: 991.98px) {
+  .site-header-toggle {
+    margin-left: auto;
+  }
+
+  .site-header-nav {
+    width: 100%;
+    align-items: flex-end;
+    text-align: right;
+  }
+
+  .site-header-nav .nav-link {
+    text-align: right;
+  }
+
+  .site-header-nav .site-header-action-link {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: var(--bs-nav-link-padding-y) var(--bs-nav-link-padding-x);
+  }
+
   .showcase-grid {
     display: flex;
     flex-direction: column;
@@ -317,5 +377,22 @@ button:hover {
 
   .showcase-modal-frame {
     height: min(60vh, 680px);
+  }
+
+  .showcase-modal-footer-nav {
+    display: none;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .landing-info-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .landing-info-action {
+    width: 100%;
+    min-width: 0;
   }
 }

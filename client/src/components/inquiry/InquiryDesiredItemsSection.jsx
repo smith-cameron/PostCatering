@@ -58,9 +58,9 @@ const InquiryDesiredItemsSection = ({
         <div className="text-muted small">No items available for this service yet.</div>
       )
     ) : serviceInterest && shouldRequirePlanSelection ? (
-      <div className="text-muted small">Select a package/tier first to choose desired menu items.</div>
+      <div className="text-muted small">Select a package/tier first to view desired menu items.</div>
     ) : (
-      <div className="text-muted small">Select a service first to choose desired items.</div>
+      <div className="text-muted small">Select a service first to view desired items.</div>
     )}
   </Form.Group>
 );

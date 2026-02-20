@@ -52,29 +52,27 @@ const Landing = () => {
           and outreach initiatives.
         </strong>
       </p>
-      <div className="my-4 px-3">
+      <div className="landing-info-actions my-4 px-3">
         <Button
-          className="fw-semibold btn-inquiry-action"
+          className="fw-semibold btn-inquiry-action landing-info-action"
           variant="secondary"
           onClick={() => handleShowModal("aboutUs")}
         >
           About Us
         </Button>
-        <AboutUsModal
-          show={activeModal === "aboutUs"}
-          onHide={handleCloseModal}
-        />
-      </div>
-      <div className="my-4 px-3">
         <Button
-          className="fw-semibold btn-inquiry-action"
+          className="fw-semibold btn-inquiry-action landing-info-action"
           variant="secondary"
           onClick={() => handleShowModal("mmp")}
         >
           Monday Meal Program
         </Button>
-        <MondayMealModal show={activeModal === "mmp"} onHide={handleCloseModal} />
       </div>
+      <AboutUsModal
+        show={activeModal === "aboutUs"}
+        onHide={handleCloseModal}
+      />
+      <MondayMealModal show={activeModal === "mmp"} onHide={handleCloseModal} />
       <Carousel>
         {slides.map((slide) => (
           <Carousel.Item key={slide.id ?? slide.src} className="carousel-item">

@@ -68,6 +68,69 @@ describe("ShowcaseGallery", () => {
     });
   });
 
+  it("supports swipe navigation for image modal media", async () => {
+    globalThis.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        media: [
+          {
+            id: 31,
+            title: "First Image",
+            caption: "",
+            alt: "First showcase image",
+            src: "/api/assets/slides/first.jpg",
+            media_type: "image",
+            is_slide: true,
+          },
+          {
+            id: 32,
+            title: "Second Image",
+            caption: "",
+            alt: "Second showcase image",
+            src: "/api/assets/slides/second.jpg",
+            media_type: "image",
+            is_slide: true,
+          },
+        ],
+      }),
+    });
+
+    renderShowcase();
+
+    fireEvent.click(await screen.findByRole("button", { name: /first image/i }));
+    await waitFor(() => {
+      const modalImage = document.body.querySelector("img.showcase-modal-media");
+      expect(modalImage).toHaveAttribute("alt", "First showcase image");
+    });
+
+    const modalFrame = document.body.querySelector(".showcase-modal-frame");
+    expect(modalFrame).toBeInTheDocument();
+
+    fireEvent.touchStart(modalFrame, {
+      changedTouches: [{ clientX: 220, clientY: 200 }],
+    });
+    fireEvent.touchEnd(modalFrame, {
+      changedTouches: [{ clientX: 80, clientY: 200 }],
+    });
+
+    await waitFor(() => {
+      const modalImage = document.body.querySelector("img.showcase-modal-media");
+      expect(modalImage).toHaveAttribute("alt", "Second showcase image");
+    });
+
+    fireEvent.touchStart(modalFrame, {
+      changedTouches: [{ clientX: 80, clientY: 200 }],
+    });
+    fireEvent.touchEnd(modalFrame, {
+      changedTouches: [{ clientX: 220, clientY: 200 }],
+    });
+
+    await waitFor(() => {
+      const modalImage = document.body.querySelector("img.showcase-modal-media");
+      expect(modalImage).toHaveAttribute("alt", "First showcase image");
+    });
+  });
+
   it("opens a media item from query parameter", async () => {
     globalThis.fetch.mockResolvedValueOnce({
       ok: true,
