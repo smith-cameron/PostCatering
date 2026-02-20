@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Modal, Spinner } from "react-bootstrap";
 import { useSearchParams } from "react-router-dom";
 
 const MEDIA_PARAM_KEY = "media";
 const FALLBACK_LABEL = "placeholder title";
+const SWIPE_MIN_DISTANCE_PX = 48;
 
 const ShowcaseGallery = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [mediaItems, setMediaItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const touchStartRef = useRef({ x: null, y: null });
 
   useEffect(() => {
     let isMounted = true;
@@ -72,6 +74,34 @@ const ShowcaseGallery = () => {
     const nextIndex = (activeIndex + direction + mediaItems.length) % mediaItems.length;
     openMedia(mediaItems[nextIndex]);
   }, [activeIndex, mediaItems, openMedia]);
+
+  const handleMediaTouchStart = useCallback((event) => {
+    const touch = event.changedTouches?.[0];
+    if (!touch) return;
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+  }, []);
+
+  const handleMediaTouchEnd = useCallback((event) => {
+    if (!activeMedia || activeMedia.media_type !== "image" || mediaItems.length < 2) return;
+
+    const touch = event.changedTouches?.[0];
+    const { x: startX, y: startY } = touchStartRef.current;
+    touchStartRef.current = { x: null, y: null };
+
+    if (!touch || startX == null || startY == null) return;
+
+    const deltaX = touch.clientX - startX;
+    const deltaY = touch.clientY - startY;
+    if (Math.abs(deltaY) > Math.abs(deltaX)) return;
+    if (Math.abs(deltaX) < SWIPE_MIN_DISTANCE_PX) return;
+
+    if (deltaX < 0) moveMedia(1);
+    if (deltaX > 0) moveMedia(-1);
+  }, [activeMedia, mediaItems.length, moveMedia]);
+
+  const handleMediaTouchCancel = useCallback(() => {
+    touchStartRef.current = { x: null, y: null };
+  }, []);
 
   useEffect(() => {
     if (!activeMedia) return undefined;
@@ -162,7 +192,11 @@ const ShowcaseGallery = () => {
         </Modal.Header>
         <Modal.Body className="showcase-modal-body">
           {activeMedia ? (
-            <div className="showcase-modal-frame">
+            <div
+              className="showcase-modal-frame"
+              onTouchStart={handleMediaTouchStart}
+              onTouchEnd={handleMediaTouchEnd}
+              onTouchCancel={handleMediaTouchCancel}>
               {activeMedia.media_type === "video" ? (
                 <video
                   key={String(activeMedia.id)}
@@ -183,7 +217,7 @@ const ShowcaseGallery = () => {
           ) : null}
           {activeMedia?.caption ? <p className="mt-3 mb-0 text-secondary">{activeMedia.caption}</p> : null}
         </Modal.Body>
-        <Modal.Footer className="justify-content-between">
+        <Modal.Footer className="justify-content-between showcase-modal-footer-nav">
           <Button className="btn-inquiry-action" variant="secondary" onClick={() => moveMedia(-1)} disabled={mediaItems.length < 2}>
             Previous
           </Button>

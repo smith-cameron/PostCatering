@@ -49,11 +49,6 @@ const ServiceMenu = () => {
       <header className="mb-3">
         <h2 className="mb-1">{normalizeMenuTitle(data.pageTitle)}</h2>
         {data.subtitle ? <p className="mb-0">{normalizeMenuText(data.subtitle)}</p> : null}
-        <div className="mt-3">
-          <Button className="btn-inquiry-action" variant="secondary" onClick={() => openInquiryModal(menuKey)}>
-            Send Inquiry About This Menu
-          </Button>
-        </div>
       </header>
 
       {data.introBlocks?.map((block) => (
@@ -72,6 +67,12 @@ const ServiceMenu = () => {
       ) : (
         <CatalogSectionsAccordion menuKey={menuKey} data={data} menuOptions={menuOptions} />
       )}
+
+      <div className="mt-3">
+        <Button className="btn-inquiry-action" variant="secondary" onClick={() => openInquiryModal(menuKey)}>
+          Request Inquiry About This Menu
+        </Button>
+      </div>
     </main>
   );
 };

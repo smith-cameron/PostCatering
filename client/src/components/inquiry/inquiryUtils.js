@@ -140,7 +140,7 @@ const parseCommunityPackageDetails = (details) => {
       .filter(Boolean)
       .map((part) => {
         const lower = part.toLowerCase();
-        if (/^\d+\s+/.test(lower)) return `Choose ${toTitleCase(part)}`;
+        if (/^\d+\s+/.test(lower)) return `Select ${toTitleCase(part)}`;
         return toTitleCase(part);
       });
   }
