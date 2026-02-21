@@ -8,11 +8,241 @@ from flask_api.config.mysqlconnection import query_db, query_db_many
 class Menu:
     CACHE_CONFIG_KEY = "catalog_payload_v1"
     PRICE_TOKEN_REGEX = re.compile(r"\$?\s*([0-9][0-9,]*(?:\.\d{1,2})?)\s*([kK])?\+?")
+    NON_FORMAL_CATALOG_KEYS = {"togo", "community"}
+    ITEM_FALLBACK_TYPE = "general"
+    ITEM_FALLBACK_CATEGORY = "other"
 
     @staticmethod
     def _slug(value):
         slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
         return slug[:120] if slug else None
+
+    @classmethod
+    def _normalize_classification_value(cls, value, fallback):
+        source = re.sub(r"(?<!^)(?=[A-Z])", "_", str(value or ""))
+        normalized = cls._slug(source)
+        return normalized or fallback
+
+    @staticmethod
+    def _normalize_tray_price_value(value):
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return None
+        normalized = str(value).strip()
+        return normalized or None
+
+    @staticmethod
+    def _coerce_active_flag(value, default=True):
+        if value is None:
+            return 1 if default else 0
+        if isinstance(value, bool):
+            return 1 if value else 0
+        if isinstance(value, numbers.Number):
+            return 1 if int(value) != 0 else 0
+        normalized = str(value).strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return 1
+        if normalized in {"0", "false", "no", "n", "off"}:
+            return 0
+        return 1 if default else 0
+
+    @classmethod
+    def _build_item_reference_payload(cls, row, half_price=None, full_price=None):
+        return {
+            "itemId": row.get("item_id"),
+            "itemName": row.get("item_name"),
+            "itemType": cls._normalize_classification_value(row.get("item_type"), cls.ITEM_FALLBACK_TYPE),
+            "itemCategory": cls._normalize_classification_value(row.get("item_category"), cls.ITEM_FALLBACK_CATEGORY),
+            "isActive": cls._coerce_active_flag(row.get("item_active"), default=True),
+            "trayPrices": {
+                "half": cls._normalize_tray_price_value(
+                    half_price if half_price is not None else row.get("tray_price_half")
+                ),
+                "full": cls._normalize_tray_price_value(
+                    full_price if full_price is not None else row.get("tray_price_full")
+                ),
+            },
+        }
+
+    @classmethod
+    def _extract_non_formal_items_from_payload(cls, payload):
+        raw = (
+            payload.get("non_formal_items")
+            or payload.get("shared_non_formal_items")
+            or payload.get("NON_FORMAL_ITEMS")
+            or payload.get("SHARED_NON_FORMAL_ITEMS")
+            or []
+        )
+        if not isinstance(raw, list):
+            return []
+
+        normalized = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or item.get("item_name") or item.get("itemName") or "").strip()
+            if not name:
+                continue
+            tray_prices = item.get("tray_prices") or item.get("trayPrices") or {}
+            if not isinstance(tray_prices, dict):
+                tray_prices = {}
+
+            normalized.append(
+                {
+                    "item_name": name,
+                    "item_type": cls._normalize_classification_value(
+                        item.get("item_type") or item.get("itemType") or item.get("type"),
+                        cls.ITEM_FALLBACK_TYPE,
+                    ),
+                    "item_category": cls._normalize_classification_value(
+                        item.get("item_category") or item.get("itemCategory") or item.get("category"),
+                        cls.ITEM_FALLBACK_CATEGORY,
+                    ),
+                    "is_active": cls._coerce_active_flag(item.get("is_active", item.get("active")), default=True),
+                    "tray_price_half": cls._normalize_tray_price_value(
+                        tray_prices.get("half")
+                        if "half" in tray_prices
+                        else tray_prices.get("half_tray", item.get("tray_price_half"))
+                    ),
+                    "tray_price_full": cls._normalize_tray_price_value(
+                        tray_prices.get("full")
+                        if "full" in tray_prices
+                        else tray_prices.get("full_tray", item.get("tray_price_full"))
+                    ),
+                }
+            )
+        return normalized
+
+    @classmethod
+    def _collect_item_records_from_payload(cls, menu_options, menu, non_formal_items=None):
+        item_records = {}
+
+        def _ensure_item(
+            name,
+            item_type_hint=None,
+            item_category_hint=None,
+            is_active=1,
+            tray_half=None,
+            tray_full=None,
+        ):
+            item_name = str(name or "").strip()
+            if not item_name:
+                return None
+            existing = item_records.get(item_name)
+            if existing is None:
+                existing = {
+                    "item_name": item_name,
+                    "item_key": cls._slug(item_name),
+                    "item_type": cls._normalize_classification_value(item_type_hint, cls.ITEM_FALLBACK_TYPE),
+                    "item_category": cls._normalize_classification_value(
+                        item_category_hint, cls.ITEM_FALLBACK_CATEGORY
+                    ),
+                    "is_active": cls._coerce_active_flag(is_active, default=True),
+                    "tray_price_half": cls._normalize_tray_price_value(tray_half),
+                    "tray_price_full": cls._normalize_tray_price_value(tray_full),
+                }
+                item_records[item_name] = existing
+                return existing
+
+            if item_type_hint:
+                current_type = cls._normalize_classification_value(
+                    existing.get("item_type"),
+                    cls.ITEM_FALLBACK_TYPE,
+                )
+                if current_type == cls.ITEM_FALLBACK_TYPE:
+                    existing["item_type"] = cls._normalize_classification_value(
+                        item_type_hint,
+                        cls.ITEM_FALLBACK_TYPE,
+                    )
+            if item_category_hint:
+                current_category = cls._normalize_classification_value(
+                    existing.get("item_category"),
+                    cls.ITEM_FALLBACK_CATEGORY,
+                )
+                if current_category == cls.ITEM_FALLBACK_CATEGORY:
+                    existing["item_category"] = cls._normalize_classification_value(
+                        item_category_hint,
+                        cls.ITEM_FALLBACK_CATEGORY,
+                    )
+
+            existing["is_active"] = max(existing.get("is_active", 1), cls._coerce_active_flag(is_active, default=True))
+            normalized_half = cls._normalize_tray_price_value(tray_half)
+            normalized_full = cls._normalize_tray_price_value(tray_full)
+            if normalized_half is not None:
+                existing["tray_price_half"] = normalized_half
+            if normalized_full is not None:
+                existing["tray_price_full"] = normalized_full
+            return existing
+
+        for item in non_formal_items or []:
+            _ensure_item(
+                name=item.get("item_name"),
+                item_type_hint=item.get("item_type"),
+                item_category_hint=item.get("item_category"),
+                is_active=item.get("is_active", 1),
+                tray_half=item.get("tray_price_half"),
+                tray_full=item.get("tray_price_full"),
+            )
+
+        for option_key, option_group in (menu_options or {}).items():
+            if not isinstance(option_group, dict):
+                continue
+            category = option_group.get("category")
+            for item_name in option_group.get("items", []):
+                _ensure_item(
+                    name=item_name,
+                    item_type_hint=option_key,
+                    item_category_hint=category,
+                    is_active=1,
+                )
+
+        for catalog_key, catalog in (menu or {}).items():
+            if not isinstance(catalog, dict):
+                continue
+            normalized_catalog_key = str(catalog_key or "").strip().lower()
+            is_non_formal_catalog = normalized_catalog_key in cls.NON_FORMAL_CATALOG_KEYS
+            for section in catalog.get("sections", []):
+                if not isinstance(section, dict):
+                    continue
+                section_id = section.get("sectionId")
+                section_category = section.get("category")
+                section_course_type = section.get("courseType")
+                for row in section.get("rows", []):
+                    if not isinstance(row, list) or not row:
+                        continue
+                    item_name = row[0]
+                    tray_half = (
+                        row[1] if len(row) > 1 and is_non_formal_catalog and normalized_catalog_key == "togo" else None
+                    )
+                    tray_full = (
+                        row[2] if len(row) > 2 and is_non_formal_catalog and normalized_catalog_key == "togo" else None
+                    )
+                    _ensure_item(
+                        name=item_name,
+                        item_type_hint=section_id if is_non_formal_catalog else section_course_type or section_id,
+                        item_category_hint=section_category if is_non_formal_catalog else section_course_type,
+                        is_active=1,
+                        tray_half=tray_half,
+                        tray_full=tray_full,
+                    )
+
+                should_materialize_tier_bullets = normalized_catalog_key == "formal" or bool(section_course_type)
+                if not should_materialize_tier_bullets:
+                    continue
+
+                for tier in section.get("tiers", []):
+                    if not isinstance(tier, dict):
+                        continue
+                    for bullet in tier.get("bullets", []):
+                        _ensure_item(
+                            name=bullet,
+                            item_type_hint=section_course_type or section_id,
+                            item_category_hint=section_course_type or section_category,
+                            is_active=1,
+                        )
+
+        return item_records
 
     @staticmethod
     def _coerce_price_number(value):
@@ -249,7 +479,10 @@ class Menu:
 
     @classmethod
     def _get_menu_options(cls):
-        query = """
+        rows = None
+        try:
+            rows = query_db(
+                """
       SELECT
         g.id AS group_id,
         g.option_key,
@@ -257,6 +490,37 @@ class Menu:
         g.category,
         g.title,
         g.display_order AS group_order,
+        i.id AS item_id,
+        i.item_name,
+        i.item_type,
+        i.item_category,
+        i.tray_price_half,
+        i.tray_price_full,
+        i.is_active AS item_active,
+        gi.display_order AS item_order
+      FROM menu_option_groups g
+      LEFT JOIN menu_option_group_items gi
+        ON gi.group_id = g.id AND gi.is_active = 1
+      LEFT JOIN menu_items i
+        ON i.id = gi.item_id AND i.is_active = 1
+      WHERE g.is_active = 1
+      ORDER BY g.display_order ASC, g.id ASC, gi.display_order ASC, gi.id ASC;
+    """
+            )
+        except Exception as exc:
+            error_text = str(exc).lower()
+            if "unknown column" not in error_text:
+                raise
+            rows = query_db(
+                """
+      SELECT
+        g.id AS group_id,
+        g.option_key,
+        g.option_id,
+        g.category,
+        g.title,
+        g.display_order AS group_order,
+        i.id AS item_id,
         i.item_name,
         gi.display_order AS item_order
       FROM menu_option_groups g
@@ -267,7 +531,7 @@ class Menu:
       WHERE g.is_active = 1
       ORDER BY g.display_order ASC, g.id ASC, gi.display_order ASC, gi.id ASC;
     """
-        rows = query_db(query)
+            )
         if not rows:
             return {}
 
@@ -281,11 +545,13 @@ class Menu:
                     "category": row["category"],
                     "title": row["title"],
                     "items": [],
+                    "itemRefs": [],
                 }
                 seen.add(key)
 
             if row["item_name"]:
                 payload[key]["items"].append(row["item_name"])
+                payload[key]["itemRefs"].append(cls._build_item_reference_payload(row))
 
         return payload
 
@@ -416,6 +682,7 @@ class Menu:
         )
 
         section_by_id = {}
+        section_catalog_by_id = {}
         for row in section_rows:
             catalog_key = catalog_ids.get(row["catalog_id"])
             if not catalog_key:
@@ -435,6 +702,7 @@ class Menu:
 
             payload[catalog_key].setdefault("sections", []).append(section)
             section_by_id[row["section_id"]] = section
+            section_catalog_by_id[row["section_id"]] = catalog_key
 
         section_columns = query_db(
             """
@@ -450,20 +718,55 @@ class Menu:
                 continue
             section.setdefault("columns", []).append(row["column_label"])
 
-        section_pricing_rows = query_db(
-            """
-      SELECT r.section_id, i.item_name, r.value_1, r.value_2
+        section_pricing_rows = None
+        try:
+            section_pricing_rows = query_db(
+                """
+      SELECT
+        r.section_id,
+        i.id AS item_id,
+        i.item_name,
+        i.item_type,
+        i.item_category,
+        i.tray_price_half,
+        i.tray_price_full,
+        i.is_active AS item_active,
+        r.value_1,
+        r.value_2
       FROM menu_section_rows r
       JOIN menu_items i ON i.id = r.item_id AND i.is_active = 1
       WHERE r.is_active = 1
       ORDER BY r.section_id ASC, r.display_order ASC, r.id ASC;
       """
-        )
+            )
+        except Exception as exc:
+            error_text = str(exc).lower()
+            if "unknown column" not in error_text:
+                raise
+            section_pricing_rows = query_db(
+                """
+      SELECT r.section_id, i.id AS item_id, i.item_name, r.value_1, r.value_2
+      FROM menu_section_rows r
+      JOIN menu_items i ON i.id = r.item_id AND i.is_active = 1
+      WHERE r.is_active = 1
+      ORDER BY r.section_id ASC, r.display_order ASC, r.id ASC;
+      """
+            )
         for row in section_pricing_rows:
             section = section_by_id.get(row["section_id"])
             if section is None:
                 continue
-            section.setdefault("rows", []).append([row["item_name"], row["value_1"], row["value_2"]])
+            section_catalog_key = section_catalog_by_id.get(row["section_id"])
+            half_price = row.get("value_1")
+            full_price = row.get("value_2")
+            if section_catalog_key in cls.NON_FORMAL_CATALOG_KEYS and section_catalog_key == "togo":
+                half_price = cls._normalize_tray_price_value(row.get("tray_price_half")) or half_price
+                full_price = cls._normalize_tray_price_value(row.get("tray_price_full")) or full_price
+
+            section.setdefault("rows", []).append([row["item_name"], half_price, full_price])
+            section.setdefault("rowItems", []).append(
+                cls._build_item_reference_payload(row, half_price=half_price, full_price=full_price)
+            )
 
         section_constraint_rows = query_db(
             """
@@ -536,9 +839,20 @@ class Menu:
                 continue
             tier["constraints"] = cls._normalize_tier_constraints(rows)
 
-        tier_bullet_rows = query_db(
-            """
-      SELECT b.tier_id, COALESCE(i.item_name, b.bullet_text) AS bullet_text
+        tier_bullet_rows = None
+        try:
+            tier_bullet_rows = query_db(
+                """
+      SELECT
+        b.tier_id,
+        i.id AS item_id,
+        i.item_name,
+        i.item_type,
+        i.item_category,
+        i.tray_price_half,
+        i.tray_price_full,
+        i.is_active AS item_active,
+        COALESCE(i.item_name, b.bullet_text) AS bullet_text
       FROM menu_section_tier_bullets b
       LEFT JOIN menu_items i
         ON i.id = b.item_id AND i.is_active = 1
@@ -546,20 +860,122 @@ class Menu:
         AND (b.item_id IS NULL OR i.id IS NOT NULL)
       ORDER BY b.tier_id ASC, b.display_order ASC, b.id ASC;
       """
-        )
+            )
+        except Exception as exc:
+            error_text = str(exc).lower()
+            if "unknown column" not in error_text:
+                raise
+            tier_bullet_rows = query_db(
+                """
+      SELECT b.tier_id, i.id AS item_id, i.item_name, COALESCE(i.item_name, b.bullet_text) AS bullet_text
+      FROM menu_section_tier_bullets b
+      LEFT JOIN menu_items i
+        ON i.id = b.item_id AND i.is_active = 1
+      WHERE b.is_active = 1
+        AND (b.item_id IS NULL OR i.id IS NOT NULL)
+      ORDER BY b.tier_id ASC, b.display_order ASC, b.id ASC;
+      """
+            )
         for row in tier_bullet_rows:
             tier = tiers_by_id.get(row["tier_id"])
             if tier is None:
                 continue
             tier.setdefault("bullets", []).append(row["bullet_text"])
+            if row.get("item_id") is not None:
+                tier.setdefault("bulletItems", []).append(cls._build_item_reference_payload(row))
 
         return payload
+
+    @classmethod
+    def _get_shared_non_formal_items(cls):
+        rows = None
+        try:
+            rows = query_db(
+                """
+      SELECT DISTINCT
+        i.id AS item_id,
+        i.item_name,
+        i.item_type,
+        i.item_category,
+        i.tray_price_half,
+        i.tray_price_full,
+        i.is_active AS item_active
+      FROM menu_items i
+      JOIN (
+        SELECT gi.item_id
+        FROM menu_option_group_items gi
+        JOIN menu_option_groups g
+          ON g.id = gi.group_id
+        WHERE gi.is_active = 1
+          AND g.is_active = 1
+        UNION
+        SELECT r.item_id
+        FROM menu_section_rows r
+        JOIN menu_sections s
+          ON s.id = r.section_id AND s.is_active = 1
+        JOIN menu_catalogs c
+          ON c.id = s.catalog_id AND c.is_active = 1
+        WHERE r.is_active = 1
+          AND c.catalog_key IN ('togo', 'community')
+        UNION
+        SELECT b.item_id
+        FROM menu_section_tier_bullets b
+        JOIN menu_section_tiers t
+          ON t.id = b.tier_id AND t.is_active = 1
+        JOIN menu_sections s
+          ON s.id = t.section_id AND s.is_active = 1
+        JOIN menu_catalogs c
+          ON c.id = s.catalog_id AND c.is_active = 1
+        WHERE b.is_active = 1
+          AND b.item_id IS NOT NULL
+          AND c.catalog_key IN ('togo', 'community')
+      ) linked
+        ON linked.item_id = i.id
+      WHERE i.is_active = 1
+      ORDER BY i.item_name ASC;
+      """
+            )
+        except Exception as exc:
+            error_text = str(exc).lower()
+            if "unknown column" not in error_text:
+                raise
+            rows = query_db(
+                """
+      SELECT DISTINCT
+        i.id AS item_id,
+        i.item_name
+      FROM menu_items i
+      JOIN (
+        SELECT gi.item_id
+        FROM menu_option_group_items gi
+        JOIN menu_option_groups g
+          ON g.id = gi.group_id
+        WHERE gi.is_active = 1
+          AND g.is_active = 1
+        UNION
+        SELECT r.item_id
+        FROM menu_section_rows r
+        JOIN menu_sections s
+          ON s.id = r.section_id AND s.is_active = 1
+        JOIN menu_catalogs c
+          ON c.id = s.catalog_id AND c.is_active = 1
+        WHERE r.is_active = 1
+          AND c.catalog_key IN ('togo', 'community')
+      ) linked
+        ON linked.item_id = i.id
+      WHERE i.is_active = 1
+      ORDER BY i.item_name ASC;
+      """
+            )
+
+        return [cls._build_item_reference_payload(row) for row in (rows or [])]
 
     @classmethod
     def get_config_payload(cls):
         menu_options = cls._get_menu_options()
         formal_plan_options = cls._get_formal_plan_options()
         menu = cls._get_menu_catalog()
+        shared_non_formal_items = cls._get_shared_non_formal_items()
 
         if not menu_options or not formal_plan_options or not menu:
             return None
@@ -568,6 +984,7 @@ class Menu:
             "menu_options": menu_options,
             "formal_plan_options": formal_plan_options,
             "menu": menu,
+            "shared_non_formal_items": shared_non_formal_items,
         }
 
     @classmethod
@@ -729,30 +1146,62 @@ class Menu:
         formal_plan_options = payload.get("formal_plan_options") or payload.get("FORMAL_PLAN_OPTIONS") or []
         menu = payload.get("menu") or payload.get("MENU") or {}
 
-        item_names = set()
-        for option_group in menu_options.values():
-            for item in option_group.get("items", []):
-                item_names.add(item)
-        for catalog in menu.values():
-            for section in catalog.get("sections", []):
-                for row in section.get("rows", []):
-                    if row and row[0]:
-                        item_names.add(row[0])
-                for tier in section.get("tiers", []):
-                    for bullet in tier.get("bullets", []):
-                        item_names.add(bullet)
+        non_formal_items = cls._extract_non_formal_items_from_payload(payload)
+        item_records = cls._collect_item_records_from_payload(
+            menu_options=menu_options,
+            menu=menu,
+            non_formal_items=non_formal_items,
+        )
 
-        query_db_many(
-            """
-      INSERT INTO menu_items (item_key, item_name, is_active)
-      VALUES (%(item_key)s, %(item_name)s, 1)
+        item_rows = [item_records[item_name] for item_name in sorted(item_records.keys())]
+
+        try:
+            query_db_many(
+                """
+      INSERT INTO menu_items (
+        item_key,
+        item_name,
+        item_type,
+        item_category,
+        tray_price_half,
+        tray_price_full,
+        is_active
+      )
+      VALUES (
+        %(item_key)s,
+        %(item_name)s,
+        %(item_type)s,
+        %(item_category)s,
+        %(tray_price_half)s,
+        %(tray_price_full)s,
+        %(is_active)s
+      )
       ON DUPLICATE KEY UPDATE
         item_key = VALUES(item_key),
-        is_active = 1,
+        item_type = VALUES(item_type),
+        item_category = VALUES(item_category),
+        tray_price_half = VALUES(tray_price_half),
+        tray_price_full = VALUES(tray_price_full),
+        is_active = VALUES(is_active),
         updated_at = CURRENT_TIMESTAMP;
       """,
-            [{"item_key": cls._slug(item_name), "item_name": item_name} for item_name in sorted(item_names)],
-        )
+                item_rows,
+            )
+        except Exception as exc:
+            error_text = str(exc).lower()
+            if "unknown column" not in error_text:
+                raise
+            query_db_many(
+                """
+      INSERT INTO menu_items (item_key, item_name, is_active)
+      VALUES (%(item_key)s, %(item_name)s, %(is_active)s)
+      ON DUPLICATE KEY UPDATE
+        item_key = VALUES(item_key),
+        is_active = VALUES(is_active),
+        updated_at = CURRENT_TIMESTAMP;
+      """,
+                item_rows,
+            )
 
         items = query_db("SELECT id, item_name FROM menu_items;")
         item_ids = {row["item_name"]: row["id"] for row in items}
@@ -1083,8 +1532,14 @@ class Menu:
                     item_id = item_ids.get(item_name)
                     if item_id is None:
                         continue
-                    value_1 = row_values[1] if len(row_values) > 1 else None
-                    value_2 = row_values[2] if len(row_values) > 2 else None
+                    value_1 = cls._normalize_tray_price_value(row_values[1]) if len(row_values) > 1 else None
+                    value_2 = cls._normalize_tray_price_value(row_values[2]) if len(row_values) > 2 else None
+
+                    if str(catalog_key).strip().lower() == "togo":
+                        item_record = item_records.get(item_name, {})
+                        value_1 = cls._normalize_tray_price_value(item_record.get("tray_price_half")) or value_1
+                        value_2 = cls._normalize_tray_price_value(item_record.get("tray_price_full")) or value_2
+
                     query_db(
                         """
             INSERT INTO menu_section_rows (section_id, item_id, value_1, value_2, display_order, is_active)
@@ -1263,3 +1718,348 @@ class Menu:
                             },
                             fetch="none",
                         )
+
+    @classmethod
+    def _normalize_non_formal_admin_item(cls, raw_item, index):
+        if not isinstance(raw_item, dict):
+            return None, f"items[{index}] must be an object."
+
+        item_name = str(raw_item.get("name") or raw_item.get("item_name") or raw_item.get("itemName") or "").strip()
+        if not item_name:
+            return None, f"items[{index}].name is required."
+
+        item_type = cls._normalize_classification_value(
+            raw_item.get("item_type") or raw_item.get("itemType") or raw_item.get("type"),
+            cls.ITEM_FALLBACK_TYPE,
+        )
+        item_category = cls._normalize_classification_value(
+            raw_item.get("item_category") or raw_item.get("itemCategory") or raw_item.get("category"),
+            cls.ITEM_FALLBACK_CATEGORY,
+        )
+
+        tray_prices = raw_item.get("tray_prices") or raw_item.get("trayPrices") or {}
+        if not isinstance(tray_prices, dict):
+            tray_prices = {}
+
+        return (
+            {
+                "item_name": item_name,
+                "item_key": cls._slug(item_name),
+                "item_type": item_type,
+                "item_category": item_category,
+                "is_active": cls._coerce_active_flag(raw_item.get("is_active", raw_item.get("active")), default=True),
+                "tray_price_half": cls._normalize_tray_price_value(
+                    tray_prices.get("half")
+                    if "half" in tray_prices
+                    else tray_prices.get("half_tray", raw_item.get("tray_price_half"))
+                ),
+                "tray_price_full": cls._normalize_tray_price_value(
+                    tray_prices.get("full")
+                    if "full" in tray_prices
+                    else tray_prices.get("full_tray", raw_item.get("tray_price_full"))
+                ),
+            },
+            None,
+        )
+
+    @classmethod
+    def _match_score(cls, candidate, target):
+        normalized_candidate = cls._normalize_classification_value(candidate, "")
+        normalized_target = cls._normalize_classification_value(target, "")
+        if not normalized_candidate or not normalized_target:
+            return 0
+        if normalized_candidate == normalized_target:
+            return 100
+        if normalized_target in normalized_candidate or normalized_candidate in normalized_target:
+            return 50
+        return 0
+
+    @staticmethod
+    def _category_candidates(item_category):
+        category = str(item_category or "").strip().lower()
+        candidates = {category}
+        if category in {"sides", "salads"}:
+            candidates.add("sides_salads")
+        if category == "sides_salads":
+            candidates.update({"sides", "salads"})
+        return {value for value in candidates if value}
+
+    @classmethod
+    def _ensure_default_option_group_link(cls, item_id, item_type, item_category):
+        option_groups = query_db(
+            """
+      SELECT id, option_key, option_id, category, title, display_order
+      FROM menu_option_groups
+      WHERE is_active = 1
+      ORDER BY display_order ASC, id ASC;
+      """
+        )
+        if not option_groups:
+            return
+
+        category_candidates = cls._category_candidates(item_category)
+        if category_candidates:
+            option_groups = [
+                row
+                for row in option_groups
+                if cls._normalize_classification_value(row.get("category"), "") in category_candidates
+            ]
+        if not option_groups:
+            return
+
+        def _score(row):
+            return max(
+                cls._match_score(row.get("option_key"), item_type),
+                cls._match_score(row.get("option_id"), item_type),
+                cls._match_score(row.get("title"), item_type),
+            )
+
+        option_groups.sort(key=lambda row: (_score(row) * -1, row.get("display_order", 0), row.get("id", 0)))
+        selected_group = option_groups[0]
+
+        existing = query_db(
+            """
+      SELECT display_order
+      FROM menu_option_group_items
+      WHERE group_id = %(group_id)s
+        AND item_id = %(item_id)s
+      LIMIT 1;
+      """,
+            {"group_id": selected_group["id"], "item_id": item_id},
+            fetch="one",
+        )
+        if existing:
+            display_order = existing.get("display_order") or 0
+        else:
+            max_row = query_db(
+                """
+        SELECT COALESCE(MAX(display_order), 0) AS max_order
+        FROM menu_option_group_items
+        WHERE group_id = %(group_id)s;
+        """,
+                {"group_id": selected_group["id"]},
+                fetch="one",
+            )
+            display_order = int((max_row or {}).get("max_order") or 0) + 1
+
+        query_db(
+            """
+      INSERT INTO menu_option_group_items (group_id, item_id, display_order, is_active)
+      VALUES (%(group_id)s, %(item_id)s, %(display_order)s, 1)
+      ON DUPLICATE KEY UPDATE
+        display_order = VALUES(display_order),
+        is_active = 1,
+        updated_at = CURRENT_TIMESTAMP;
+      """,
+            {"group_id": selected_group["id"], "item_id": item_id, "display_order": display_order},
+            fetch="none",
+        )
+
+    @classmethod
+    def _ensure_default_togo_row_link(cls, item_id, item_type, item_category, tray_price_half, tray_price_full):
+        sections = query_db(
+            """
+      SELECT s.id, s.section_key, s.category, s.title, s.display_order
+      FROM menu_sections s
+      JOIN menu_catalogs c
+        ON c.id = s.catalog_id AND c.is_active = 1
+      WHERE s.is_active = 1
+        AND c.catalog_key = 'togo'
+      ORDER BY s.display_order ASC, s.id ASC;
+      """
+        )
+        if not sections:
+            return
+
+        category_candidates = cls._category_candidates(item_category)
+        if category_candidates:
+            sections = [
+                row
+                for row in sections
+                if cls._normalize_classification_value(row.get("category"), "") in category_candidates
+            ]
+        if not sections:
+            return
+
+        def _score(row):
+            return max(
+                cls._match_score(row.get("section_key"), item_type),
+                cls._match_score(row.get("title"), item_type),
+            )
+
+        sections.sort(key=lambda row: (_score(row) * -1, row.get("display_order", 0), row.get("id", 0)))
+        selected_section = sections[0]
+
+        existing = query_db(
+            """
+      SELECT display_order
+      FROM menu_section_rows
+      WHERE section_id = %(section_id)s
+        AND item_id = %(item_id)s
+      LIMIT 1;
+      """,
+            {"section_id": selected_section["id"], "item_id": item_id},
+            fetch="one",
+        )
+        if existing:
+            display_order = existing.get("display_order") or 0
+        else:
+            max_row = query_db(
+                """
+        SELECT COALESCE(MAX(display_order), 0) AS max_order
+        FROM menu_section_rows
+        WHERE section_id = %(section_id)s;
+        """,
+                {"section_id": selected_section["id"]},
+                fetch="one",
+            )
+            display_order = int((max_row or {}).get("max_order") or 0) + 1
+
+        query_db(
+            """
+      INSERT INTO menu_section_rows (section_id, item_id, value_1, value_2, display_order, is_active)
+      VALUES (%(section_id)s, %(item_id)s, %(value_1)s, %(value_2)s, %(display_order)s, 1)
+      ON DUPLICATE KEY UPDATE
+        value_1 = VALUES(value_1),
+        value_2 = VALUES(value_2),
+        display_order = VALUES(display_order),
+        is_active = 1,
+        updated_at = CURRENT_TIMESTAMP;
+      """,
+            {
+                "section_id": selected_section["id"],
+                "item_id": item_id,
+                "value_1": tray_price_half,
+                "value_2": tray_price_full,
+                "display_order": display_order,
+            },
+            fetch="none",
+        )
+
+    @classmethod
+    def upsert_non_formal_catalog_items(cls, payload):
+        raw_items = payload
+        if isinstance(payload, dict):
+            raw_items = payload.get("items") if "items" in payload else [payload]
+
+        if not isinstance(raw_items, list) or not raw_items:
+            return {"errors": ["items is required and must contain at least one item payload."]}, 400
+
+        normalized_items = []
+        errors = []
+        for index, raw_item in enumerate(raw_items):
+            normalized_item, error = cls._normalize_non_formal_admin_item(raw_item, index)
+            if error:
+                errors.append(error)
+                continue
+            normalized_items.append(normalized_item)
+
+        if errors:
+            return {"errors": errors}, 400
+
+        results = []
+        for item in normalized_items:
+            item_id = None
+            try:
+                item_id = query_db(
+                    """
+          INSERT INTO menu_items (
+            item_key,
+            item_name,
+            item_type,
+            item_category,
+            tray_price_half,
+            tray_price_full,
+            is_active
+          )
+          VALUES (
+            %(item_key)s,
+            %(item_name)s,
+            %(item_type)s,
+            %(item_category)s,
+            %(tray_price_half)s,
+            %(tray_price_full)s,
+            %(is_active)s
+          )
+          ON DUPLICATE KEY UPDATE
+            id = LAST_INSERT_ID(id),
+            item_key = VALUES(item_key),
+            item_type = VALUES(item_type),
+            item_category = VALUES(item_category),
+            tray_price_half = VALUES(tray_price_half),
+            tray_price_full = VALUES(tray_price_full),
+            is_active = VALUES(is_active),
+            updated_at = CURRENT_TIMESTAMP;
+          """,
+                    item,
+                    fetch="none",
+                )
+            except Exception as exc:
+                error_text = str(exc).lower()
+                if "unknown column" not in error_text:
+                    raise
+                item_id = query_db(
+                    """
+          INSERT INTO menu_items (item_key, item_name, is_active)
+          VALUES (%(item_key)s, %(item_name)s, %(is_active)s)
+          ON DUPLICATE KEY UPDATE
+            id = LAST_INSERT_ID(id),
+            item_key = VALUES(item_key),
+            is_active = VALUES(is_active),
+            updated_at = CURRENT_TIMESTAMP;
+          """,
+                    item,
+                    fetch="none",
+                )
+
+            if not item_id:
+                existing = query_db(
+                    "SELECT id FROM menu_items WHERE item_name = %(item_name)s LIMIT 1;",
+                    {"item_name": item["item_name"]},
+                    fetch="one",
+                )
+                item_id = (existing or {}).get("id")
+
+            if not item_id:
+                continue
+
+            if item["is_active"] == 1:
+                cls._ensure_default_option_group_link(
+                    item_id=item_id,
+                    item_type=item["item_type"],
+                    item_category=item["item_category"],
+                )
+                cls._ensure_default_togo_row_link(
+                    item_id=item_id,
+                    item_type=item["item_type"],
+                    item_category=item["item_category"],
+                    tray_price_half=item["tray_price_half"],
+                    tray_price_full=item["tray_price_full"],
+                )
+
+            item_row = query_db(
+                """
+        SELECT
+          id AS item_id,
+          item_name,
+          item_type,
+          item_category,
+          tray_price_half,
+          tray_price_full,
+          is_active AS item_active
+        FROM menu_items
+        WHERE id = %(item_id)s
+        LIMIT 1;
+        """,
+                {"item_id": item_id},
+                fetch="one",
+            )
+            if item_row:
+                results.append(cls._build_item_reference_payload(item_row))
+
+        cls.clear_cached_config_payload()
+        refreshed_payload = cls.get_config_payload()
+        if refreshed_payload:
+            cls.upsert_cached_config_payload(refreshed_payload)
+
+        return {"ok": True, "items": results, "updated_count": len(results)}, 200
