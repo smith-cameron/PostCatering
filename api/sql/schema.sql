@@ -396,31 +396,55 @@ CREATE TABLE IF NOT EXISTS menu_section_tier_bullets (
 );
 
 ALTER TABLE formal_plan_options
-  ADD COLUMN IF NOT EXISTS price_amount_min DECIMAL(10,2) NULL AFTER price,
-  ADD COLUMN IF NOT EXISTS price_amount_max DECIMAL(10,2) NULL AFTER price_amount_min,
-  ADD COLUMN IF NOT EXISTS price_currency CHAR(3) NULL AFTER price_amount_max,
-  ADD COLUMN IF NOT EXISTS price_unit VARCHAR(32) NULL AFTER price_currency;
+  ADD COLUMN price_amount_min DECIMAL(10,2) NULL AFTER price;
+
+ALTER TABLE formal_plan_options
+  ADD COLUMN price_amount_max DECIMAL(10,2) NULL AFTER price_amount_min;
+
+ALTER TABLE formal_plan_options
+  ADD COLUMN price_currency CHAR(3) NULL AFTER price_amount_max;
+
+ALTER TABLE formal_plan_options
+  ADD COLUMN price_unit VARCHAR(32) NULL AFTER price_currency;
 
 ALTER TABLE menu_sections
-  ADD COLUMN IF NOT EXISTS price_amount_min DECIMAL(10,2) NULL AFTER price,
-  ADD COLUMN IF NOT EXISTS price_amount_max DECIMAL(10,2) NULL AFTER price_amount_min,
-  ADD COLUMN IF NOT EXISTS price_currency CHAR(3) NULL AFTER price_amount_max,
-  ADD COLUMN IF NOT EXISTS price_unit VARCHAR(32) NULL AFTER price_currency;
+  ADD COLUMN price_amount_min DECIMAL(10,2) NULL AFTER price;
+
+ALTER TABLE menu_sections
+  ADD COLUMN price_amount_max DECIMAL(10,2) NULL AFTER price_amount_min;
+
+ALTER TABLE menu_sections
+  ADD COLUMN price_currency CHAR(3) NULL AFTER price_amount_max;
+
+ALTER TABLE menu_sections
+  ADD COLUMN price_unit VARCHAR(32) NULL AFTER price_currency;
 
 ALTER TABLE menu_section_tiers
-  ADD COLUMN IF NOT EXISTS price_amount_min DECIMAL(10,2) NULL AFTER price,
-  ADD COLUMN IF NOT EXISTS price_amount_max DECIMAL(10,2) NULL AFTER price_amount_min,
-  ADD COLUMN IF NOT EXISTS price_currency CHAR(3) NULL AFTER price_amount_max,
-  ADD COLUMN IF NOT EXISTS price_unit VARCHAR(32) NULL AFTER price_currency;
+  ADD COLUMN price_amount_min DECIMAL(10,2) NULL AFTER price;
+
+ALTER TABLE menu_section_tiers
+  ADD COLUMN price_amount_max DECIMAL(10,2) NULL AFTER price_amount_min;
+
+ALTER TABLE menu_section_tiers
+  ADD COLUMN price_currency CHAR(3) NULL AFTER price_amount_max;
+
+ALTER TABLE menu_section_tiers
+  ADD COLUMN price_unit VARCHAR(32) NULL AFTER price_currency;
 
 ALTER TABLE menu_section_tier_constraints
-  ADD COLUMN IF NOT EXISTS min_select INT NOT NULL DEFAULT 0 AFTER constraint_key,
-  ADD COLUMN IF NOT EXISTS max_select INT NOT NULL DEFAULT 0 AFTER min_select,
+  ADD COLUMN min_select INT NOT NULL DEFAULT 0 AFTER constraint_key;
+
+ALTER TABLE menu_section_tier_constraints
+  ADD COLUMN max_select INT NOT NULL DEFAULT 0 AFTER min_select;
+
+ALTER TABLE menu_section_tier_constraints
   MODIFY COLUMN constraint_value INT NULL;
 
 ALTER TABLE slides
-  ADD COLUMN IF NOT EXISTS media_type ENUM('image', 'video') NOT NULL DEFAULT 'image' AFTER image_url,
-  ADD COLUMN IF NOT EXISTS is_slide TINYINT(1) NOT NULL DEFAULT 0 AFTER display_order;
+  ADD COLUMN media_type ENUM('image', 'video') NOT NULL DEFAULT 'image' AFTER image_url;
+
+ALTER TABLE slides
+  ADD COLUMN is_slide TINYINT(1) NOT NULL DEFAULT 0 AFTER display_order;
 
 UPDATE slides
 SET media_type = 'image'
