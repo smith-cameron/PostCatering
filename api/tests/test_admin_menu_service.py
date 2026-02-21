@@ -105,6 +105,32 @@ class AdminMenuServiceTests(unittest.TestCase):
         self.assertIn("AND r.is_active = 1", section_query)
         self.assertIn("AND b.is_active = 1", tier_query)
 
+    @patch.object(AdminMenuService, "_resequence_display_order")
+    @patch("flask_api.services.admin_menu_service.query_db")
+    def test_sync_tier_bullet_assignments_reuses_existing_row(self, mock_query_db, mock_resequence):
+        mock_query_db.side_effect = [
+            [{"tier_id": 7}],
+            0,
+            {"id": 91},
+            0,
+        ]
+
+        AdminMenuService._sync_tier_bullet_assignments(
+            item_id=12,
+            assignments=[{"tier_id": 7, "display_order": 1, "is_active": True}],
+            connection=object(),
+        )
+
+        executed_queries = [call.args[0] for call in mock_query_db.call_args_list]
+        self.assertFalse(any("INSERT INTO menu_section_tier_bullets" in query for query in executed_queries))
+        self.assertTrue(
+            any(
+                "UPDATE menu_section_tier_bullets" in query and "WHERE id = %(id)s" in query
+                for query in executed_queries
+            )
+        )
+        mock_resequence.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

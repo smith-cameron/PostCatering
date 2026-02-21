@@ -615,20 +615,56 @@ class AdminMenuService:
                 continue
 
             requested_order = cls._to_int(assignment.get("display_order"), default=index, minimum=1)
-            inserted_row_id = query_db(
+            existing_row = query_db(
                 """
-        INSERT INTO menu_section_tier_bullets (tier_id, item_id, bullet_text, display_order, is_active)
-        VALUES (%(tier_id)s, %(item_id)s, NULL, %(display_order)s, 1);
+        SELECT id
+        FROM menu_section_tier_bullets
+        WHERE tier_id = %(tier_id)s
+          AND item_id = %(item_id)s
+        ORDER BY id ASC
+        LIMIT 1;
         """,
-                {
-                    "tier_id": tier_id,
-                    "item_id": item_id,
-                    "display_order": 1000000 + requested_order + index,
-                },
-                fetch="none",
+                {"tier_id": tier_id, "item_id": item_id},
+                fetch="one",
                 connection=connection,
                 auto_commit=False,
             )
+            display_order = 1000000 + requested_order + index
+            if existing_row:
+                inserted_row_id = existing_row.get("id")
+                query_db(
+                    """
+          UPDATE menu_section_tier_bullets
+          SET
+            bullet_text = NULL,
+            display_order = %(display_order)s,
+            is_active = 1,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = %(id)s;
+          """,
+                    {
+                        "id": inserted_row_id,
+                        "display_order": display_order,
+                    },
+                    fetch="none",
+                    connection=connection,
+                    auto_commit=False,
+                )
+            else:
+                inserted_row_id = query_db(
+                    """
+          INSERT INTO menu_section_tier_bullets (tier_id, item_id, bullet_text, display_order, is_active)
+          VALUES (%(tier_id)s, %(item_id)s, NULL, %(display_order)s, 1);
+          """,
+                    {
+                        "tier_id": tier_id,
+                        "item_id": item_id,
+                        "display_order": display_order,
+                    },
+                    fetch="none",
+                    connection=connection,
+                    auto_commit=False,
+                )
             touched_tier_ids.add(tier_id)
             if inserted_row_id:
                 preferred_tier_order.setdefault(tier_id, {})[inserted_row_id] = requested_order
