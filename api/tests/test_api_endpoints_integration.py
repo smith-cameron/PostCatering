@@ -26,6 +26,7 @@ class ApiEndpointIntegrationTests(unittest.TestCase):
         self.assertIn("menu_options", body)
         self.assertIn("formal_plan_options", body)
         self.assertIn("menu", body)
+        self.assertIn("shared_non_formal_items", body)
         self.assertIn("community", body["menu"])
         self.assertIn("page_title", body["menu"]["community"])
 
@@ -63,6 +64,47 @@ class ApiEndpointIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {"ok": True, "steps": ["seeded_from_payload"]})
         mock_run_menu_admin_task.assert_called_once_with(apply_schema=True, reset=False, seed=True)
+
+    @patch("flask_api.controllers.main_controller.MenuService.upsert_non_formal_catalog_items")
+    def test_admin_menu_items_upsert_runs_with_valid_token(self, mock_upsert_non_formal_catalog_items):
+        mock_upsert_non_formal_catalog_items.return_value = (
+            {
+                "ok": True,
+                "updated_count": 1,
+                "items": [
+                    {
+                        "item_id": 101,
+                        "item_name": "Jerk Chicken",
+                        "item_type": "signature_proteins",
+                        "item_category": "entree",
+                        "tray_prices": {"half": "$75", "full": "$140"},
+                    }
+                ],
+            },
+            200,
+        )
+        payload = {
+            "items": [
+                {
+                    "name": "Jerk Chicken",
+                    "item_type": "signature_proteins",
+                    "item_category": "entree",
+                    "is_active": True,
+                    "tray_prices": {"half": "$75", "full": "$140"},
+                }
+            ]
+        }
+
+        with patch.dict("os.environ", {"MENU_ADMIN_TOKEN": "expected-token"}, clear=False):
+            response = self.client.post(
+                "/api/admin/menu/items",
+                headers={"Authorization": "Bearer expected-token"},
+                json=payload,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["updated_count"], 1)
+        mock_upsert_non_formal_catalog_items.assert_called_once_with(payload)
 
     @patch("flask_api.controllers.main_controller.SlideService.get_active_slides")
     def test_get_slides_returns_active_slide_payload(self, mock_get_active_slides):
