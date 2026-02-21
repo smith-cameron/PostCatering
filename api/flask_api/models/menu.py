@@ -634,93 +634,36 @@ class Menu:
         section_key = str(service_selection.get("sectionId") or "").strip()
         title = str(service_selection.get("title") or "").strip()
 
-        if plan_id:
-            formal_rows = query_db(
-                """
-        SELECT c.constraint_key, c.min_select, c.max_select
-        FROM formal_plan_options p
-        JOIN formal_plan_option_constraints c
-          ON c.plan_option_id = p.id AND c.is_active = 1
-        WHERE p.is_active = 1
-          AND p.plan_key = %(plan_key)s
-        ORDER BY c.id ASC;
-        """,
-                {"plan_key": plan_id},
-            )
-            formal_constraints = cls._normalize_min_max_constraints(formal_rows or [])
-            if formal_constraints:
-                return formal_constraints
+        if plan_id == "formal:2-course":
+            return {"starter": {"min": 1, "max": 1}, "entree": {"min": 1, "max": 1}}
+        if plan_id == "formal:3-course":
+            return {
+                "passed": {"min": 2, "max": 2},
+                "starter": {"min": 1, "max": 1},
+                "entree": {"min": 1, "max": 2},
+            }
 
-        if section_key and level == "tier" and title:
-            query_payload = {"section_key": section_key, "tier_title": title}
-            tier_rows = None
-            try:
-                tier_rows = query_db(
-                    """
-          SELECT c.constraint_key, c.min_select, c.max_select, c.constraint_value
-          FROM menu_sections s
-          JOIN menu_section_tiers t
-            ON t.section_id = s.id AND t.is_active = 1
-          JOIN menu_section_tier_constraints c
-            ON c.tier_id = t.id AND c.is_active = 1
-          WHERE s.is_active = 1
-            AND s.section_key = %(section_key)s
-            AND t.tier_title = %(tier_title)s
-          ORDER BY c.id ASC;
-          """,
-                    query_payload,
-                )
-            except Exception as exc:
-                error_text = str(exc).lower()
-                if "unknown column" not in error_text or "min_select" not in error_text:
-                    raise
-                # Backward compatibility for legacy environments before min/max rollout.
-                legacy_rows = query_db(
-                    """
-          SELECT c.constraint_key, c.constraint_value
-          FROM menu_sections s
-          JOIN menu_section_tiers t
-            ON t.section_id = s.id AND t.is_active = 1
-          JOIN menu_section_tier_constraints c
-            ON c.tier_id = t.id AND c.is_active = 1
-          WHERE s.is_active = 1
-            AND s.section_key = %(section_key)s
-            AND t.tier_title = %(tier_title)s
-          ORDER BY c.id ASC;
-          """,
-                    query_payload,
-                )
-                tier_rows = [
-                    {
-                        "constraint_key": row.get("constraint_key"),
-                        "min_select": None,
-                        "max_select": None,
-                        "constraint_value": row.get("constraint_value"),
-                    }
-                    for row in (legacy_rows or [])
-                ]
-            tier_constraints = cls._normalize_tier_constraints(tier_rows or [])
-            if tier_constraints:
-                return cls._normalize_payload_constraints(tier_constraints)
+        normalized_title = title.lower()
+        if section_key == "community_buffet_tiers" and level == "tier":
+            if "tier 1" in normalized_title:
+                return {
+                    "entree": {"min": 2, "max": 2},
+                    "sides": {"min": 2, "max": 2},
+                    "salads": {"min": 1, "max": 1},
+                }
+            if "tier 2" in normalized_title:
+                return {
+                    "entree": {"min": 2, "max": 3},
+                    "sides": {"min": 3, "max": 3},
+                    "salads": {"min": 2, "max": 2},
+                }
 
-        if section_key and level == "package":
-            package_rows = query_db(
-                """
-        SELECT c.constraint_key, c.min_select, c.max_select
-        FROM menu_sections s
-        JOIN menu_section_constraints c
-          ON c.section_id = s.id AND c.is_active = 1
-        WHERE s.is_active = 1
-          AND s.section_key = %(section_key)s
-        ORDER BY c.id ASC;
-        """,
-                {"section_key": section_key},
-            )
-            package_constraints = cls._normalize_min_max_constraints(package_rows or [])
-            if package_constraints:
-                return package_constraints
+        if section_key == "community_homestyle" and level == "package":
+            return {"entree": {"min": 1, "max": 1}, "sides": {"min": 2, "max": 2}}
+        if section_key == "community_taco_bar" and level == "package":
+            return {"entree": {"min": 1, "max": 1}}
 
-        # Fallback for legacy payloads while clients converge on DB-backed constraints.
+        # Legacy fallback for payload-defined constraints.
         return cls._normalize_payload_constraints(service_selection.get("constraints"))
 
     @classmethod
