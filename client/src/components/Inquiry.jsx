@@ -294,7 +294,9 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
         const options = itemSizeOptions[item] || [];
         const selectedSize = options.find((option) => option.value === traySizes[item]);
         const selectedGroup = desiredItemGroups.find((group) => group.items.some((groupItem) => groupItem.name === item));
+        const selectedGroupItem = selectedGroup?.items.find((groupItem) => groupItem.name === item) || null;
         return {
+          item_id: selectedGroupItem?.id || null,
           name: item,
           category: selectedGroup?.groupKey || "other",
           tray_size: traySizes[item] || null,
