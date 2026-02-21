@@ -6,38 +6,15 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 
 from flask_api.config.mysqlconnection import connect_to_mysql, db_transaction, query_db, query_db_many
-from flask_api.models.menu import Menu
 
 
 class MenuService:
-    LEGACY_TABLES = (
-        "menu_section_tier_bullets",
-        "menu_section_tier_constraints",
-        "menu_section_tiers",
-        "menu_section_include_groups",
-        "menu_section_rows",
-        "menu_section_columns",
-        "menu_section_constraints",
-        "menu_sections",
-        "menu_intro_bullets",
-        "menu_intro_blocks",
-        "menu_catalogs",
-        "formal_plan_option_constraints",
-        "formal_plan_option_details",
-        "formal_plan_options",
-        "menu_option_group_items",
-        "menu_option_groups",
-        "menu_items",
-    )
-
     SIMPLIFIED_TABLES = (
         "formal_menu_items",
         "general_menu_items",
         "formal_menu_groups",
         "general_menu_groups",
     )
-
-    NORMALIZED_TABLES = LEGACY_TABLES + SIMPLIFIED_TABLES
 
     GENERAL_GROUPS = (
         {"key": "entree", "name": "Entree", "sort_order": 1},
@@ -118,7 +95,9 @@ class MenuService:
 
     @staticmethod
     def _load_schema_sql():
-        schema_path = Path(__file__).resolve().parents[2] / "sql" / "schema.sql"
+        schema_path = (
+            Path(__file__).resolve().parents[2] / "sql" / "migrations" / "20260221_menu_simplified_schema_only.sql"
+        )
         if not schema_path.exists():
             return None
         return schema_path.read_text(encoding="utf-8")
@@ -160,7 +139,7 @@ class MenuService:
     def _apply_schema(cls):
         sql_text = cls._load_schema_sql()
         if not sql_text:
-            raise FileNotFoundError("schema.sql not found.")
+            raise FileNotFoundError("20260221_menu_simplified_schema_only.sql not found.")
 
         statements = cls._split_sql_statements(sql_text)
         if not statements:
@@ -172,8 +151,6 @@ class MenuService:
             with connection.cursor() as cursor:
                 for statement in statements:
                     normalized = " ".join(statement.strip().split()).lower()
-                    if normalized.startswith("insert into slides "):
-                        continue
                     try:
                         cursor.execute(statement)
                         executed += 1
@@ -190,12 +167,12 @@ class MenuService:
             connection.close()
 
     @classmethod
-    def _truncate_normalized_tables(cls):
+    def _truncate_simplified_tables(cls):
         connection = connect_to_mysql()
         try:
             with connection.cursor() as cursor:
                 cursor.execute("SET FOREIGN_KEY_CHECKS = 0;")
-                for table_name in cls.NORMALIZED_TABLES:
+                for table_name in cls.SIMPLIFIED_TABLES:
                     cursor.execute(f"TRUNCATE TABLE `{table_name}`;")
                 cursor.execute("SET FOREIGN_KEY_CHECKS = 1;")
             connection.commit()
@@ -365,10 +342,10 @@ class MenuService:
         return output
 
     @classmethod
-    def sync_simplified_from_legacy_payload(cls, payload=None):
-        source_payload = payload or Menu.get_config_payload() or cls._load_seed_payload()
+    def sync_simplified_from_payload(cls, payload=None):
+        source_payload = payload or cls._load_seed_payload()
         if not source_payload:
-            return {"ok": False, "error": "No legacy payload available for simplified migration."}
+            return {"ok": False, "error": "No payload available for simplified migration."}
 
         general_rows, formal_rows = cls._extract_simplified_items_from_payload(source_payload)
         general_rows = cls._assign_unique_keys(general_rows)
@@ -792,31 +769,23 @@ class MenuService:
             steps.append(f"applied_schema_statements:{count}")
 
         if reset:
-            cls._truncate_normalized_tables()
-            steps.append("reset_normalized_tables")
-
-        if apply_schema or reset:
-            Menu.clear_cached_config_payload()
-            steps.append("invalidated_menu_cache")
+            cls._truncate_simplified_tables()
+            steps.append("reset_simplified_tables")
 
         if seed:
             payload = cls._load_seed_payload()
             if not payload:
                 return {"error": "Menu seed payload not found.", "steps": steps}, 500
-            Menu.seed_from_payload(payload)
-            steps.append("seeded_from_payload")
-            refreshed_payload = Menu.get_config_payload()
-            if refreshed_payload:
-                Menu.upsert_cached_config_payload(refreshed_payload)
-                steps.append("refreshed_menu_cache")
+            migration_result = cls.sync_simplified_from_payload(payload=payload)
+        else:
+            migration_result = {"ok": True, "general_item_count": 0, "formal_item_count": 0}
 
-        migration_result = cls.sync_simplified_from_legacy_payload()
         if migration_result.get("ok"):
             steps.append(
-                f"synced_simplified_tables:g{migration_result.get('general_item_count', 0)}:f{migration_result.get('formal_item_count', 0)}"
+                f"seeded_simplified_tables:g{migration_result.get('general_item_count', 0)}:f{migration_result.get('formal_item_count', 0)}"
             )
         else:
-            steps.append("simplified_sync_skipped")
+            steps.append("simplified_seed_skipped")
 
         return {"ok": True, "steps": steps}, 200
 
@@ -826,17 +795,12 @@ class MenuService:
 
         if source == "db":
             payload = cls._build_catalog_payload_from_simplified_tables()
-            if not payload:
-                cls.sync_simplified_from_legacy_payload()
-                payload = cls._build_catalog_payload_from_simplified_tables()
             if payload:
                 return {"source": "simplified-db", **cls._normalize_menu_payload_for_api(payload)}, 200
 
-            legacy_payload = Menu.get_config_payload()
-            if legacy_payload:
-                return {"source": "legacy-db", **cls._normalize_menu_payload_for_api(legacy_payload)}, 200
-
-            return {"error": "Menu config not found in DB. Run admin menu sync endpoint or script."}, 500
+            return {
+                "error": "Simplified menu tables are empty. Run admin menu sync endpoint or script with seed enabled."
+            }, 500
 
         fallback = cls._load_seed_payload()
         if fallback:
