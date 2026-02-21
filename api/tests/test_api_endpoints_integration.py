@@ -64,6 +64,70 @@ class ApiEndpointIntegrationTests(unittest.TestCase):
         self.assertEqual(response.get_json(), {"ok": True, "steps": ["seeded_from_payload"]})
         mock_run_menu_admin_task.assert_called_once_with(apply_schema=True, reset=False, seed=True)
 
+    @patch("flask_api.controllers.main_controller.MenuService.get_general_groups")
+    def test_get_general_menu_groups(self, mock_get_general_groups):
+        mock_get_general_groups.return_value = (
+            {"groups": [{"id": 1, "name": "Entree", "key": "entree", "is_active": True}]},
+            200,
+        )
+        response = self.client.get("/api/menu/general/groups")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["groups"][0]["key"], "entree")
+        mock_get_general_groups.assert_called_once_with()
+
+    @patch("flask_api.controllers.main_controller.MenuService.get_general_items")
+    def test_get_general_menu_items_with_group_filter(self, mock_get_general_items):
+        mock_get_general_items.return_value = (
+            {
+                "items": [
+                    {
+                        "name": "Braised Short Ribs",
+                        "key": "braised-short-ribs",
+                        "is_active": True,
+                        "group": {"name": "Signature Protein", "key": "signature_protein"},
+                        "half_tray_price": 120.0,
+                        "full_tray_price": 225.0,
+                    }
+                ]
+            },
+            200,
+        )
+        response = self.client.get("/api/menu/general/items?group_key=signature_protein")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["items"][0]["group"]["key"], "signature_protein")
+        mock_get_general_items.assert_called_once_with(group_key="signature_protein")
+
+    @patch("flask_api.controllers.main_controller.MenuService.get_formal_groups")
+    def test_get_formal_menu_groups(self, mock_get_formal_groups):
+        mock_get_formal_groups.return_value = (
+            {"groups": [{"id": 1, "name": "Starter", "key": "starter", "is_active": True}]},
+            200,
+        )
+        response = self.client.get("/api/menu/formal/groups")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["groups"][0]["key"], "starter")
+        mock_get_formal_groups.assert_called_once_with()
+
+    @patch("flask_api.controllers.main_controller.MenuService.get_formal_items")
+    def test_get_formal_menu_items_with_group_filter(self, mock_get_formal_items):
+        mock_get_formal_items.return_value = (
+            {
+                "items": [
+                    {
+                        "name": "Caesar",
+                        "key": "caesar",
+                        "is_active": True,
+                        "group": {"name": "Starter", "key": "starter"},
+                    }
+                ]
+            },
+            200,
+        )
+        response = self.client.get("/api/menu/formal/items?group_key=starter")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["items"][0]["group"]["key"], "starter")
+        mock_get_formal_items.assert_called_once_with(group_key="starter")
+
     @patch("flask_api.controllers.main_controller.SlideService.get_active_slides")
     def test_get_slides_returns_active_slide_payload(self, mock_get_active_slides):
         mock_get_active_slides.return_value = [
