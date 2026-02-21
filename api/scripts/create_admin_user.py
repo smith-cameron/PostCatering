@@ -26,17 +26,21 @@ def _parse_args():
     return parser.parse_args()
 
 
+def _validate_password_strength(password):
+    if len(password) < 10:
+        raise ValueError("Password must be at least 10 characters.")
+    return password
+
+
 def _resolve_password(password_arg):
     if str(password_arg or "").strip():
-        return str(password_arg)
+        return _validate_password_strength(str(password_arg))
 
     first = getpass.getpass("Password: ")
     second = getpass.getpass("Confirm Password: ")
     if first != second:
         raise ValueError("Passwords do not match.")
-    if len(first) < 10:
-        raise ValueError("Password must be at least 10 characters.")
-    return first
+    return _validate_password_strength(first)
 
 
 def main():
