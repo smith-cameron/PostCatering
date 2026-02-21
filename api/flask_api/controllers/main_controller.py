@@ -135,6 +135,42 @@ def get_menus():
     return jsonify(response_body), status_code
 
 
+@app.route("/api/menu/general/groups", methods=["GET", "OPTIONS"])
+def get_general_menu_groups():
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    response_body, status_code = MenuService.get_general_groups()
+    return jsonify(response_body), status_code
+
+
+@app.route("/api/menu/general/items", methods=["GET", "OPTIONS"])
+def get_general_menu_items():
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    response_body, status_code = MenuService.get_general_items(group_key=request.args.get("group_key", ""))
+    return jsonify(response_body), status_code
+
+
+@app.route("/api/menu/formal/groups", methods=["GET", "OPTIONS"])
+def get_formal_menu_groups():
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    response_body, status_code = MenuService.get_formal_groups()
+    return jsonify(response_body), status_code
+
+
+@app.route("/api/menu/formal/items", methods=["GET", "OPTIONS"])
+def get_formal_menu_items():
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    response_body, status_code = MenuService.get_formal_items(group_key=request.args.get("group_key", ""))
+    return jsonify(response_body), status_code
+
+
 @app.route("/api/admin/menu/sync", methods=["POST", "OPTIONS"])
 def admin_menu_sync():
     if request.method == "OPTIONS":
