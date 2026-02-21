@@ -94,13 +94,18 @@ class MenuService:
         }
 
     @staticmethod
-    def _load_schema_sql():
-        schema_path = (
-            Path(__file__).resolve().parents[2] / "sql" / "migrations" / "20260221_menu_simplified_schema_only.sql"
-        )
-        if not schema_path.exists():
+    def _load_sql_file(path):
+        if not path.exists():
             return None
-        return schema_path.read_text(encoding="utf-8")
+        return path.read_text(encoding="utf-8")
+
+    @staticmethod
+    def _get_schema_paths():
+        sql_root = Path(__file__).resolve().parents[2] / "sql"
+        return [
+            sql_root / "schema.sql",
+            sql_root / "migrations" / "20260221_menu_drop_legacy_tables.sql",
+        ]
 
     @staticmethod
     def _split_sql_statements(sql_text):
@@ -137,27 +142,34 @@ class MenuService:
 
     @classmethod
     def _apply_schema(cls):
-        sql_text = cls._load_schema_sql()
-        if not sql_text:
-            raise FileNotFoundError("20260221_menu_simplified_schema_only.sql not found.")
+        statement_batches = []
+        for path in cls._get_schema_paths():
+            sql_text = cls._load_sql_file(path)
+            if not sql_text:
+                if path.name == "schema.sql":
+                    raise FileNotFoundError("api/sql/schema.sql not found.")
+                continue
+            statements = cls._split_sql_statements(sql_text)
+            if statements:
+                statement_batches.append(statements)
 
-        statements = cls._split_sql_statements(sql_text)
-        if not statements:
+        if not statement_batches:
             return 0
 
         connection = connect_to_mysql()
         executed = 0
         try:
             with connection.cursor() as cursor:
-                for statement in statements:
-                    normalized = " ".join(statement.strip().split()).lower()
-                    try:
-                        cursor.execute(statement)
-                        executed += 1
-                    except Exception as exc:
-                        if cls._is_ignorable_alter_error(exc, normalized):
-                            continue
-                        raise
+                for statements in statement_batches:
+                    for statement in statements:
+                        normalized = " ".join(statement.strip().split()).lower()
+                        try:
+                            cursor.execute(statement)
+                            executed += 1
+                        except Exception as exc:
+                            if cls._is_ignorable_alter_error(exc, normalized):
+                                continue
+                            raise
             connection.commit()
             return executed
         except Exception:
