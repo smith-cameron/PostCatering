@@ -60,6 +60,68 @@ CREATE TABLE IF NOT EXISTS menu_config (
   UNIQUE KEY uq_menu_config_key (config_key)
 );
 
+CREATE TABLE IF NOT EXISTS general_menu_groups (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name VARCHAR(120) NOT NULL,
+  `key` VARCHAR(120) NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_general_menu_groups_name (name),
+  UNIQUE KEY uq_general_menu_groups_key (`key`),
+  KEY idx_general_menu_groups_active_order (is_active, sort_order)
+);
+
+CREATE TABLE IF NOT EXISTS formal_menu_groups (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name VARCHAR(120) NOT NULL,
+  `key` VARCHAR(120) NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_formal_menu_groups_name (name),
+  UNIQUE KEY uq_formal_menu_groups_key (`key`),
+  KEY idx_formal_menu_groups_active_order (is_active, sort_order)
+);
+
+CREATE TABLE IF NOT EXISTS general_menu_items (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL,
+  `key` VARCHAR(128) NOT NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  group_id BIGINT UNSIGNED NOT NULL,
+  half_tray_price DECIMAL(10,2) NOT NULL,
+  full_tray_price DECIMAL(10,2) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_general_menu_items_key (`key`),
+  KEY idx_general_menu_items_active (is_active),
+  KEY idx_general_menu_items_group_id (group_id),
+  KEY idx_general_menu_items_active_group (is_active, group_id),
+  CONSTRAINT fk_general_menu_items_group FOREIGN KEY (group_id) REFERENCES general_menu_groups(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS formal_menu_items (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name VARCHAR(255) NOT NULL,
+  `key` VARCHAR(128) NOT NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  group_id BIGINT UNSIGNED NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_formal_menu_items_key (`key`),
+  KEY idx_formal_menu_items_active (is_active),
+  KEY idx_formal_menu_items_group_id (group_id),
+  KEY idx_formal_menu_items_active_group (is_active, group_id),
+  CONSTRAINT fk_formal_menu_items_group FOREIGN KEY (group_id) REFERENCES formal_menu_groups(id) ON DELETE RESTRICT
+);
+
 CREATE TABLE IF NOT EXISTS menu_items (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   item_key VARCHAR(128) NULL,
