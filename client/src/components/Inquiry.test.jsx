@@ -167,6 +167,7 @@ describe("Inquiry", () => {
     expect(submittedPayload.message).toBe("Please include setup.");
     expect(submittedPayload.desired_menu_items).toEqual([
       {
+        item_id: null,
         name: "Jerk Chicken",
         category: "entree",
         tray_size: "Half",
