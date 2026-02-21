@@ -26,7 +26,6 @@ class ApiEndpointIntegrationTests(unittest.TestCase):
         self.assertIn("menu_options", body)
         self.assertIn("formal_plan_options", body)
         self.assertIn("menu", body)
-        self.assertIn("shared_non_formal_items", body)
         self.assertIn("community", body["menu"])
         self.assertIn("page_title", body["menu"]["community"])
 

@@ -132,20 +132,6 @@ def admin_menu_sync():
     return jsonify(response_body), status_code
 
 
-@app.route("/api/admin/menu/items", methods=["POST", "OPTIONS"])
-def admin_menu_upsert_items():
-    if request.method == "OPTIONS":
-        return ("", 204)
-
-    auth_error, status_code = _require_admin_token()
-    if auth_error:
-        return jsonify(auth_error), status_code
-
-    body = request.get_json(silent=True) or {}
-    response_body, status_code = MenuService.upsert_non_formal_catalog_items(body)
-    return jsonify(response_body), status_code
-
-
 @app.route("/api/inquiries", methods=["POST", "OPTIONS"])
 def create_inquiry():
     if request.method == "OPTIONS":
