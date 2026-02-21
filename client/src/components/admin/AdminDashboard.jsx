@@ -125,6 +125,8 @@ const AdminDashboard = () => {
   const [selectedMediaId, setSelectedMediaId] = useState(null);
   const [mediaForm, setMediaForm] = useState(null);
   const [uploadForm, setUploadForm] = useState({ title: "", caption: "", alt_text: "", is_slide: false, is_active: true, display_order: "", file: null });
+  const [hasLoadedMediaTab, setHasLoadedMediaTab] = useState(false);
+  const [hasLoadedAuditTab, setHasLoadedAuditTab] = useState(false);
 
   const [auditEntries, setAuditEntries] = useState([]);
   const [confirmState, setConfirmState] = useState({ show: false, title: "", body: "", confirmLabel: "Confirm", action: null });
@@ -221,6 +223,38 @@ const AdminDashboard = () => {
     };
     loadInitial();
   }, [adminUser, loadReferenceData, loadMenuItems, loadSections]);
+
+  useEffect(() => {
+    if (!adminUser) return;
+    const needsMediaLoad = activeTab === TAB_MEDIA && !hasLoadedMediaTab;
+    const needsAuditLoad = activeTab === TAB_AUDIT && !hasLoadedAuditTab;
+    if (!needsMediaLoad && !needsAuditLoad) return;
+
+    let mounted = true;
+    const loadTabData = async () => {
+      try {
+        setBusy(true);
+        if (needsMediaLoad) {
+          await loadMedia();
+          if (mounted) setHasLoadedMediaTab(true);
+        } else if (needsAuditLoad) {
+          await loadAudit();
+          if (mounted) setHasLoadedAuditTab(true);
+        }
+      } catch (error) {
+        if (mounted) {
+          setErrorMessage(error.message || "Failed to load admin data.");
+        }
+      } finally {
+        if (mounted) setBusy(false);
+      }
+    };
+
+    loadTabData();
+    return () => {
+      mounted = false;
+    };
+  }, [activeTab, adminUser, hasLoadedAuditTab, hasLoadedMediaTab, loadAudit, loadMedia]);
 
   const refreshActiveTab = useCallback(async () => {
     try {
