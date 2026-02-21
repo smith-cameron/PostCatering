@@ -19,6 +19,25 @@ const withDisplayOrder = (rows) =>
     display_order: Number.isFinite(Number(row.display_order)) && Number(row.display_order) > 0 ? Number(row.display_order) : index + 1,
   }));
 
+const toNonNegativeInt = (value) => {
+  const parsed = Number.parseInt(String(value ?? "").trim(), 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+};
+
+const normalizeConstraintRows = (rows) =>
+  (rows || [])
+    .map((row) => {
+      const constraintKey = String(row?.constraint_key ?? "").trim();
+      const minSelect = toNonNegativeInt(row?.min_select);
+      const maxSelectRaw = toNonNegativeInt(row?.max_select);
+      return {
+        constraint_key: constraintKey,
+        min_select: minSelect,
+        max_select: maxSelectRaw < minSelect ? minSelect : maxSelectRaw,
+      };
+    })
+    .filter((row) => row.constraint_key);
+
 const buildItemForm = (item) => ({
   id: item?.id ?? null,
   item_name: item?.item_name ?? "",
@@ -60,27 +79,29 @@ const buildSectionForm = (section) => ({
   display_order: section?.display_order ?? 1,
   is_active: Boolean(section?.is_active),
   include_group_ids: (section?.include_groups || []).filter((row) => row.is_active).map((row) => row.group_id),
-  constraints_json: JSON.stringify(
-    (section?.constraints || [])
-      .filter((row) => row.is_active)
-      .map((row) => ({ constraint_key: row.constraint_key, min_select: row.min_select, max_select: row.max_select })),
-    null,
-    2
-  ),
-  tiers_json: JSON.stringify(
-    (section?.tiers || []).map((tier) => ({
+  constraints: (section?.constraints || [])
+    .filter((row) => row.is_active)
+    .map((row) => ({
+      constraint_key: row.constraint_key ?? "",
+      min_select: row.min_select ?? 0,
+      max_select: row.max_select ?? 0,
+      is_active: row?.is_active !== false,
+    })),
+  tiers: (section?.tiers || []).map((tier) => ({
       id: tier.id,
-      tier_title: tier.tier_title,
-      price: tier.price,
-      display_order: tier.display_order,
+      tier_title: tier.tier_title ?? "",
+      price: tier.price ?? "",
+      display_order: tier.display_order ?? 1,
       is_active: Boolean(tier.is_active),
       constraints: (tier.constraints || [])
         .filter((row) => row.is_active)
-        .map((row) => ({ constraint_key: row.constraint_key, min_select: row.min_select, max_select: row.max_select })),
+        .map((row) => ({
+          constraint_key: row.constraint_key ?? "",
+          min_select: row.min_select ?? 0,
+          max_select: row.max_select ?? 0,
+          is_active: row?.is_active !== false,
+        })),
     })),
-    null,
-    2
-  ),
 });
 
 const buildMediaForm = (item) => ({
@@ -96,6 +117,7 @@ const buildMediaForm = (item) => ({
 const emptyOptionGroupRow = (displayOrder) => ({ group_id: "", display_order: displayOrder, is_active: true });
 const emptySectionRow = (displayOrder) => ({ section_id: "", value_1: "", value_2: "", display_order: displayOrder, is_active: true });
 const emptyTierRow = (displayOrder) => ({ tier_id: "", display_order: displayOrder, is_active: true });
+const emptyConstraintRow = () => ({ constraint_key: "", min_select: 0, max_select: 0, is_active: true });
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -339,17 +361,28 @@ const AdminDashboard = () => {
 
   const saveSection = async () => {
     if (!sectionForm?.id) return;
-    let constraints;
-    let tiers;
-    try {
-      constraints = JSON.parse(sectionForm.constraints_json || "[]");
-      tiers = JSON.parse(sectionForm.tiers_json || "[]");
-    } catch {
-      throw new Error("Section JSON fields are invalid.");
-    }
+    const includeGroupIds = (sectionForm.include_group_ids || [])
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    const constraints = normalizeConstraintRows(sectionForm.constraints);
+    const tiers = (sectionForm.tiers || [])
+      .filter((tier) => Number(tier?.id) > 0)
+      .map((tier, index) => ({
+        id: Number(tier.id),
+        tier_title: String(tier.tier_title || "").trim(),
+        price: String(tier.price || "").trim(),
+        display_order: Number(tier.display_order) > 0 ? Number(tier.display_order) : index + 1,
+        is_active: Boolean(tier.is_active),
+        constraints: normalizeConstraintRows(tier.constraints),
+      }));
     const payload = await requestJson(`/api/admin/menu/sections/${sectionForm.id}`, {
       method: "PATCH",
-      body: JSON.stringify({ ...sectionForm, constraints, tiers }),
+      body: JSON.stringify({
+        ...sectionForm,
+        include_group_ids: includeGroupIds,
+        constraints,
+        tiers,
+      }),
     });
     setSectionForm(buildSectionForm(payload.section));
     setStatusMessage(`Saved section: ${payload.section?.title || "Section"}`);
@@ -936,35 +969,288 @@ const AdminDashboard = () => {
                     checked={sectionForm.is_active}
                     onChange={(event) => setSectionForm((prev) => ({ ...prev, is_active: event.target.checked }))}
                   />
-                  <Form.Label className="small fw-semibold">Include Group IDs (comma separated)</Form.Label>
-                  <Form.Control
+                  <Form.Label className="small fw-semibold">Included Option Groups</Form.Label>
+                  <Form.Select
                     className="mb-2"
-                    value={sectionForm.include_group_ids.join(",")}
+                    multiple
+                    value={(sectionForm.include_group_ids || []).map((value) => String(value))}
                     onChange={(event) =>
                       setSectionForm((prev) => ({
                         ...prev,
-                        include_group_ids: event.target.value
-                          .split(",")
-                          .map((value) => Number(value.trim()))
+                        include_group_ids: Array.from(event.target.selectedOptions)
+                          .map((option) => Number(option.value))
                           .filter((value) => Number.isFinite(value) && value > 0),
                       }))
-                    }
-                  />
-                  <Form.Label className="small fw-semibold">Constraints JSON</Form.Label>
-                  <Form.Control
-                    className="mb-2"
-                    as="textarea"
-                    rows={4}
-                    value={sectionForm.constraints_json}
-                    onChange={(event) => setSectionForm((prev) => ({ ...prev, constraints_json: event.target.value }))}
-                  />
-                  <Form.Label className="small fw-semibold">Tiers JSON</Form.Label>
-                  <Form.Control
-                    as="textarea"
-                    rows={4}
-                    value={sectionForm.tiers_json}
-                    onChange={(event) => setSectionForm((prev) => ({ ...prev, tiers_json: event.target.value }))}
-                  />
+                    }>
+                    {(referenceData.option_groups || []).map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {group.title} ({group.option_key})
+                      </option>
+                    ))}
+                  </Form.Select>
+                  <p className="small text-secondary mb-2">Use Ctrl/Cmd + click to select more than one group.</p>
+
+                  <div className="admin-assignment-panel">
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <h4 className="h6 mb-0">Section Constraints</h4>
+                      <Button
+                        size="sm"
+                        variant="outline-secondary"
+                        onClick={() =>
+                          setSectionForm((prev) => ({
+                            ...prev,
+                            constraints: [...(prev.constraints || []), emptyConstraintRow()],
+                          }))
+                        }>
+                        Add Constraint
+                      </Button>
+                    </div>
+                    {!sectionForm.constraints?.length ? (
+                      <p className="small text-secondary mb-2">No section constraints configured.</p>
+                    ) : null}
+                    {(sectionForm.constraints || []).map((constraint, constraintIndex) => (
+                      <Row className="g-2 align-items-end mb-2 admin-assignment-row" key={`section-constraint-${constraintIndex}`}>
+                        <Col md={5}>
+                          <Form.Label className="small mb-1">Constraint Key</Form.Label>
+                          <Form.Control
+                            value={constraint.constraint_key}
+                            placeholder="ex: proteins"
+                            onChange={(event) =>
+                              setSectionForm((prev) => ({
+                                ...prev,
+                                constraints: (prev.constraints || []).map((row, rowIndex) =>
+                                  rowIndex === constraintIndex ? { ...row, constraint_key: event.target.value } : row
+                                ),
+                              }))
+                            }
+                          />
+                        </Col>
+                        <Col md={2}>
+                          <Form.Label className="small mb-1">Min</Form.Label>
+                          <Form.Control
+                            type="number"
+                            min={0}
+                            value={constraint.min_select}
+                            onChange={(event) =>
+                              setSectionForm((prev) => ({
+                                ...prev,
+                                constraints: (prev.constraints || []).map((row, rowIndex) =>
+                                  rowIndex === constraintIndex ? { ...row, min_select: toNonNegativeInt(event.target.value) } : row
+                                ),
+                              }))
+                            }
+                          />
+                        </Col>
+                        <Col md={2}>
+                          <Form.Label className="small mb-1">Max</Form.Label>
+                          <Form.Control
+                            type="number"
+                            min={0}
+                            value={constraint.max_select}
+                            onChange={(event) =>
+                              setSectionForm((prev) => ({
+                                ...prev,
+                                constraints: (prev.constraints || []).map((row, rowIndex) =>
+                                  rowIndex === constraintIndex ? { ...row, max_select: toNonNegativeInt(event.target.value) } : row
+                                ),
+                              }))
+                            }
+                          />
+                        </Col>
+                        <Col md={3} className="d-grid">
+                          <Button
+                            variant="outline-danger"
+                            onClick={() =>
+                              setSectionForm((prev) => ({
+                                ...prev,
+                                constraints: (prev.constraints || []).filter((_, rowIndex) => rowIndex !== constraintIndex),
+                              }))
+                            }>
+                            Remove
+                          </Button>
+                        </Col>
+                      </Row>
+                    ))}
+                  </div>
+
+                  <div className="admin-assignment-panel">
+                    <h4 className="h6 mb-2">Tier Settings</h4>
+                    {!sectionForm.tiers?.length ? <p className="small text-secondary mb-2">No tiers available for this section.</p> : null}
+                    {(sectionForm.tiers || []).map((tier, tierIndex) => (
+                      <div className="admin-assignment-row mb-2" key={`section-tier-${tier.id || tierIndex}`}>
+                        <Row className="g-2 align-items-end mb-2">
+                          <Col md={4}>
+                            <Form.Label className="small mb-1">Tier Title</Form.Label>
+                            <Form.Control
+                              value={tier.tier_title}
+                              onChange={(event) =>
+                                setSectionForm((prev) => ({
+                                  ...prev,
+                                  tiers: (prev.tiers || []).map((current, rowIndex) =>
+                                    rowIndex === tierIndex ? { ...current, tier_title: event.target.value } : current
+                                  ),
+                                }))
+                              }
+                            />
+                          </Col>
+                          <Col md={3}>
+                            <Form.Label className="small mb-1">Price</Form.Label>
+                            <Form.Control
+                              value={tier.price}
+                              onChange={(event) =>
+                                setSectionForm((prev) => ({
+                                  ...prev,
+                                  tiers: (prev.tiers || []).map((current, rowIndex) =>
+                                    rowIndex === tierIndex ? { ...current, price: event.target.value } : current
+                                  ),
+                                }))
+                              }
+                            />
+                          </Col>
+                          <Col md={2}>
+                            <Form.Label className="small mb-1">Order</Form.Label>
+                            <Form.Control
+                              type="number"
+                              min={1}
+                              value={tier.display_order}
+                              onChange={(event) =>
+                                setSectionForm((prev) => ({
+                                  ...prev,
+                                  tiers: (prev.tiers || []).map((current, rowIndex) =>
+                                    rowIndex === tierIndex
+                                      ? { ...current, display_order: Number(event.target.value) > 0 ? Number(event.target.value) : 1 }
+                                      : current
+                                  ),
+                                }))
+                              }
+                            />
+                          </Col>
+                          <Col md={3}>
+                            <Form.Check
+                              className="mt-4"
+                              type="switch"
+                              label="Active"
+                              checked={Boolean(tier.is_active)}
+                              onChange={(event) =>
+                                setSectionForm((prev) => ({
+                                  ...prev,
+                                  tiers: (prev.tiers || []).map((current, rowIndex) =>
+                                    rowIndex === tierIndex ? { ...current, is_active: event.target.checked } : current
+                                  ),
+                                }))
+                              }
+                            />
+                          </Col>
+                        </Row>
+
+                        <div className="d-flex justify-content-between align-items-center mb-2">
+                          <Form.Label className="small fw-semibold mb-0">Tier Constraints</Form.Label>
+                          <Button
+                            size="sm"
+                            variant="outline-secondary"
+                            onClick={() =>
+                              setSectionForm((prev) => ({
+                                ...prev,
+                                tiers: (prev.tiers || []).map((current, rowIndex) =>
+                                  rowIndex === tierIndex
+                                    ? { ...current, constraints: [...(current.constraints || []), emptyConstraintRow()] }
+                                    : current
+                                ),
+                              }))
+                            }>
+                            Add Tier Constraint
+                          </Button>
+                        </div>
+                        {!(tier.constraints || []).length ? (
+                          <p className="small text-secondary mb-2">No tier constraints configured.</p>
+                        ) : null}
+                        {(tier.constraints || []).map((constraint, constraintIndex) => (
+                          <Row className="g-2 align-items-end mb-2" key={`tier-constraint-${tier.id || tierIndex}-${constraintIndex}`}>
+                            <Col md={5}>
+                              <Form.Control
+                                value={constraint.constraint_key}
+                                placeholder="Constraint key"
+                                onChange={(event) =>
+                                  setSectionForm((prev) => ({
+                                    ...prev,
+                                    tiers: (prev.tiers || []).map((currentTier, tierRowIndex) => {
+                                      if (tierRowIndex !== tierIndex) return currentTier;
+                                      return {
+                                        ...currentTier,
+                                        constraints: (currentTier.constraints || []).map((row, rowIndex) =>
+                                          rowIndex === constraintIndex ? { ...row, constraint_key: event.target.value } : row
+                                        ),
+                                      };
+                                    }),
+                                  }))
+                                }
+                              />
+                            </Col>
+                            <Col md={2}>
+                              <Form.Control
+                                type="number"
+                                min={0}
+                                value={constraint.min_select}
+                                onChange={(event) =>
+                                  setSectionForm((prev) => ({
+                                    ...prev,
+                                    tiers: (prev.tiers || []).map((currentTier, tierRowIndex) => {
+                                      if (tierRowIndex !== tierIndex) return currentTier;
+                                      return {
+                                        ...currentTier,
+                                        constraints: (currentTier.constraints || []).map((row, rowIndex) =>
+                                          rowIndex === constraintIndex ? { ...row, min_select: toNonNegativeInt(event.target.value) } : row
+                                        ),
+                                      };
+                                    }),
+                                  }))
+                                }
+                              />
+                            </Col>
+                            <Col md={2}>
+                              <Form.Control
+                                type="number"
+                                min={0}
+                                value={constraint.max_select}
+                                onChange={(event) =>
+                                  setSectionForm((prev) => ({
+                                    ...prev,
+                                    tiers: (prev.tiers || []).map((currentTier, tierRowIndex) => {
+                                      if (tierRowIndex !== tierIndex) return currentTier;
+                                      return {
+                                        ...currentTier,
+                                        constraints: (currentTier.constraints || []).map((row, rowIndex) =>
+                                          rowIndex === constraintIndex ? { ...row, max_select: toNonNegativeInt(event.target.value) } : row
+                                        ),
+                                      };
+                                    }),
+                                  }))
+                                }
+                              />
+                            </Col>
+                            <Col md={3} className="d-grid">
+                              <Button
+                                variant="outline-danger"
+                                onClick={() =>
+                                  setSectionForm((prev) => ({
+                                    ...prev,
+                                    tiers: (prev.tiers || []).map((currentTier, tierRowIndex) => {
+                                      if (tierRowIndex !== tierIndex) return currentTier;
+                                      return {
+                                        ...currentTier,
+                                        constraints: (currentTier.constraints || []).filter((_, rowIndex) => rowIndex !== constraintIndex),
+                                      };
+                                    }),
+                                  }))
+                                }>
+                                Remove
+                              </Button>
+                            </Col>
+                          </Row>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
                   <Button
                     className="btn-inquiry-action mt-3"
                     variant="secondary"
