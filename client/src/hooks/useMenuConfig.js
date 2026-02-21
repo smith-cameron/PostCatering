@@ -4,6 +4,7 @@ const EMPTY = {
   menu: {},
   menuOptions: {},
   formalPlanOptions: [],
+  sharedNonFormalItems: [],
 };
 
 let cachedMenuConfig = null;
@@ -11,11 +12,23 @@ let inFlightMenuConfigRequest = null;
 
 const FIELD_KEY_MAP = {
   page_title: "pageTitle",
+  shared_non_formal_items: "sharedNonFormalItems",
   intro_blocks: "introBlocks",
   section_id: "sectionId",
   course_type: "courseType",
   include_keys: "includeKeys",
   tier_title: "tierTitle",
+  row_items: "rowItems",
+  bullet_items: "bulletItems",
+  item_refs: "itemRefs",
+  item_id: "itemId",
+  item_name: "itemName",
+  item_type: "itemType",
+  item_category: "itemCategory",
+  tray_prices: "trayPrices",
+  tray_price_half: "trayPriceHalf",
+  tray_price_full: "trayPriceFull",
+  is_active: "isActive",
   price_meta: "priceMeta",
   amount_min: "amountMin",
   amount_max: "amountMax",
@@ -43,6 +56,7 @@ const normalizeMenuConfig = (body) => {
   const menuOptionsRaw = body.menu_options || {};
   const formalPlanOptionsRaw = body.formal_plan_options || [];
   const menuRaw = body.menu || {};
+  const sharedNonFormalItemsRaw = body.shared_non_formal_items || [];
 
   const menuOptions = Object.entries(menuOptionsRaw).reduce((acc, [key, option]) => {
     acc[key] = toClientShape(option);
@@ -55,11 +69,13 @@ const normalizeMenuConfig = (body) => {
   }, {});
 
   const formalPlanOptions = formalPlanOptionsRaw.map((plan) => toClientShape(plan));
+  const sharedNonFormalItems = sharedNonFormalItemsRaw.map((item) => toClientShape(item));
 
   return {
     menu,
     menuOptions,
     formalPlanOptions,
+    sharedNonFormalItems,
   };
 };
 
@@ -117,12 +133,13 @@ const useMenuConfig = () => {
 
     const load = async () => {
       try {
-        const { menu, menuOptions, formalPlanOptions } = await getSharedMenuConfig();
+        const { menu, menuOptions, formalPlanOptions, sharedNonFormalItems } = await getSharedMenuConfig();
         if (!isMounted) return;
         setState({
           menu,
           menuOptions,
           formalPlanOptions,
+          sharedNonFormalItems,
           loading: false,
           error: "",
         });

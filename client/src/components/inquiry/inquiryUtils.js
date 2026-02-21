@@ -285,6 +285,52 @@ export const buildServicePlanOptions = (serviceKey, menu, formalPlanOptions) => 
   return plans;
 };
 
+const toCatalogTrayPrices = (item) => {
+  const trayPrices = item?.trayPrices;
+  if (trayPrices && typeof trayPrices === "object") {
+    return {
+      half: trayPrices.half ?? trayPrices.halfTray ?? null,
+      full: trayPrices.full ?? trayPrices.fullTray ?? null,
+    };
+  }
+  return {
+    half: item?.trayPriceHalf ?? null,
+    full: item?.trayPriceFull ?? null,
+  };
+};
+
+const buildTraySizeOptionsFromTrayPrices = (trayPrices) => {
+  const options = [];
+  if (isPricedValue(trayPrices?.half)) {
+    options.push({ value: "Half", label: `Half Tray (${trayPrices.half})`, price: trayPrices.half });
+  }
+  if (isPricedValue(trayPrices?.full)) {
+    options.push({ value: "Full", label: `Full Tray (${trayPrices.full})`, price: trayPrices.full });
+  }
+  return options;
+};
+
+const buildTraySizeOptionsFromRowValues = (row, columns) => {
+  const sizeOptions = [];
+  if (!Array.isArray(columns)) return sizeOptions;
+
+  columns.forEach((column, columnIndex) => {
+    if (columnIndex === 0) return;
+    const columnLabel = String(column || "").toLowerCase();
+    if (!columnLabel.includes("half") && !columnLabel.includes("full")) return;
+
+    const priceValue = row[columnIndex];
+    if (!isPricedValue(priceValue)) return;
+    if (columnLabel.includes("half")) {
+      sizeOptions.push({ value: "Half", label: `Half Tray (${priceValue})`, price: priceValue });
+    }
+    if (columnLabel.includes("full")) {
+      sizeOptions.push({ value: "Full", label: `Full Tray (${priceValue})`, price: priceValue });
+    }
+  });
+  return sizeOptions;
+};
+
 export const buildServiceItemGroups = (serviceKey, menu, menuOptions) => {
   const serviceData = menu[serviceKey];
   if (!serviceData?.sections) return [];
@@ -294,8 +340,9 @@ export const buildServiceItemGroups = (serviceKey, menu, menuOptions) => {
     const seen = new Set();
     const uniqueItems = items.filter((item) => {
       if (!item?.name) return false;
-      if (seen.has(item.name)) return false;
-      seen.add(item.name);
+      const identityKey = item.id || item.name;
+      if (seen.has(identityKey)) return false;
+      seen.add(identityKey);
       return true;
     });
     if (!uniqueItems.length) return;
@@ -309,27 +356,23 @@ export const buildServiceItemGroups = (serviceKey, menu, menuOptions) => {
   serviceData.sections.forEach((section) => {
     if (!section.type && Array.isArray(section.rows)) {
       const sectionItems = section.rows
-        .map((row) => {
+        .map((row, rowIndex) => {
           if (!Array.isArray(row) || !row[0]) return null;
 
-          const sizeOptions = [];
-          if (Array.isArray(section.columns)) {
-            section.columns.forEach((column, columnIndex) => {
-              if (columnIndex === 0) return;
-              const columnLabel = String(column || "").toLowerCase();
-              if (!columnLabel.includes("half") && !columnLabel.includes("full")) return;
+          const rowItemRef = Array.isArray(section.rowItems) ? section.rowItems[rowIndex] : null;
+          const trayPriceOptions = buildTraySizeOptionsFromTrayPrices(toCatalogTrayPrices(rowItemRef));
+          const sizeOptions =
+            serviceKey === "togo"
+              ? trayPriceOptions.length
+                ? trayPriceOptions
+                : buildTraySizeOptionsFromRowValues(row, section.columns || [])
+              : [];
 
-              const priceValue = row[columnIndex];
-              if (!isPricedValue(priceValue)) return;
-              if (columnLabel.includes("half")) {
-                sizeOptions.push({ value: "Half", label: `Half Tray (${priceValue})`, price: priceValue });
-              }
-              if (columnLabel.includes("full")) {
-                sizeOptions.push({ value: "Full", label: `Full Tray (${priceValue})`, price: priceValue });
-              }
-            });
-          }
-          return { name: row[0], sizeOptions };
+          return {
+            id: rowItemRef?.itemId || null,
+            name: rowItemRef?.itemName || row[0],
+            sizeOptions,
+          };
         })
         .filter(Boolean);
 
@@ -347,11 +390,28 @@ export const buildServiceItemGroups = (serviceKey, menu, menuOptions) => {
     if (section.type === "includeMenu" && Array.isArray(section.includeKeys)) {
       section.includeKeys.forEach((includeKey) => {
         const block = menuOptions[includeKey];
-        if (!block?.items?.length) return;
-        const blockItems = block.items.map((item) => ({
-          name: item,
-          sizeOptions: serviceKey === "togo" ? ["Half", "Full"].map(normalizeSizeOption) : [],
-        }));
+        const blockItemRefs = Array.isArray(block?.itemRefs) ? block.itemRefs : [];
+        const blockItems = blockItemRefs.length
+          ? blockItemRefs.map((itemRef) => {
+              const trayPriceOptions = buildTraySizeOptionsFromTrayPrices(toCatalogTrayPrices(itemRef));
+              const sizeOptions =
+                serviceKey === "togo"
+                  ? trayPriceOptions.length
+                    ? trayPriceOptions
+                    : ["Half", "Full"].map(normalizeSizeOption)
+                  : [];
+              return {
+                id: itemRef?.itemId || null,
+                name: itemRef?.itemName || "",
+                sizeOptions,
+              };
+            })
+          : (block?.items || []).map((itemName) => ({
+              id: null,
+              name: itemName,
+              sizeOptions: serviceKey === "togo" ? ["Half", "Full"].map(normalizeSizeOption) : [],
+            }));
+        if (!blockItems.length) return;
 
         if (block.category === "sides_salads") {
           const { sides, salads } = splitSidesAndSalads(blockItems);
@@ -368,7 +428,18 @@ export const buildServiceItemGroups = (serviceKey, menu, menuOptions) => {
       if (serviceKey === "community") return;
       const sectionItems = [];
       section.tiers.forEach((tier) => {
-        tier?.bullets?.forEach((item) => sectionItems.push({ name: item, sizeOptions: [] }));
+        const bulletItems = Array.isArray(tier?.bulletItems) ? tier.bulletItems : [];
+        if (bulletItems.length) {
+          bulletItems.forEach((item) =>
+            sectionItems.push({
+              id: item?.itemId || null,
+              name: item?.itemName || "",
+              sizeOptions: [],
+            })
+          );
+          return;
+        }
+        tier?.bullets?.forEach((item) => sectionItems.push({ id: null, name: item, sizeOptions: [] }));
       });
       const sectionGroupKey = section.courseType || "other";
       addGroup(section.title, sectionItems, sectionGroupKey);
@@ -377,7 +448,7 @@ export const buildServiceItemGroups = (serviceKey, menu, menuOptions) => {
 
     if (section.type === "package" && section.title) {
       if (serviceKey === "community" || section.title === "Three-Course Dinner Pricing") return;
-      addGroup("Packages", [{ name: section.title, sizeOptions: [] }], "package");
+      addGroup("Packages", [{ id: null, name: section.title, sizeOptions: [] }], "package");
     }
   });
 
