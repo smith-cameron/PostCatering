@@ -117,6 +117,7 @@ DELETE FROM formal_menu_items;
 /* -------------------------------------------------------------------------- */
 /* 5) Backfill GENERAL items + prices from legacy schema                       */
 /* -------------------------------------------------------------------------- */
+INSERT INTO general_menu_items (`key`, name, is_active, group_id, half_tray_price, full_tray_price)
 WITH
 legacy_general_option AS (
   SELECT DISTINCT
@@ -217,7 +218,6 @@ general_final AS (
     LEFT(CASE WHEN key_seq = 1 THEN base_key ELSE CONCAT(base_key, '-', key_seq) END, 128) AS item_key
   FROM general_keyed
 )
-INSERT INTO general_menu_items (`key`, name, is_active, group_id, half_tray_price, full_tray_price)
 SELECT
   gf.item_key,
   gf.item_name,
@@ -231,6 +231,7 @@ JOIN general_menu_groups gmg ON gmg.`key` = gf.group_key;
 /* -------------------------------------------------------------------------- */
 /* 6) Backfill FORMAL items from legacy schema                                 */
 /* -------------------------------------------------------------------------- */
+INSERT INTO formal_menu_items (`key`, name, is_active, group_id)
 WITH
 legacy_formal AS (
   SELECT DISTINCT
@@ -275,7 +276,6 @@ formal_final AS (
     LEFT(CASE WHEN key_seq = 1 THEN base_key ELSE CONCAT(base_key, '-', key_seq) END, 128) AS item_key
   FROM formal_keyed
 )
-INSERT INTO formal_menu_items (`key`, name, is_active, group_id)
 SELECT
   ff.item_key,
   ff.item_name,
