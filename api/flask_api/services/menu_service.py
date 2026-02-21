@@ -45,6 +45,7 @@ class MenuService:
         menu_options = payload.get("menu_options", {})
         formal_plan_options = payload.get("formal_plan_options", [])
         menu = payload.get("menu", {})
+        shared_non_formal_items = payload.get("shared_non_formal_items", payload.get("sharedNonFormalItems", []))
 
         # Keep catalog/menu option IDs as-is; only normalize schema field names.
         normalized_menu_options = {key: cls._to_snake_case_keys(option) for key, option in menu_options.items()}
@@ -54,6 +55,7 @@ class MenuService:
             "menu_options": normalized_menu_options,
             "formal_plan_options": cls._to_snake_case_keys(formal_plan_options),
             "menu": normalized_menu,
+            "shared_non_formal_items": cls._to_snake_case_keys(shared_non_formal_items),
         }
 
     @staticmethod
@@ -67,6 +69,7 @@ class MenuService:
             "menu_options": raw.get("MENU_OPTIONS", {}),
             "formal_plan_options": raw.get("FORMAL_PLAN_OPTIONS", []),
             "menu": raw.get("MENU", {}),
+            "shared_non_formal_items": raw.get("NON_FORMAL_ITEMS", raw.get("SHARED_NON_FORMAL_ITEMS", [])),
         }
 
     @staticmethod
@@ -209,3 +212,7 @@ class MenuService:
         if fallback:
             return {"source": "seed-file", **cls._normalize_menu_payload_for_api(fallback)}, 200
         return {"error": "Menu seed payload not found."}, 500
+
+    @classmethod
+    def upsert_non_formal_catalog_items(cls, payload):
+        return Menu.upsert_non_formal_catalog_items(payload)
