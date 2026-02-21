@@ -276,6 +276,7 @@ class AdminMenuService:
       FROM menu_option_group_items gi
       JOIN menu_option_groups g ON g.id = gi.group_id
       WHERE gi.item_id = %(item_id)s
+        AND gi.is_active = 1
       ORDER BY gi.display_order ASC, gi.id ASC;
       """,
             {"item_id": normalized_item_id},
@@ -296,6 +297,7 @@ class AdminMenuService:
       JOIN menu_sections s ON s.id = r.section_id
       JOIN menu_catalogs c ON c.id = s.catalog_id
       WHERE r.item_id = %(item_id)s
+        AND r.is_active = 1
       ORDER BY c.display_order ASC, s.display_order ASC, r.display_order ASC, r.id ASC;
       """,
             {"item_id": normalized_item_id},
@@ -316,6 +318,7 @@ class AdminMenuService:
       JOIN menu_sections s ON s.id = t.section_id
       JOIN menu_catalogs c ON c.id = s.catalog_id
       WHERE b.item_id = %(item_id)s
+        AND b.is_active = 1
       ORDER BY c.display_order ASC, s.display_order ASC, t.display_order ASC, b.display_order ASC, b.id ASC;
       """,
             {"item_id": normalized_item_id},
@@ -338,6 +341,7 @@ class AdminMenuService:
                     "is_active": bool(row.get("is_active", 0)),
                 }
                 for row in option_assignments
+                if bool(row.get("is_active", 0))
             ],
             "section_row_assignments": [
                 {
@@ -352,6 +356,7 @@ class AdminMenuService:
                     "is_active": bool(row.get("is_active", 0)),
                 }
                 for row in section_rows
+                if bool(row.get("is_active", 0))
             ],
             "tier_bullet_assignments": [
                 {
@@ -365,6 +370,7 @@ class AdminMenuService:
                     "is_active": bool(row.get("is_active", 0)),
                 }
                 for row in tier_rows
+                if bool(row.get("is_active", 0))
             ],
         }
 
