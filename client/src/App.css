@@ -235,6 +235,44 @@ button:hover {
 }
 
 /* =========================
+   Admin Dashboard
+   ========================= */
+
+.admin-login-page {
+  min-height: 70vh;
+  display: flex;
+  align-items: center;
+}
+
+.admin-login-card {
+  width: min(560px, 100%);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+}
+
+.admin-dashboard .card {
+  border: 1px solid var(--border-color);
+}
+
+.admin-scroll-card {
+  max-height: 420px;
+  overflow: auto;
+}
+
+.admin-assignment-panel {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.admin-assignment-row {
+  padding: 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  background: #f8f9fa;
+}
+
+/* =========================
    Responsive Breakpoints
    ========================= */
 

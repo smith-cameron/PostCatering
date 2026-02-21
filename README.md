@@ -100,6 +100,15 @@ python server.py
 
 Flask defaults to `http://localhost:5000`.
 
+Create or update an admin dashboard user (after schema is applied):
+
+```powershell
+cd api
+python scripts/create_admin_user.py --username your-admin-username --display-name "Admin User"
+```
+
+If you omit `--password`, the script will prompt securely for it.
+
 Alternative (from `client/`):
 
 ```powershell
@@ -195,6 +204,8 @@ Use `api/.env.example` as the source of truth for variable names.
 - `FLASK_APP`: Flask entry point (`server.py`)
 - `FLASK_ENV`: environment (`development` for local)
 - `FLASK_SECRET_KEY`: Flask session/secret key
+- `SESSION_COOKIE_SAMESITE`: Flask session cookie SameSite setting (`Lax` by default)
+- `SESSION_COOKIE_SECURE`: `true`/`false` for secure-only session cookies
 - `DB_HOST`: MySQL host
 - `DB_PORT`: MySQL port
 - `DB_USER`: MySQL user
@@ -266,6 +277,51 @@ ON DUPLICATE KEY UPDATE
 
 - `GET /api/menus`
   Returns menu payload consumed by the frontend.
+
+- `POST /api/admin/auth/login`
+  Starts an authenticated admin session.
+
+- `POST /api/admin/auth/logout`
+  Ends the authenticated admin session.
+
+- `GET /api/admin/auth/me`
+  Returns current authenticated admin user.
+
+- `GET /api/admin/menu/reference-data`
+  Returns menu reference entities for admin editors (catalogs, sections, tiers, option groups).
+
+- `GET /api/admin/menu/items`
+  Search/filter menu items for admin maintenance.
+
+- `GET /api/admin/menu/items/<id>`
+  Returns menu item details + assignment rows.
+
+- `POST /api/admin/menu/items`
+  Creates a menu item with optional assignment payloads.
+
+- `PATCH /api/admin/menu/items/<id>`
+  Updates menu item fields, assignment rows, and ordering.
+
+- `GET /api/admin/menu/sections`
+  Search/filter menu sections.
+
+- `GET /api/admin/menu/sections/<id>`
+  Returns section metadata, constraints, include groups, and tiers.
+
+- `PATCH /api/admin/menu/sections/<id>`
+  Updates section metadata, pricing, inclusion rules, tier constraints, and display order.
+
+- `GET /api/admin/media`
+  Search/filter gallery/homepage media.
+
+- `POST /api/admin/media/upload`
+  Uploads image/video assets and creates slide/gallery metadata records.
+
+- `PATCH /api/admin/media/<id>`
+  Updates media metadata, slide flag, activation state, and display order.
+
+- `GET /api/admin/audit`
+  Returns recent admin edit history.
 
 - `POST /api/inquiries`
   Validates and stores inquiry submissions; attempts SMTP notification.
@@ -451,20 +507,7 @@ Backend:
 
 ## Known Gaps
 
-### Audit findings (2026-02-19)
-- First remote run of the new `frontend-e2e` CI job is pending (will validate on next push/PR in GitHub Actions).
-
 ### Stretch goals
-- Priority 1: Build a dedicated admin dashboard for menu and media operations with authenticated admin access (instead of browser calls with a static token).
-  - Create new menu items across service/package/tier groupings.
-  - Update existing menu items, pricing, descriptions, and inclusion rules.
-  - Update menu item visibility (`is_active`) without deleting records.
-  - Upload and manage photos and videos for homepage and gallery content.
-  - Choose and manage display order for menu sections, items, and slides.
-  - Manage slide metadata (`title`, `caption`, `alt_text`) and activation state.
-  - Show the `Homepage Slide` moniker in the admin media manager only (not on public gallery tiles).
-  - Add search/filter tools for faster menu maintenance at scale.
-  - Add change confirmation and basic audit history for admin edits.
 - Deferred (Production Readiness): Adopt Flask app-factory + blueprint structure for clearer initialization and easier testing.
 - Migrate inquiry email transport from SMTP to Mailgun HTTP API for richer delivery telemetry, event/webhook handling, and provider-specific controls.
 - Add production file-based logging (for example `api/logs/app.log`) alongside console logging for persistent operational/audit troubleshooting.
