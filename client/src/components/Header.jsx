@@ -55,16 +55,16 @@ const Header = ({ onOpenInquiry }) => {
   );
 
   return (
-    <Navbar expand="lg" className="bg-body-secondary">
+    <Navbar expand="lg" className="bg-body-secondary site-header-navbar">
       <Container fluid>
         <Navbar.Brand as={Link} to="/">AMERICAN LEGION POST 468</Navbar.Brand>
         <NavbarText className="fs-5 fw-medium text-secondary opacity-75">
           Catering & Community Food Programs
         </NavbarText>
 
-        <Navbar.Toggle aria-controls="basic-navbar-nav" />
-        <Navbar.Collapse id="basic-navbar-nav">
-          <Nav className="ms-auto">
+        <Navbar.Toggle className="site-header-toggle" aria-controls="basic-navbar-nav" />
+        <Navbar.Collapse id="basic-navbar-nav" className="justify-content-end">
+          <Nav className="ms-lg-auto site-header-nav">
             {isMobile ? (
               <>
                 <Nav.Link as={Link} to="/services/togo">
@@ -86,7 +86,7 @@ const Header = ({ onOpenInquiry }) => {
                 <Nav.Link
                   as="button"
                   type="button"
-                  className="nav-link btn btn-link text-start p-0"
+                  className="nav-link btn btn-link text-end site-header-action-link"
                   onClick={() => onOpenInquiry?.()}>
                   Send Catering Inquiry
                 </Nav.Link>
@@ -94,7 +94,7 @@ const Header = ({ onOpenInquiry }) => {
                 <Nav.Link
                   as="button"
                   type="button"
-                  className="nav-link btn btn-link text-start p-0"
+                  className="nav-link btn btn-link text-end site-header-action-link"
                   onClick={() => setShowContactModal(true)}>
                   Contact Us
                 </Nav.Link>

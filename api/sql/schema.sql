@@ -64,10 +64,16 @@ CREATE TABLE IF NOT EXISTS menu_items (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   item_key VARCHAR(128) NULL,
   item_name VARCHAR(255) NOT NULL,
+  item_type VARCHAR(64) NULL,
+  item_category VARCHAR(100) NULL,
+  tray_price_half VARCHAR(100) NULL,
+  tray_price_full VARCHAR(100) NULL,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
+  KEY idx_menu_items_active_category (is_active, item_category),
+  KEY idx_menu_items_active_type (is_active, item_type),
   UNIQUE KEY uq_menu_items_name (item_name),
   UNIQUE KEY uq_menu_items_key (item_key)
 );
@@ -334,31 +340,145 @@ CREATE TABLE IF NOT EXISTS menu_section_tier_bullets (
 );
 
 ALTER TABLE formal_plan_options
-  ADD COLUMN IF NOT EXISTS price_amount_min DECIMAL(10,2) NULL AFTER price,
-  ADD COLUMN IF NOT EXISTS price_amount_max DECIMAL(10,2) NULL AFTER price_amount_min,
-  ADD COLUMN IF NOT EXISTS price_currency CHAR(3) NULL AFTER price_amount_max,
-  ADD COLUMN IF NOT EXISTS price_unit VARCHAR(32) NULL AFTER price_currency;
+  ADD COLUMN price_amount_min DECIMAL(10,2) NULL AFTER price;
+ALTER TABLE formal_plan_options
+  ADD COLUMN price_amount_max DECIMAL(10,2) NULL AFTER price_amount_min;
+ALTER TABLE formal_plan_options
+  ADD COLUMN price_currency CHAR(3) NULL AFTER price_amount_max;
+ALTER TABLE formal_plan_options
+  ADD COLUMN price_unit VARCHAR(32) NULL AFTER price_currency;
+
+ALTER TABLE menu_items
+  ADD COLUMN item_type VARCHAR(64) NULL AFTER item_name;
+ALTER TABLE menu_items
+  ADD COLUMN item_category VARCHAR(100) NULL AFTER item_type;
+ALTER TABLE menu_items
+  ADD COLUMN tray_price_half VARCHAR(100) NULL AFTER item_category;
+ALTER TABLE menu_items
+  ADD COLUMN tray_price_full VARCHAR(100) NULL AFTER tray_price_half;
+ALTER TABLE menu_items
+  ADD KEY idx_menu_items_active_category (is_active, item_category);
+ALTER TABLE menu_items
+  ADD KEY idx_menu_items_active_type (is_active, item_type);
 
 ALTER TABLE menu_sections
-  ADD COLUMN IF NOT EXISTS price_amount_min DECIMAL(10,2) NULL AFTER price,
-  ADD COLUMN IF NOT EXISTS price_amount_max DECIMAL(10,2) NULL AFTER price_amount_min,
-  ADD COLUMN IF NOT EXISTS price_currency CHAR(3) NULL AFTER price_amount_max,
-  ADD COLUMN IF NOT EXISTS price_unit VARCHAR(32) NULL AFTER price_currency;
+  ADD COLUMN price_amount_min DECIMAL(10,2) NULL AFTER price;
+ALTER TABLE menu_sections
+  ADD COLUMN price_amount_max DECIMAL(10,2) NULL AFTER price_amount_min;
+ALTER TABLE menu_sections
+  ADD COLUMN price_currency CHAR(3) NULL AFTER price_amount_max;
+ALTER TABLE menu_sections
+  ADD COLUMN price_unit VARCHAR(32) NULL AFTER price_currency;
 
 ALTER TABLE menu_section_tiers
-  ADD COLUMN IF NOT EXISTS price_amount_min DECIMAL(10,2) NULL AFTER price,
-  ADD COLUMN IF NOT EXISTS price_amount_max DECIMAL(10,2) NULL AFTER price_amount_min,
-  ADD COLUMN IF NOT EXISTS price_currency CHAR(3) NULL AFTER price_amount_max,
-  ADD COLUMN IF NOT EXISTS price_unit VARCHAR(32) NULL AFTER price_currency;
+  ADD COLUMN price_amount_min DECIMAL(10,2) NULL AFTER price;
+ALTER TABLE menu_section_tiers
+  ADD COLUMN price_amount_max DECIMAL(10,2) NULL AFTER price_amount_min;
+ALTER TABLE menu_section_tiers
+  ADD COLUMN price_currency CHAR(3) NULL AFTER price_amount_max;
+ALTER TABLE menu_section_tiers
+  ADD COLUMN price_unit VARCHAR(32) NULL AFTER price_currency;
 
 ALTER TABLE menu_section_tier_constraints
-  ADD COLUMN IF NOT EXISTS min_select INT NOT NULL DEFAULT 0 AFTER constraint_key,
-  ADD COLUMN IF NOT EXISTS max_select INT NOT NULL DEFAULT 0 AFTER min_select,
+  ADD COLUMN min_select INT NOT NULL DEFAULT 0 AFTER constraint_key;
+ALTER TABLE menu_section_tier_constraints
+  ADD COLUMN max_select INT NOT NULL DEFAULT 0 AFTER min_select;
+ALTER TABLE menu_section_tier_constraints
   MODIFY COLUMN constraint_value INT NULL;
 
+UPDATE menu_items i
+SET
+  i.item_type = COALESCE(
+    NULLIF(TRIM(i.item_type), ''),
+    (
+      SELECT g.option_key
+      FROM menu_option_group_items gi
+      JOIN menu_option_groups g ON g.id = gi.group_id
+      WHERE gi.item_id = i.id
+        AND gi.is_active = 1
+        AND g.is_active = 1
+      ORDER BY g.display_order ASC, g.id ASC, gi.display_order ASC, gi.id ASC
+      LIMIT 1
+    ),
+    (
+      SELECT s.section_key
+      FROM menu_section_rows r
+      JOIN menu_sections s ON s.id = r.section_id AND s.is_active = 1
+      JOIN menu_catalogs c ON c.id = s.catalog_id AND c.is_active = 1
+      WHERE r.item_id = i.id
+        AND r.is_active = 1
+        AND c.catalog_key IN ('togo', 'community')
+      ORDER BY s.display_order ASC, s.id ASC, r.display_order ASC, r.id ASC
+      LIMIT 1
+    ),
+    'general'
+  ),
+  i.item_category = COALESCE(
+    NULLIF(TRIM(i.item_category), ''),
+    (
+      SELECT g.category
+      FROM menu_option_group_items gi
+      JOIN menu_option_groups g ON g.id = gi.group_id
+      WHERE gi.item_id = i.id
+        AND gi.is_active = 1
+        AND g.is_active = 1
+      ORDER BY g.display_order ASC, g.id ASC, gi.display_order ASC, gi.id ASC
+      LIMIT 1
+    ),
+    (
+      SELECT s.category
+      FROM menu_section_rows r
+      JOIN menu_sections s ON s.id = r.section_id AND s.is_active = 1
+      JOIN menu_catalogs c ON c.id = s.catalog_id AND c.is_active = 1
+      WHERE r.item_id = i.id
+        AND r.is_active = 1
+        AND c.catalog_key IN ('togo', 'community')
+      ORDER BY s.display_order ASC, s.id ASC, r.display_order ASC, r.id ASC
+      LIMIT 1
+    ),
+    'other'
+  ),
+  i.tray_price_half = COALESCE(
+    NULLIF(TRIM(i.tray_price_half), ''),
+    (
+      SELECT NULLIF(TRIM(r.value_1), '')
+      FROM menu_section_rows r
+      JOIN menu_sections s ON s.id = r.section_id AND s.is_active = 1
+      JOIN menu_catalogs c ON c.id = s.catalog_id AND c.is_active = 1
+      WHERE r.item_id = i.id
+        AND r.is_active = 1
+        AND c.catalog_key = 'togo'
+      ORDER BY s.display_order ASC, s.id ASC, r.display_order ASC, r.id ASC
+      LIMIT 1
+    )
+  ),
+  i.tray_price_full = COALESCE(
+    NULLIF(TRIM(i.tray_price_full), ''),
+    (
+      SELECT NULLIF(TRIM(r.value_2), '')
+      FROM menu_section_rows r
+      JOIN menu_sections s ON s.id = r.section_id AND s.is_active = 1
+      JOIN menu_catalogs c ON c.id = s.catalog_id AND c.is_active = 1
+      WHERE r.item_id = i.id
+        AND r.is_active = 1
+        AND c.catalog_key = 'togo'
+      ORDER BY s.display_order ASC, s.id ASC, r.display_order ASC, r.id ASC
+      LIMIT 1
+    )
+  ),
+  i.updated_at = CURRENT_TIMESTAMP
+WHERE i.is_active = 1
+  AND (
+    i.item_type IS NULL OR TRIM(i.item_type) = ''
+    OR i.item_category IS NULL OR TRIM(i.item_category) = ''
+    OR i.tray_price_half IS NULL OR TRIM(i.tray_price_half) = ''
+    OR i.tray_price_full IS NULL OR TRIM(i.tray_price_full) = ''
+  );
+
 ALTER TABLE slides
-  ADD COLUMN IF NOT EXISTS media_type ENUM('image', 'video') NOT NULL DEFAULT 'image' AFTER image_url,
-  ADD COLUMN IF NOT EXISTS is_slide TINYINT(1) NOT NULL DEFAULT 0 AFTER display_order;
+  ADD COLUMN media_type ENUM('image', 'video') NOT NULL DEFAULT 'image' AFTER image_url;
+ALTER TABLE slides
+  ADD COLUMN is_slide TINYINT(1) NOT NULL DEFAULT 0 AFTER display_order;
 
 UPDATE slides
 SET media_type = 'image'

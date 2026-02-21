@@ -70,7 +70,7 @@ Generated/runtime folders such as `api/venv`, `client/node_modules`, and `client
 
 ### Prerequisites
 
-- Node.js 20.x (LTS) and npm
+- Node.js 24.x and npm
 - Python 3.10+ (3.11 recommended)
 - MySQL 8+ (or compatible)
 
@@ -273,6 +273,9 @@ ON DUPLICATE KEY UPDATE
 - `POST /api/admin/menu/sync`
   Protected endpoint for schema apply/reset/seed operations. Requires `MENU_ADMIN_TOKEN` in header.
 
+- `POST /api/admin/menu/items`
+  Protected endpoint for simplified non-formal catalog upserts (name/type/category/active/tray prices). Requires `MENU_ADMIN_TOKEN`.
+
 ## API Naming Conventions
 
 - HTTP payloads use `snake_case` for API field names.
@@ -293,6 +296,34 @@ Maintenance details and SQL examples:
 Key maintenance rule:
 - Use `is_active = 0` to hide rows instead of deleting data.
 
+### Non-Formal Shared Catalog Workflow (Current)
+
+Non-formal menu items are now modeled as a single shared catalog in `menu_items` and reused by reference across To-Go and Community/Crew contexts.
+
+- `menu_items` is the source of truth for non-formal item identity.
+- New classification fields on `menu_items`:
+  - `item_type`
+  - `item_category`
+  - `is_active`
+- Tray-pricing fields on `menu_items` (supported for all non-formal items):
+  - `tray_price_half`
+  - `tray_price_full`
+- `menu_option_group_items`, `menu_section_rows`, and non-formal tier/item links reuse shared `item_id` references (no per-context item duplication).
+- Formal menu behavior remains isolated in formal plan tables and formal sections.
+
+Rendering behavior:
+- Tray prices are shown only in the To-Go accordion/table presentation.
+- Non-To-Go contexts continue to render item names without tray-price display.
+
+Compatibility/migration notes:
+- `python scripts/menu_admin_sync.py --apply-schema --reset` adds/backfills the new `menu_items` fields.
+- Backfill pulls existing To-Go row prices into `menu_items.tray_price_half`/`tray_price_full`.
+- Legacy section row values remain supported as fallback during transition.
+
+Admin scope note:
+- This change updates backend/admin APIs and public-site data consumption only.
+- Admin panel UI changes were intentionally out of scope for this task.
+
 CLI maintenance task:
 
 ```powershell
@@ -311,6 +342,29 @@ Content-Type: application/json
   "apply_schema": true,
   "reset": true,
   "seed": true
+}
+```
+
+Simplified non-formal item upsert example:
+
+```http
+POST /api/admin/menu/items
+X-Menu-Admin-Token: <MENU_ADMIN_TOKEN>
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "name": "Jerk Chicken",
+      "item_type": "signature_proteins",
+      "item_category": "entree",
+      "is_active": true,
+      "tray_prices": {
+        "half": "$75",
+        "full": "$140"
+      }
+    }
+  ]
 }
 ```
 

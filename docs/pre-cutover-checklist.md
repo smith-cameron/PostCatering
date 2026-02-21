@@ -1,6 +1,7 @@
 # Owner Account Cutover Checklist (Launch Day)
 
 Use this checklist when moving production from a temporary/staging AWS account into the owner's AWS account.
+Target production domain: `post460catering.com`
 
 ## 1) 24-48 Hours Before Cutover
 
@@ -35,8 +36,8 @@ Use this checklist when moving production from a temporary/staging AWS account i
 - Update DNS `A`/`AAAA` records to owner account target.
 - Verify propagation from at least two external resolvers.
 - Validate:
-  - `https://your-domain.com/`
-  - `https://your-domain.com/api/health`
+  - `https://post460catering.com/`
+  - `https://post460catering.com/api/health`
   - One real frontend inquiry submission path end-to-end
 
 ## 5) Immediate Post-Cutover
