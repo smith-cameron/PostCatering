@@ -301,7 +301,7 @@ def admin_menu_catalog_items(admin_user=None):
     return jsonify({"items": items}), 200
 
 
-@app.route("/api/admin/menu/items/<int:item_id>", methods=["GET", "PATCH", "OPTIONS"])
+@app.route("/api/admin/menu/items/<int:item_id>", methods=["GET", "PATCH", "DELETE", "OPTIONS"])
 @_require_admin_auth
 def admin_menu_item_detail(item_id, admin_user=None):
     if request.method == "OPTIONS":
@@ -316,6 +316,20 @@ def admin_menu_item_detail(item_id, admin_user=None):
     before = AdminMenuService.get_menu_item_detail(item_id)
     if not before:
         return jsonify({"error": "Menu item not found."}), 404
+
+    if request.method == "DELETE":
+        response_body, status_code = AdminMenuService.delete_menu_item(item_id)
+        if status_code < 400:
+            AdminAuditService.log_change(
+                admin_user_id=admin_user["id"],
+                action="delete",
+                entity_type="menu_item",
+                entity_id=item_id,
+                change_summary=f"Deleted menu item '{before.get('item_name', '')}'",
+                before=before,
+                after=None,
+            )
+        return jsonify(response_body), status_code
 
     response_body, status_code = AdminMenuService.update_menu_item(item_id, request.get_json(silent=True) or {})
     if status_code < 400:

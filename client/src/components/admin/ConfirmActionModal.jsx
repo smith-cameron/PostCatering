@@ -5,6 +5,7 @@ const ConfirmActionModal = ({
   title = "Confirm change",
   body = "Are you sure you want to apply this change?",
   confirmLabel = "Confirm",
+  confirmVariant = "secondary",
   onCancel,
   onConfirm,
   busy = false,
@@ -18,7 +19,11 @@ const ConfirmActionModal = ({
       <Button variant="outline-secondary" onClick={onCancel} disabled={busy}>
         Cancel
       </Button>
-      <Button className="btn-inquiry-action" variant="secondary" onClick={onConfirm} disabled={busy}>
+      <Button
+        className={confirmVariant === "secondary" ? "btn-inquiry-action" : undefined}
+        variant={confirmVariant}
+        onClick={onConfirm}
+        disabled={busy}>
         {confirmLabel}
       </Button>
     </Modal.Footer>

@@ -321,6 +321,38 @@ class AdminMenuServiceTests(unittest.TestCase):
         _, update_payload = mock_query_db.call_args[0]
         self.assertEqual(update_payload["is_active"], 0)
 
+    @patch("flask_api.services.admin_menu_service.query_db")
+    @patch("flask_api.services.admin_menu_service.db_transaction")
+    @patch("flask_api.services.admin_menu_service.AdminMenuService._fetch_raw_item_row")
+    @patch("flask_api.services.admin_menu_service.AdminMenuService._decode_item_id")
+    def test_delete_menu_item_deletes_record_and_returns_deleted_name(
+        self,
+        mock_decode_item_id,
+        mock_fetch_raw_item_row,
+        mock_db_transaction,
+        mock_query_db,
+    ):
+        mock_decode_item_id.return_value = ("regular", 5)
+        mock_fetch_raw_item_row.return_value = {"id": 5, "item_name": "Jerk Chicken"}
+
+        context_manager = MagicMock()
+        context_manager.__enter__.return_value = "connection"
+        context_manager.__exit__.return_value = False
+        mock_db_transaction.return_value = context_manager
+
+        response, status = AdminMenuService.delete_menu_item(5)
+
+        self.assertEqual(status, 200)
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["deleted_item_id"], 5)
+        self.assertEqual(response["item_name"], "Jerk Chicken")
+        self.assertTrue(mock_query_db.called)
+        delete_sql, delete_payload = mock_query_db.call_args[0]
+        self.assertIn("DELETE FROM menu_items", delete_sql)
+        self.assertEqual(delete_payload["id"], 5)
+        self.assertEqual(mock_query_db.call_args.kwargs["connection"], "connection")
+        self.assertEqual(mock_query_db.call_args.kwargs["auto_commit"], False)
+
 
 if __name__ == "__main__":
     unittest.main()

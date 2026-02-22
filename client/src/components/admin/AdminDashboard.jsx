@@ -379,6 +379,7 @@ const AdminDashboard = () => {
     title: "",
     body: "",
     confirmLabel: "Confirm",
+    confirmVariant: "secondary",
     action: null,
     errorTarget: null,
   });
@@ -605,12 +606,12 @@ const AdminDashboard = () => {
     }
   }, [activeTab, loadReferenceData, loadMenuItems, loadMedia, loadAudit]);
 
-  const queueConfirm = (title, body, confirmLabel, action, errorTarget = null) => {
+  const queueConfirm = (title, body, confirmLabel, action, errorTarget = null, confirmVariant = "secondary") => {
     if (errorTarget) {
       setFormErrors((prev) => ({ ...prev, [errorTarget]: "" }));
     }
     setErrorMessage("");
-    setConfirmState({ show: true, title, body, confirmLabel, action, errorTarget });
+    setConfirmState({ show: true, title, body, confirmLabel, confirmVariant, action, errorTarget });
   };
 
   const runConfirmedAction = async () => {
@@ -618,7 +619,15 @@ const AdminDashboard = () => {
     setConfirmBusy(true);
     try {
       await confirmState.action();
-      setConfirmState({ show: false, title: "", body: "", confirmLabel: "Confirm", action: null, errorTarget: null });
+      setConfirmState({
+        show: false,
+        title: "",
+        body: "",
+        confirmLabel: "Confirm",
+        confirmVariant: "secondary",
+        action: null,
+        errorTarget: null,
+      });
     } catch (error) {
       const message = error.message || "Unable to apply change.";
       if (confirmState.errorTarget) {
@@ -782,6 +791,19 @@ const AdminDashboard = () => {
     });
     setItemForm(buildItemForm(response.item));
     setStatusMessage(`Saved menu item: ${response.item?.item_name || "Item"}`);
+    await Promise.all([loadMenuItems(), loadAudit()]);
+  };
+
+  const deleteItem = async () => {
+    if (!itemForm?.id) return;
+    setFormErrors((prev) => ({ ...prev, [FORM_ERROR_EDIT_ITEM]: "" }));
+
+    const response = await requestJson(`/api/admin/menu/items/${itemForm.id}`, {
+      method: "DELETE",
+    });
+    setSelectedItemId(null);
+    setItemForm(null);
+    setStatusMessage(`Deleted menu item: ${response.item_name || itemForm.item_name || "Item"}`);
     await Promise.all([loadMenuItems(), loadAudit()]);
   };
 
@@ -1283,14 +1305,30 @@ const AdminDashboard = () => {
                     </Row>
                   ) : null}
 
-                  <Button
-                    className="btn-inquiry-action mt-3"
-                    variant="secondary"
-                    onClick={() =>
-                      queueConfirm("Save menu item", "Apply item changes and assignments?", "Save", saveItem, FORM_ERROR_EDIT_ITEM)
-                    }>
-                    Save Item
-                  </Button>
+                  <div className="d-flex gap-2 mt-3">
+                    <Button
+                      className="btn-inquiry-action"
+                      variant="secondary"
+                      onClick={() =>
+                        queueConfirm("Save menu item", "Apply item changes and assignments?", "Save", saveItem, FORM_ERROR_EDIT_ITEM)
+                      }>
+                      Save Item
+                    </Button>
+                    <Button
+                      variant="danger"
+                      onClick={() =>
+                        queueConfirm(
+                          "Delete menu item",
+                          "Delete this menu item and all menu type/group associations? This action cannot be undone.",
+                          "Delete",
+                          deleteItem,
+                          FORM_ERROR_EDIT_ITEM,
+                          "danger"
+                        )
+                      }>
+                      Delete Item
+                    </Button>
+                  </div>
                 </Card.Body>
               </Card>
             ) : null}
@@ -1527,8 +1565,17 @@ const AdminDashboard = () => {
         title={confirmState.title}
         body={confirmState.body}
         confirmLabel={confirmState.confirmLabel}
+        confirmVariant={confirmState.confirmVariant}
         busy={confirmBusy}
-        onCancel={() => setConfirmState((prev) => ({ ...prev, show: false, action: null, errorTarget: null }))}
+        onCancel={() =>
+          setConfirmState((prev) => ({
+            ...prev,
+            show: false,
+            confirmVariant: "secondary",
+            action: null,
+            errorTarget: null,
+          }))
+        }
         onConfirm={runConfirmedAction}
       />
     </main>

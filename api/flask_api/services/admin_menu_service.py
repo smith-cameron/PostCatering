@@ -979,6 +979,35 @@ class AdminMenuService:
         return {"item": updated}, 200
 
     @classmethod
+    def delete_menu_item(cls, item_id):
+        menu_type, row_id = cls._decode_item_id(item_id)
+        if not menu_type or not row_id:
+            return {"error": "Invalid menu item id."}, 400
+
+        with db_transaction() as connection:
+            raw_row = cls._fetch_raw_item_row(row_id=row_id, connection=connection)
+            if not raw_row:
+                return {"error": "Menu item not found."}, 404
+
+            query_db(
+                """
+        DELETE FROM menu_items
+        WHERE id = %(id)s
+        LIMIT 1;
+        """,
+                {"id": row_id},
+                fetch="none",
+                connection=connection,
+                auto_commit=False,
+            )
+
+        return {
+            "ok": True,
+            "deleted_item_id": item_id,
+            "item_name": str(raw_row.get("item_name") or "").strip(),
+        }, 200
+
+    @classmethod
     def list_sections(cls, search="", catalog_key="", is_active=None, limit=250):
         return []
 

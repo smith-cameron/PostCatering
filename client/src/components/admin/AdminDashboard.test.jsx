@@ -305,7 +305,7 @@ describe("AdminDashboard", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText("Menu Items");
+    await screen.findByText("Jerk Chicken");
     fireEvent.click(screen.getByText("Jerk Chicken"));
     await screen.findByText("Edit Menu Item");
 
@@ -448,7 +448,7 @@ describe("AdminDashboard", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText("Menu Items");
+    await screen.findByText("Jerk Chicken");
     fireEvent.click(screen.getByText("Jerk Chicken"));
     await screen.findByText("Edit Menu Item");
 
@@ -473,6 +473,104 @@ describe("AdminDashboard", () => {
     await waitFor(() => {
       expect(screen.getByText("None")).toBeInTheDocument();
     });
+  });
+
+  it("deletes menu item from the edit form after confirmation", async () => {
+    let itemDeleted = false;
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(
+          buildResponse({
+            groups: [{ id: 10, key: "signature_proteins", name: "Proteins", sort_order: 1, is_active: true }],
+          })
+        );
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(
+          buildResponse({
+            groups: [{ id: 11, key: "entrees", name: "Formal Entrees", sort_order: 1, is_active: true }],
+          })
+        );
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        if (itemDeleted) {
+          return Promise.resolve(buildResponse({ items: [] }));
+        }
+        return Promise.resolve(
+          buildResponse({
+            items: [
+              {
+                id: 5,
+                item_name: "Jerk Chicken",
+                item_key: "jerk_chicken",
+                menu_type: "regular",
+                is_active: true,
+                group_title: "Proteins",
+              },
+            ],
+          })
+        );
+      }
+      if (url === "/api/admin/menu/items/5" && (!options?.method || options.method === "GET")) {
+        return Promise.resolve(
+          buildResponse({
+            item: {
+              id: 5,
+              menu_type: "regular",
+              menu_types: ["regular"],
+              item_name: "Jerk Chicken",
+              item_key: "jerk_chicken",
+              tray_price_half: "75",
+              tray_price_full: "140",
+              is_active: true,
+              option_group_assignments: [{ menu_type: "regular", group_id: 10, display_order: 1, is_active: true }],
+              section_row_assignments: [],
+              tier_bullet_assignments: [],
+            },
+          })
+        );
+      }
+      if (url === "/api/admin/menu/items/5" && options?.method === "DELETE") {
+        itemDeleted = true;
+        return Promise.resolve(buildResponse({ ok: true, deleted_item_id: 5, item_name: "Jerk Chicken" }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Menu Items");
+    fireEvent.click(screen.getByText("Jerk Chicken"));
+    await screen.findByText("Edit Menu Item");
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Item" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      const deleteCall = globalThis.fetch.mock.calls.find(
+        (call) => call[0] === "/api/admin/menu/items/5" && call[1]?.method === "DELETE"
+      );
+      expect(deleteCall).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Edit Menu Item")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Deleted menu item: Jerk Chicken")).toBeInTheDocument();
   });
 
   it("stacks grouped menu type/group/status rows and applies local menu item filters", async () => {
