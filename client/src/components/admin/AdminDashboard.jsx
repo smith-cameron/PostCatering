@@ -27,6 +27,14 @@ const EMPTY_CREATE_FIELD_ERRORS = {
   tray_price_half: "",
   tray_price_full: "",
 };
+const INITIAL_NEW_ITEM_FORM = {
+  item_name: "",
+  is_active: true,
+  menu_type: "",
+  group_id: "",
+  tray_price_half: "",
+  tray_price_full: "",
+};
 
 const mapCreateValidationErrors = (message) => {
   const normalized = String(message || "").toLowerCase();
@@ -422,14 +430,7 @@ const AdminDashboard = () => {
   const [editCardPlacement, setEditCardPlacement] = useState("below_table");
   const [shouldScrollToEditCard, setShouldScrollToEditCard] = useState(false);
   const [showCreatedItemHighlight, setShowCreatedItemHighlight] = useState(false);
-  const [newItemForm, setNewItemForm] = useState({
-    item_name: "",
-    is_active: true,
-    menu_type: "",
-    group_id: "",
-    tray_price_half: "",
-    tray_price_full: "",
-  });
+  const [newItemForm, setNewItemForm] = useState(INITIAL_NEW_ITEM_FORM);
   const [createFieldErrors, setCreateFieldErrors] = useState(EMPTY_CREATE_FIELD_ERRORS);
   const [createValidationLocked, setCreateValidationLocked] = useState(false);
 
@@ -695,6 +696,13 @@ const AdminDashboard = () => {
     setConfirmState({ show: true, title, body, confirmLabel, confirmVariant, validationMessage: "", action, errorTarget });
   };
 
+  const resetCreateItemForm = useCallback(() => {
+    setNewItemForm(INITIAL_NEW_ITEM_FORM);
+    setCreateFieldErrors(EMPTY_CREATE_FIELD_ERRORS);
+    setCreateValidationLocked(false);
+    setFormErrors((prev) => ({ ...prev, [FORM_ERROR_CREATE_ITEM]: "" }));
+  }, []);
+
   const runConfirmedAction = async () => {
     if (!confirmState.action) return;
     setConfirmBusy(true);
@@ -808,16 +816,7 @@ const AdminDashboard = () => {
         tier_bullet_assignments: tierBulletAssignments,
       }),
     });
-    setNewItemForm({
-      item_name: "",
-      is_active: true,
-      menu_type: "",
-      group_id: "",
-      tray_price_half: "",
-      tray_price_full: "",
-    });
-    setCreateFieldErrors(EMPTY_CREATE_FIELD_ERRORS);
-    setCreateValidationLocked(false);
+    resetCreateItemForm();
     await Promise.all([loadMenuItems(), loadAudit()]);
     if (payload.item?.id) {
       const nextForm = buildItemForm(payload.item);
@@ -1500,15 +1499,20 @@ const AdminDashboard = () => {
                     </Col>
                   </Row>
                 ) : null}
-                <Button
-                  className="btn-inquiry-action"
-                  variant="secondary"
-                  disabled={createValidationLocked}
-                  onClick={() =>
-                    queueConfirm("Create menu item", buildCreateConfirmBody(), "Create", createItem, FORM_ERROR_CREATE_ITEM)
-                  }>
-                  Create Item
-                </Button>
+	                <div className="d-flex justify-content-between align-items-end mt-2">
+	                  <Button
+	                    className="btn-inquiry-action"
+	                    variant="secondary"
+	                    disabled={createValidationLocked}
+	                    onClick={() =>
+	                      queueConfirm("Create menu item", buildCreateConfirmBody(), "Create", createItem, FORM_ERROR_CREATE_ITEM)
+	                    }>
+	                    Create Item
+	                  </Button>
+	                  <Button variant="outline-secondary" onClick={resetCreateItemForm}>
+	                    Clear
+	                  </Button>
+	                </div>
               </Card.Body>
 	            </Card>
 

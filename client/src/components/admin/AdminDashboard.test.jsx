@@ -367,6 +367,84 @@ describe("AdminDashboard", () => {
     expect(postCall).toBeFalsy();
   });
 
+  it("clears create form values and resets create validation state", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(
+          buildResponse({
+            groups: [{ id: 10, key: "signature_proteins", name: "Proteins", sort_order: 1, is_active: true }],
+          })
+        );
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(
+          buildResponse({
+            groups: [{ id: 11, key: "entrees", name: "Formal Entrees", sort_order: 1, is_active: true }],
+          })
+        );
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Create Menu Item");
+    const createCard = screen.getByText("Create Menu Item").closest(".card");
+    expect(createCard).toBeTruthy();
+    const activeToggle = within(createCard).getByRole("checkbox");
+    const itemNameInput = screen.getByLabelText("Item Name");
+    const menuTypeSelect = screen.getByLabelText("Menu Type");
+    const createButton = screen.getByRole("button", { name: "Create Item" });
+    const clearButton = screen.getByRole("button", { name: "Clear" });
+
+    fireEvent.click(activeToggle);
+    fireEvent.change(itemNameInput, { target: { value: "Validation Item" } });
+    fireEvent.change(menuTypeSelect, { target: { value: "regular" } });
+    fireEvent.change(screen.getByLabelText("Half Tray Price"), { target: { value: "7500" } });
+    fireEvent.change(screen.getByLabelText("Full Tray Price"), { target: { value: "14000" } });
+
+    fireEvent.click(createButton);
+    fireEvent.click(await screen.findByRole("button", { name: "Create" }));
+    await waitFor(() => {
+      expect(within(screen.getByRole("dialog")).getByRole("alert")).toHaveTextContent("Please select a group");
+      expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Create" })).toBeDisabled();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Fix" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(createButton).toBeDisabled();
+
+    fireEvent.click(clearButton);
+
+    expect(within(createCard).getByRole("checkbox")).toBeChecked();
+    expect(screen.getByLabelText("Item Name")).toHaveValue("");
+    expect(screen.getByLabelText("Menu Type")).toHaveValue("");
+    expect(screen.queryByLabelText("Group")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Half Tray Price")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Full Tray Price")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create Item" })).not.toBeDisabled();
+  });
+
   it("maps create API validation message to item name invalid border until value changes", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
       if (url === "/api/admin/auth/me") {
