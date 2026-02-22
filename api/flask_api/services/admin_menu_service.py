@@ -110,6 +110,32 @@ class AdminMenuService:
             suffix += 1
         return candidate[:128]
 
+    @classmethod
+    def _has_item_name_conflict(cls, items_table, item_name, connection, exclude_row_id=None):
+        normalized_name = str(item_name or "").strip()
+        if not normalized_name:
+            return False
+
+        payload = {"item_name": normalized_name}
+        where_clause = "LOWER(TRIM(name)) = LOWER(TRIM(%(item_name)s))"
+        if exclude_row_id:
+            where_clause += " AND id <> %(exclude_row_id)s"
+            payload["exclude_row_id"] = exclude_row_id
+
+        existing = query_db(
+            f"""
+      SELECT id
+      FROM {items_table}
+      WHERE {where_clause}
+      LIMIT 1;
+      """,
+            payload,
+            fetch="one",
+            connection=connection,
+            auto_commit=False,
+        )
+        return bool(existing)
+
     @staticmethod
     def _to_price_decimal(value, default=Decimal("0.00")):
         text = str(value or "").strip()
@@ -398,10 +424,13 @@ class AdminMenuService:
             if not group_row or not bool(group_row.get("is_active", 0)):
                 return {"error": "A valid active group is required."}, 400
 
+            if cls._has_item_name_conflict(items_table, item_name, connection):
+                return {"error": "Item name must be unique within this menu type."}, 409
+
             is_active = cls._to_bool(body.get("is_active"), default=True)
             item_key = cls._generate_unique_item_key(
                 item_name=item_name,
-                provided_key=body.get("item_key"),
+                provided_key=None,
                 items_table=items_table,
                 connection=connection,
             )
@@ -479,8 +508,10 @@ class AdminMenuService:
             if not group_row or not bool(group_row.get("is_active", 0)):
                 return {"error": "A valid active group is required."}, 400
 
-            requested_key = body.get("item_key") if "item_key" in body else current["item_key"]
-            next_key = cls._slugify_item_key(requested_key) or cls._slugify_item_key(next_name) or "item"
+            if cls._has_item_name_conflict(items_table, next_name, connection, exclude_row_id=row_id):
+                return {"error": "Item name must be unique within this menu type."}, 409
+
+            next_key = cls._slugify_item_key(next_name) or "item"
             collision = query_db(
                 f"SELECT id FROM {items_table} WHERE `key` = %(item_key)s AND id <> %(id)s LIMIT 1;",
                 {"item_key": next_key, "id": row_id},

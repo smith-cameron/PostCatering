@@ -250,8 +250,124 @@ button:hover {
   border-radius: 0.75rem;
 }
 
+.admin-dashboard {
+  --admin-bg: #f4f7fb;
+  --admin-surface: #ffffff;
+  --admin-border: #bcc8d8;
+  --admin-text: #1a2433;
+  --admin-muted: #5f6e81;
+  min-height: 100vh;
+  background: var(--admin-bg);
+  color: var(--admin-text);
+}
+
+.admin-dashboard.admin-dashboard-dark {
+  --admin-bg: #0f1622;
+  --admin-surface: #1a2432;
+  --admin-border: #3d4b61;
+  --admin-text: #e6edf7;
+  --admin-muted: #b5c0d4;
+}
+
+.admin-dashboard .text-secondary {
+  color: var(--admin-muted) !important;
+}
+
 .admin-dashboard .card {
-  border: 1px solid var(--border-color);
+  border: 1.5px solid var(--admin-border);
+  background: var(--admin-surface);
+  --bs-card-color: var(--admin-text);
+  --bs-card-cap-color: var(--admin-text);
+}
+
+.admin-dashboard .card .h6,
+.admin-dashboard .card h3,
+.admin-dashboard .card h4,
+.admin-dashboard .card .card-header {
+  color: var(--admin-text);
+  font-weight: 700;
+}
+
+.admin-dashboard .card .card-header {
+  background: var(--admin-surface);
+  border-bottom: 1.5px solid var(--admin-border);
+}
+
+.admin-dashboard .form-label,
+.admin-dashboard .form-check-label {
+  color: var(--admin-text);
+}
+
+.admin-dashboard .form-control,
+.admin-dashboard .form-select,
+.admin-dashboard .btn,
+.admin-dashboard .nav-tabs .nav-link,
+.admin-dashboard .table {
+  border-width: 1.5px;
+}
+
+.admin-dashboard .nav-tabs {
+  border-bottom: 1.5px solid var(--admin-border);
+}
+
+.admin-dashboard .nav-tabs .nav-link {
+  color: var(--admin-text);
+  font-weight: 600;
+}
+
+.admin-dashboard .nav-tabs .nav-link.active {
+  background: var(--admin-surface);
+  color: var(--admin-text);
+  font-weight: 700;
+  border-color: var(--admin-border) var(--admin-border) var(--admin-surface);
+  border-bottom-color: var(--admin-surface);
+  margin-bottom: -1.5px;
+  position: relative;
+  z-index: 5;
+}
+
+.admin-dashboard .table {
+  --bs-table-bg: var(--admin-surface);
+  --bs-table-color: var(--admin-text);
+  --bs-table-border-color: var(--admin-border);
+}
+
+.admin-dashboard .table > :not(caption) > * > * {
+  border-color: var(--admin-border);
+  border-bottom-width: 1.5px;
+}
+
+.admin-group-count-col,
+.admin-group-count-cell {
+  width: 72px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.admin-group-line + .admin-group-line {
+  margin-top: 0.2rem;
+}
+
+.admin-status-dot {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  border: 1.5px solid rgba(0, 0, 0, 0.22);
+  vertical-align: middle;
+}
+
+.admin-status-dot-active {
+  background: #2f9d56;
+}
+
+.admin-status-dot-inactive {
+  background: #c9464f;
+}
+
+.admin-theme-toggle .form-check-label {
+  font-weight: 700;
+  color: var(--admin-text);
 }
 
 .admin-scroll-card {
@@ -259,17 +375,121 @@ button:hover {
   overflow: auto;
 }
 
+.admin-scroll-card .admin-sticky-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+.admin-scroll-card table thead th,
+.admin-sticky-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: var(--admin-surface);
+  box-shadow: 0 2px 0 0 var(--admin-border);
+}
+
 .admin-assignment-panel {
   margin-top: 1rem;
   padding-top: 0.75rem;
-  border-top: 1px solid var(--border-color);
+  border-top: 1.5px solid var(--admin-border);
 }
 
 .admin-assignment-row {
   padding: 0.5rem;
-  border: 1px solid var(--border-color);
+  border: 1.5px solid var(--admin-border);
   border-radius: 0.5rem;
-  background: #f8f9fa;
+  background: #f6f8fb;
+}
+
+.admin-dashboard.admin-dashboard-dark .form-control,
+.admin-dashboard.admin-dashboard-dark .form-select,
+.admin-dashboard.admin-dashboard-dark .btn-outline-secondary,
+.admin-dashboard.admin-dashboard-dark .btn-outline-danger {
+  background-color: #121a27;
+  color: var(--admin-text);
+  border-color: var(--admin-border);
+}
+
+.admin-dashboard.admin-dashboard-dark .form-control::placeholder {
+  color: #95a4bc;
+}
+
+.admin-dashboard.admin-dashboard-dark .form-select option {
+  background-color: #121a27;
+  color: var(--admin-text);
+}
+
+.admin-dashboard.admin-dashboard-dark .nav-tabs .nav-link {
+  color: var(--admin-text);
+  border-color: var(--admin-border);
+}
+
+.admin-dashboard.admin-dashboard-dark .nav-tabs .nav-link.active {
+  background: var(--admin-surface);
+  color: var(--admin-text);
+  border-bottom-color: var(--admin-surface) !important;
+}
+
+.admin-dashboard.admin-dashboard-dark .table {
+  color: var(--admin-text);
+  --bs-table-bg: #182233;
+  --bs-table-color: var(--admin-text);
+  --bs-table-border-color: var(--admin-border);
+  --bs-table-hover-bg: rgba(255, 255, 255, 0.08);
+  --bs-table-striped-bg: rgba(255, 255, 255, 0.05);
+}
+
+.admin-dashboard.admin-dashboard-dark .table-striped > tbody > tr:nth-of-type(odd) > * {
+  --bs-table-accent-bg: rgba(255, 255, 255, 0.04);
+  color: var(--admin-text);
+}
+
+.admin-dashboard.admin-dashboard-dark .admin-status-dot {
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.admin-dashboard.admin-dashboard-dark .btn-outline-secondary {
+  background-color: transparent;
+  color: #dce8f9;
+  border-color: #6e84a3;
+}
+
+.admin-dashboard.admin-dashboard-dark .btn-outline-secondary:hover,
+.admin-dashboard.admin-dashboard-dark .btn-outline-secondary:focus {
+  background-color: #29405e;
+  color: #f3f7ff;
+  border-color: #7f97b8;
+}
+
+.admin-dashboard.admin-dashboard-dark .btn-outline-danger {
+  background-color: transparent;
+  color: #ffadb4;
+  border-color: #cc6f79;
+}
+
+.admin-dashboard.admin-dashboard-dark .btn-outline-danger:hover,
+.admin-dashboard.admin-dashboard-dark .btn-outline-danger:focus {
+  background-color: rgba(204, 111, 121, 0.22);
+  color: #ffd8dd;
+  border-color: #e18992;
+}
+
+.admin-dashboard.admin-dashboard-dark .alert-success {
+  background-color: #173424;
+  border-color: #2d6a48;
+  color: #d3f4df;
+}
+
+.admin-dashboard.admin-dashboard-dark .alert-danger {
+  background-color: #3b1f29;
+  border-color: #81455b;
+  color: #ffdbe5;
+}
+
+.admin-dashboard.admin-dashboard-dark .admin-assignment-row {
+  background: #233044;
 }
 
 /* =========================

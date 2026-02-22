@@ -8,6 +8,16 @@ const TAB_MENU = "menu";
 const TAB_MEDIA = "media";
 const TAB_AUDIT = "audit";
 const FORMAL_ID_OFFSET = 1000000;
+const FORM_ERROR_CREATE_ITEM = "create_item";
+const FORM_ERROR_EDIT_ITEM = "edit_item";
+const FORM_ERROR_UPLOAD_MEDIA = "upload_media";
+const FORM_ERROR_EDIT_MEDIA = "edit_media";
+const EMPTY_FORM_ERRORS = {
+  [FORM_ERROR_CREATE_ITEM]: "",
+  [FORM_ERROR_EDIT_ITEM]: "",
+  [FORM_ERROR_UPLOAD_MEDIA]: "",
+  [FORM_ERROR_EDIT_MEDIA]: "",
+};
 
 const toId = (value) => {
   const parsed = Number.parseInt(String(value ?? "").trim(), 10);
@@ -25,27 +35,9 @@ const isFormalGroup = (group) => {
   return marker.includes("formal");
 };
 
-const toNonNegativeInt = (value) => {
-  const parsed = Number.parseInt(String(value ?? "").trim(), 10);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
-};
-
-const normalizeConstraintRows = (rows) =>
-  (rows || [])
-    .map((row) => {
-      const constraintKey = String(row?.constraint_key ?? "").trim();
-      const minSelect = toNonNegativeInt(row?.min_select);
-      const maxSelectRaw = toNonNegativeInt(row?.max_select);
-      return {
-        constraint_key: constraintKey,
-        min_select: minSelect,
-        max_select: maxSelectRaw < minSelect ? minSelect : maxSelectRaw,
-      };
-    })
-    .filter((row) => row.constraint_key);
-
 const buildItemForm = (item) => ({
   id: item?.id ?? null,
+  menu_type: String(item?.menu_type || "").toLowerCase(),
   item_name: item?.item_name ?? "",
   item_key: item?.item_key ?? "",
   is_active: Boolean(item?.is_active),
@@ -74,42 +66,6 @@ const buildItemForm = (item) => ({
   ),
 });
 
-const buildSectionForm = (section) => ({
-  id: section?.id ?? null,
-  title: section?.title ?? "",
-  description: section?.description ?? "",
-  price: section?.price ?? "",
-  section_type: section?.section_type ?? "",
-  category: section?.category ?? "",
-  course_type: section?.course_type ?? "",
-  display_order: section?.display_order ?? 1,
-  is_active: Boolean(section?.is_active),
-  include_group_ids: (section?.include_groups || []).filter((row) => row.is_active).map((row) => row.group_id),
-  constraints: (section?.constraints || [])
-    .filter((row) => row.is_active)
-    .map((row) => ({
-      constraint_key: row.constraint_key ?? "",
-      min_select: row.min_select ?? 0,
-      max_select: row.max_select ?? 0,
-      is_active: row?.is_active !== false,
-    })),
-  tiers: (section?.tiers || []).map((tier) => ({
-      id: tier.id,
-      tier_title: tier.tier_title ?? "",
-      price: tier.price ?? "",
-      display_order: tier.display_order ?? 1,
-      is_active: Boolean(tier.is_active),
-      constraints: (tier.constraints || [])
-        .filter((row) => row.is_active)
-        .map((row) => ({
-          constraint_key: row.constraint_key ?? "",
-          min_select: row.min_select ?? 0,
-          max_select: row.max_select ?? 0,
-          is_active: row?.is_active !== false,
-        })),
-    })),
-});
-
 const buildMediaForm = (item) => ({
   id: item?.id ?? null,
   title: item?.title ?? "",
@@ -120,10 +76,6 @@ const buildMediaForm = (item) => ({
   is_active: Boolean(item?.is_active),
 });
 
-const emptyOptionGroupRow = (displayOrder) => ({ group_id: "", display_order: displayOrder, is_active: true });
-const emptySectionRow = (displayOrder) => ({ section_id: "", value_1: "", value_2: "", display_order: displayOrder, is_active: true });
-const emptyTierRow = (displayOrder) => ({ tier_id: "", display_order: displayOrder, is_active: true });
-const emptyConstraintRow = () => ({ constraint_key: "", min_select: 0, max_select: 0, is_active: true });
 const toOptionGroupFromCatalog = (group, menuType) => {
   const sourceGroupId = toId(group?.id);
   if (!sourceGroupId) return null;
@@ -143,6 +95,24 @@ const toOptionGroupFromCatalog = (group, menuType) => {
   };
 };
 
+const resolveGroupNames = (item) => {
+  if (Array.isArray(item?.group_titles) && item.group_titles.length) {
+    return item.group_titles.map((value) => String(value || "").trim()).filter(Boolean);
+  }
+  if (Array.isArray(item?.groups) && item.groups.length) {
+    return item.groups
+      .map((group) => {
+        if (typeof group === "string") return group.trim();
+        return String(group?.group_title || group?.title || group?.group_key || "").trim();
+      })
+      .filter(Boolean);
+  }
+  const single = String(item?.group_title || item?.group_key || "").trim();
+  return single ? [single] : [];
+};
+
+const normalizeMenuItemName = (value) => String(value || "").trim().toLowerCase();
+
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const [sessionLoading, setSessionLoading] = useState(true);
@@ -152,6 +122,7 @@ const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState(TAB_MENU);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [formErrors, setFormErrors] = useState(EMPTY_FORM_ERRORS);
   const [busy, setBusy] = useState(false);
 
   const [referenceData, setReferenceData] = useState({ catalogs: [], option_groups: [], sections: [], tiers: [] });
@@ -168,11 +139,6 @@ const AdminDashboard = () => {
     tray_price_full: "",
   });
 
-  const [sectionFilters, setSectionFilters] = useState({ search: "", catalog_key: "", is_active: "all" });
-  const [sections, setSections] = useState([]);
-  const [selectedSectionId, setSelectedSectionId] = useState(null);
-  const [sectionForm, setSectionForm] = useState(null);
-
   const [mediaFilters, setMediaFilters] = useState({ search: "", media_type: "", is_active: "all", is_slide: "all" });
   const [mediaItems, setMediaItems] = useState([]);
   const [selectedMediaId, setSelectedMediaId] = useState(null);
@@ -182,10 +148,20 @@ const AdminDashboard = () => {
   const [hasLoadedAuditTab, setHasLoadedAuditTab] = useState(false);
 
   const [auditEntries, setAuditEntries] = useState([]);
-  const [confirmState, setConfirmState] = useState({ show: false, title: "", body: "", confirmLabel: "Confirm", action: null });
+  const [confirmState, setConfirmState] = useState({
+    show: false,
+    title: "",
+    body: "",
+    confirmLabel: "Confirm",
+    action: null,
+    errorTarget: null,
+  });
   const [confirmBusy, setConfirmBusy] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("admin_dashboard_theme") === "dark";
+  });
 
-  const catalogOptions = useMemo(() => referenceData.catalogs || [], [referenceData.catalogs]);
   const activeGroupOptions = useMemo(
     () =>
       (referenceData.option_groups || [])
@@ -203,6 +179,16 @@ const AdminDashboard = () => {
     const regularGroups = activeGroupOptions.filter((group) => !isFormalGroup(group));
     return regularGroups.length ? regularGroups : activeGroupOptions;
   }, [activeGroupOptions, selectedCreateMenuType]);
+  const selectedEditMenuType = String(itemForm?.menu_type || "").toLowerCase();
+  const applicableEditGroupOptions = useMemo(() => {
+    if (!selectedEditMenuType) return activeGroupOptions;
+    const formalGroups = activeGroupOptions.filter((group) => isFormalGroup(group));
+    if (selectedEditMenuType === "formal") {
+      return formalGroups.length ? formalGroups : activeGroupOptions;
+    }
+    const regularGroups = activeGroupOptions.filter((group) => !isFormalGroup(group));
+    return regularGroups.length ? regularGroups : activeGroupOptions;
+  }, [activeGroupOptions, selectedEditMenuType]);
 
   const loadReferenceData = useCallback(async () => {
     const [generalPayload, formalPayload] = await Promise.all([
@@ -233,12 +219,6 @@ const AdminDashboard = () => {
     setMenuItems(payload.items || []);
   }, [itemFilters]);
 
-  const loadSections = useCallback(async () => {
-    setSections([]);
-    setSelectedSectionId(null);
-    setSectionForm(null);
-  }, []);
-
   const loadMedia = useCallback(async () => {
     const params = new URLSearchParams();
     if (mediaFilters.search.trim()) params.set("search", mediaFilters.search.trim());
@@ -260,10 +240,29 @@ const AdminDashboard = () => {
     setItemForm(buildItemForm(payload.item));
   }, []);
 
-  const loadSectionDetail = useCallback(async (sectionId) => {
-    const payload = await requestJson(`/api/admin/menu/sections/${sectionId}`);
-    setSectionForm(buildSectionForm(payload.section));
-  }, []);
+  const validateCreateItemForm = useCallback(() => {
+    const itemName = String(newItemForm.item_name || "").trim();
+    if (!itemName) {
+      setFormErrors((prev) => ({ ...prev, [FORM_ERROR_CREATE_ITEM]: "Item name is required." }));
+      return false;
+    }
+    return true;
+  }, [newItemForm.item_name]);
+
+  const hasMenuItemNameConflict = useCallback(
+    (itemName, menuType, excludeId = null) => {
+      const normalizedName = normalizeMenuItemName(itemName);
+      const normalizedType = String(menuType || "").trim().toLowerCase();
+      if (!normalizedName || !normalizedType) return false;
+      return menuItems.some((item) => {
+        if (excludeId !== null && Number(item?.id) === Number(excludeId)) return false;
+        const currentType = String(item?.menu_type || "").trim().toLowerCase();
+        const currentName = normalizeMenuItemName(item?.item_name);
+        return currentType === normalizedType && currentName === normalizedName;
+      });
+    },
+    [menuItems]
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -332,6 +331,11 @@ const AdminDashboard = () => {
     };
   }, [activeTab, adminUser, hasLoadedAuditTab, hasLoadedMediaTab, loadAudit, loadMedia]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("admin_dashboard_theme", isDarkMode ? "dark" : "light");
+  }, [isDarkMode]);
+
   const refreshActiveTab = useCallback(async () => {
     try {
       setBusy(true);
@@ -349,8 +353,12 @@ const AdminDashboard = () => {
     }
   }, [activeTab, loadReferenceData, loadMenuItems, loadMedia, loadAudit]);
 
-  const queueConfirm = (title, body, confirmLabel, action) => {
-    setConfirmState({ show: true, title, body, confirmLabel, action });
+  const queueConfirm = (title, body, confirmLabel, action, errorTarget = null) => {
+    if (errorTarget) {
+      setFormErrors((prev) => ({ ...prev, [errorTarget]: "" }));
+    }
+    setErrorMessage("");
+    setConfirmState({ show: true, title, body, confirmLabel, action, errorTarget });
   };
 
   const runConfirmedAction = async () => {
@@ -358,19 +366,28 @@ const AdminDashboard = () => {
     setConfirmBusy(true);
     try {
       await confirmState.action();
-      setConfirmState({ show: false, title: "", body: "", confirmLabel: "Confirm", action: null });
+      setConfirmState({ show: false, title: "", body: "", confirmLabel: "Confirm", action: null, errorTarget: null });
     } catch (error) {
-      setErrorMessage(error.message || "Unable to apply change.");
+      const message = error.message || "Unable to apply change.";
+      if (confirmState.errorTarget) {
+        setFormErrors((prev) => ({ ...prev, [confirmState.errorTarget]: message }));
+      } else {
+        setErrorMessage(message);
+      }
     } finally {
       setConfirmBusy(false);
     }
   };
 
   const createItem = async () => {
+    setFormErrors((prev) => ({ ...prev, [FORM_ERROR_CREATE_ITEM]: "" }));
     const itemName = String(newItemForm.item_name || "").trim();
     if (!itemName) throw new Error("Item name is required.");
     const menuType = String(newItemForm.menu_type || "").toLowerCase();
     if (!["regular", "formal"].includes(menuType)) throw new Error("Please select a menu type.");
+    if (hasMenuItemNameConflict(itemName, menuType)) {
+      throw new Error("Item name must be unique within this menu type.");
+    }
 
     const groupId = Number(newItemForm.group_id);
     if (!Number.isFinite(groupId) || groupId <= 0) throw new Error("Please select a group.");
@@ -452,26 +469,20 @@ const AdminDashboard = () => {
 
   const saveItem = async () => {
     if (!itemForm?.id) return;
+    setFormErrors((prev) => ({ ...prev, [FORM_ERROR_EDIT_ITEM]: "" }));
+    const itemName = String(itemForm.item_name || "").trim();
+    if (!itemName) throw new Error("Item name is required.");
+    const menuType = String(itemForm.menu_type || "").toLowerCase();
+    if (hasMenuItemNameConflict(itemName, menuType, itemForm.id)) {
+      throw new Error("Item name must be unique within this menu type.");
+    }
+    const selectedGroupId = toId(itemForm.option_group_assignments?.[0]?.group_id);
+    if (!selectedGroupId) throw new Error("Please select a group.");
     const payload = {
       id: itemForm.id,
-      item_name: itemForm.item_name,
-      item_key: itemForm.item_key,
+      item_name: itemName,
       is_active: itemForm.is_active,
-      option_group_assignments: withDisplayOrder(itemForm.option_group_assignments || [])
-        .filter((row) => Number(row.group_id) > 0)
-        .map((row) => ({ group_id: Number(row.group_id), display_order: row.display_order, is_active: true })),
-      section_row_assignments: withDisplayOrder(itemForm.section_row_assignments || [])
-        .filter((row) => Number(row.section_id) > 0)
-        .map((row) => ({
-          section_id: Number(row.section_id),
-          value_1: row.value_1,
-          value_2: row.value_2,
-          display_order: row.display_order,
-          is_active: true,
-        })),
-      tier_bullet_assignments: withDisplayOrder(itemForm.tier_bullet_assignments || [])
-        .filter((row) => Number(row.tier_id) > 0)
-        .map((row) => ({ tier_id: Number(row.tier_id), display_order: row.display_order, is_active: true })),
+      option_group_assignments: [{ group_id: Number(selectedGroupId), display_order: 1, is_active: true }],
     };
 
     const response = await requestJson(`/api/admin/menu/items/${itemForm.id}`, {
@@ -483,37 +494,8 @@ const AdminDashboard = () => {
     await Promise.all([loadMenuItems(), loadAudit()]);
   };
 
-  const saveSection = async () => {
-    if (!sectionForm?.id) return;
-    const includeGroupIds = (sectionForm.include_group_ids || [])
-      .map((value) => Number(value))
-      .filter((value) => Number.isFinite(value) && value > 0);
-    const constraints = normalizeConstraintRows(sectionForm.constraints);
-    const tiers = (sectionForm.tiers || [])
-      .filter((tier) => Number(tier?.id) > 0)
-      .map((tier, index) => ({
-        id: Number(tier.id),
-        tier_title: String(tier.tier_title || "").trim(),
-        price: String(tier.price || "").trim(),
-        display_order: Number(tier.display_order) > 0 ? Number(tier.display_order) : index + 1,
-        is_active: Boolean(tier.is_active),
-        constraints: normalizeConstraintRows(tier.constraints),
-      }));
-    const payload = await requestJson(`/api/admin/menu/sections/${sectionForm.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        ...sectionForm,
-        include_group_ids: includeGroupIds,
-        constraints,
-        tiers,
-      }),
-    });
-    setSectionForm(buildSectionForm(payload.section));
-    setStatusMessage(`Saved section: ${payload.section?.title || "Section"}`);
-    await Promise.all([loadSections(), loadReferenceData(), loadAudit()]);
-  };
-
   const uploadMedia = async () => {
+    setFormErrors((prev) => ({ ...prev, [FORM_ERROR_UPLOAD_MEDIA]: "" }));
     if (!uploadForm.file) throw new Error("Choose a file before uploading.");
     const formData = new FormData();
     formData.set("file", uploadForm.file);
@@ -533,6 +515,7 @@ const AdminDashboard = () => {
 
   const saveMedia = async () => {
     if (!mediaForm?.id) return;
+    setFormErrors((prev) => ({ ...prev, [FORM_ERROR_EDIT_MEDIA]: "" }));
     const payload = await requestJson(`/api/admin/media/${mediaForm.id}`, {
       method: "PATCH",
       body: JSON.stringify(mediaForm),
@@ -545,14 +528,6 @@ const AdminDashboard = () => {
   const logout = async () => {
     await requestJson("/api/admin/auth/logout", { method: "POST" });
     navigate("/admin/login", { replace: true });
-  };
-
-  const updateAssignmentList = (key, updater) => {
-    setItemForm((prev) => {
-      if (!prev) return prev;
-      const nextRows = updater(prev[key] || []);
-      return { ...prev, [key]: withDisplayOrder(nextRows) };
-    });
   };
 
   if (sessionLoading) {
@@ -568,7 +543,7 @@ const AdminDashboard = () => {
   }
 
   return (
-    <main className="container-fluid py-4 admin-dashboard">
+    <main className={`container-fluid py-4 admin-dashboard ${isDarkMode ? "admin-dashboard-dark" : ""}`}>
       <header className="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
         <div>
           <h2 className="h4 mb-1">Admin Dashboard</h2>
@@ -576,7 +551,15 @@ const AdminDashboard = () => {
             Signed in as <strong>{adminUser?.display_name || adminUser?.username}</strong>
           </p>
         </div>
-        <div className="d-flex gap-2">
+        <div className="d-flex gap-2 align-items-center flex-wrap">
+          <Form.Check
+            className="admin-theme-toggle"
+            type="switch"
+            id="admin-dark-mode-toggle"
+            label="Dark Mode"
+            checked={isDarkMode}
+            onChange={(event) => setIsDarkMode(event.target.checked)}
+          />
           <Button variant="outline-secondary" onClick={refreshActiveTab} disabled={busy}>
             Refresh
           </Button>
@@ -607,12 +590,26 @@ const AdminDashboard = () => {
             <Card className="mb-3">
               <Card.Body>
                 <h3 className="h6">Create Menu Item</h3>
+                {formErrors[FORM_ERROR_CREATE_ITEM] ? <Alert variant="danger">{formErrors[FORM_ERROR_CREATE_ITEM]}</Alert> : null}
+                <Form.Check
+                  className="mb-2"
+                  type="switch"
+                  label="Active"
+                  checked={newItemForm.is_active}
+                  onChange={(event) => setNewItemForm((prev) => ({ ...prev, is_active: event.target.checked }))}
+                />
                 <Form.Label className="small mb-1">Item Name</Form.Label>
                 <Form.Control
                   className="mb-2"
                   placeholder="Item name"
                   value={newItemForm.item_name}
-                  onChange={(event) => setNewItemForm((prev) => ({ ...prev, item_name: event.target.value }))}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    setNewItemForm((prev) => ({ ...prev, item_name: nextValue }));
+                    if (String(nextValue || "").trim()) {
+                      setFormErrors((prev) => ({ ...prev, [FORM_ERROR_CREATE_ITEM]: "" }));
+                    }
+                  }}
                 />
                 <Form.Label className="small mb-1">Menu Type</Form.Label>
                 <Form.Select
@@ -671,17 +668,13 @@ const AdminDashboard = () => {
                     </Col>
                   </Row>
                 ) : null}
-                <Form.Check
-                  className="mb-2"
-                  type="switch"
-                  label="Active"
-                  checked={newItemForm.is_active}
-                  onChange={(event) => setNewItemForm((prev) => ({ ...prev, is_active: event.target.checked }))}
-                />
                 <Button
                   className="btn-inquiry-action"
                   variant="secondary"
-                  onClick={() => queueConfirm("Create menu item", "Create this menu item?", "Create", createItem)}>
+                  onClick={() => {
+                    if (!validateCreateItemForm()) return;
+                    queueConfirm("Create menu item", "Create this menu item?", "Create", createItem, FORM_ERROR_CREATE_ITEM);
+                  }}>
                   Create Item
                 </Button>
               </Card.Body>
@@ -709,51 +702,18 @@ const AdminDashboard = () => {
               </Card.Body>
             </Card>
 
-            <Card>
-              <Card.Body>
-                <h3 className="h6">Find Sections</h3>
-                <Form.Control
-                  className="mb-2"
-                  placeholder="Search section"
-                  value={sectionFilters.search}
-                  onChange={(event) => setSectionFilters((prev) => ({ ...prev, search: event.target.value }))}
-                />
-                <Form.Select
-                  className="mb-2"
-                  value={sectionFilters.catalog_key}
-                  onChange={(event) => setSectionFilters((prev) => ({ ...prev, catalog_key: event.target.value }))}>
-                  <option value="">All catalogs</option>
-                  {catalogOptions.map((catalog) => (
-                    <option key={catalog.id} value={catalog.catalog_key}>
-                      {catalog.catalog_key}
-                    </option>
-                  ))}
-                </Form.Select>
-                <Form.Select
-                  value={sectionFilters.is_active}
-                  onChange={(event) => setSectionFilters((prev) => ({ ...prev, is_active: event.target.value }))}>
-                  <option value="all">All</option>
-                  <option value="true">Active</option>
-                  <option value="false">Inactive</option>
-                </Form.Select>
-                <Button className="mt-2" variant="outline-secondary" onClick={loadSections}>
-                  Apply
-                </Button>
-              </Card.Body>
-            </Card>
           </Col>
           <Col lg={8}>
             <Card className="mb-3">
-              <Card.Body className="admin-scroll-card">
-                <h3 className="h6">Menu Items</h3>
-                <Table hover responsive size="sm">
+              <Card.Header className="admin-card-header">Menu Items</Card.Header>
+              <Card.Body className="admin-scroll-card p-0">
+                <Table hover size="sm" className="admin-sticky-table mb-0">
                   <thead>
                     <tr>
                       <th>Item</th>
+                      <th>Menu Type</th>
                       <th>Active</th>
-                      <th>Groups</th>
-                      <th>Rows</th>
-                      <th>Tiers</th>
+                      <th>Group</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -769,10 +729,36 @@ const AdminDashboard = () => {
                           {item.item_name}
                           <div className="small text-secondary">{item.item_key}</div>
                         </td>
-                        <td>{item.is_active ? "Yes" : "No"}</td>
-                        <td>{item.option_group_count}</td>
-                        <td>{item.section_row_count}</td>
-                        <td>{item.tier_bullet_count}</td>
+                        <td>
+                          {String(item.menu_type || "").toLowerCase() === "formal" ? (
+                            <Badge bg="warning" text="dark">
+                              Formal
+                            </Badge>
+                          ) : (
+                            <Badge bg="info" text="dark">
+                              General
+                            </Badge>
+                          )}
+                        </td>
+                        <td>
+                          <span
+                            className={`admin-status-dot ${item.is_active ? "admin-status-dot-active" : "admin-status-dot-inactive"}`}
+                            role="img"
+                            aria-label={item.is_active ? "Active" : "Inactive"}
+                            title={item.is_active ? "Active" : "Inactive"}
+                          />
+                        </td>
+                        <td>
+                          {resolveGroupNames(item).length ? (
+                            resolveGroupNames(item).map((groupName, groupIndex) => (
+                              <div key={`${item.id}-group-${groupIndex}`} className="admin-group-line">
+                                {groupName}
+                              </div>
+                            ))
+                          ) : (
+                            <span>-</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -784,22 +770,7 @@ const AdminDashboard = () => {
               <Card className="mb-3">
                 <Card.Body>
                   <h3 className="h6">Edit Menu Item</h3>
-                  <Row className="g-2 mb-2">
-                    <Col md={8}>
-                      <Form.Label className="small mb-1">Item Name</Form.Label>
-                      <Form.Control
-                        value={itemForm.item_name}
-                        onChange={(event) => setItemForm((prev) => ({ ...prev, item_name: event.target.value }))}
-                      />
-                    </Col>
-                    <Col md={4}>
-                      <Form.Label className="small mb-1">Item Key</Form.Label>
-                      <Form.Control
-                        value={itemForm.item_key}
-                        onChange={(event) => setItemForm((prev) => ({ ...prev, item_key: event.target.value }))}
-                      />
-                    </Col>
-                  </Row>
+                  {formErrors[FORM_ERROR_EDIT_ITEM] ? <Alert variant="danger">{formErrors[FORM_ERROR_EDIT_ITEM]}</Alert> : null}
                   <Form.Check
                     className="mb-3"
                     type="switch"
@@ -807,635 +778,54 @@ const AdminDashboard = () => {
                     checked={itemForm.is_active}
                     onChange={(event) => setItemForm((prev) => ({ ...prev, is_active: event.target.checked }))}
                   />
+                  <Row className="g-2 mb-2">
+                    <Col md={12}>
+                      <Form.Label className="small mb-1">Item Name</Form.Label>
+                      <Form.Control
+                        value={itemForm.item_name}
+                        onChange={(event) => setItemForm((prev) => ({ ...prev, item_name: event.target.value }))}
+                      />
+                    </Col>
+                  </Row>
 
                   <div className="admin-assignment-panel">
-                    <div className="d-flex justify-content-between align-items-center mb-2">
-                      <h4 className="h6 mb-0">Option Group Assignments</h4>
-                      <Button
-                        size="sm"
-                        variant="outline-secondary"
-                        onClick={() =>
-                          updateAssignmentList("option_group_assignments", (rows) => [...rows, emptyOptionGroupRow(rows.length + 1)])
-                        }>
-                        Add Group
-                      </Button>
-                    </div>
-                    {!itemForm.option_group_assignments.length ? <p className="small text-secondary mb-2">No option groups assigned.</p> : null}
-                    {itemForm.option_group_assignments.map((row, index) => (
-                      <Row className="g-2 align-items-end mb-2 admin-assignment-row" key={`group-${index}`}>
-                        <Col md={7}>
-                          <Form.Label className="small mb-1">Group</Form.Label>
-                          <Form.Select
-                            value={row.group_id || ""}
-                            onChange={(event) =>
-                              updateAssignmentList("option_group_assignments", (rows) =>
-                                rows.map((current, rowIndex) =>
-                                  rowIndex === index ? { ...current, group_id: toId(event.target.value) } : current
-                                )
-                              )
-                            }>
-                            <option value="">Select option group</option>
-                            {referenceData.option_groups.map((option) => (
-                              <option key={option.id} value={option.id}>
-                                {option.title} ({option.option_key})
-                              </option>
-                            ))}
-                          </Form.Select>
-                        </Col>
-                        <Col md={3}>
-                          <Form.Label className="small mb-1">Order</Form.Label>
-                          <Form.Control
-                            type="number"
-                            min={1}
-                            value={row.display_order}
-                            onChange={(event) =>
-                              updateAssignmentList("option_group_assignments", (rows) =>
-                                rows.map((current, rowIndex) =>
-                                  rowIndex === index ? { ...current, display_order: Number(event.target.value) || 1 } : current
-                                )
-                              )
-                            }
-                          />
-                        </Col>
-                        <Col md={2} className="d-grid">
-                          <Button
-                            variant="outline-danger"
-                            onClick={() =>
-                              updateAssignmentList("option_group_assignments", (rows) =>
-                                rows.filter((_, rowIndex) => rowIndex !== index)
-                              )
-                            }>
-                            Remove
-                          </Button>
-                        </Col>
-                      </Row>
-                    ))}
-                  </div>
-
-                  <div className="admin-assignment-panel">
-                    <div className="d-flex justify-content-between align-items-center mb-2">
-                      <h4 className="h6 mb-0">Section Row Assignments</h4>
-                      <Button
-                        size="sm"
-                        variant="outline-secondary"
-                        onClick={() =>
-                          updateAssignmentList("section_row_assignments", (rows) => [...rows, emptySectionRow(rows.length + 1)])
-                        }>
-                        Add Section Row
-                      </Button>
-                    </div>
-                    <p className="small text-secondary mb-2">
-                      For To-Go sections, enter <strong>Half Tray Price</strong> and <strong>Full Tray Price</strong>.
-                    </p>
-                    {!itemForm.section_row_assignments.length ? <p className="small text-secondary mb-2">No section rows assigned.</p> : null}
-                    {itemForm.section_row_assignments.map((row, index) => {
-                      const selectedSection = referenceData.sections.find((section) => Number(section.id) === Number(row.section_id));
-                      const isTogo = selectedSection?.catalog_key === "togo" || String(selectedSection?.section_key || "").startsWith("togo_");
-                      return (
-                        <Row className="g-2 align-items-end mb-2 admin-assignment-row" key={`section-row-${index}`}>
-                          <Col md={4}>
-                            <Form.Label className="small mb-1">Section</Form.Label>
-                            <Form.Select
-                              value={row.section_id || ""}
-                              onChange={(event) =>
-                                updateAssignmentList("section_row_assignments", (rows) =>
-                                  rows.map((current, rowIndex) =>
-                                    rowIndex === index ? { ...current, section_id: toId(event.target.value) } : current
-                                  )
-                                )
-                              }>
-                              <option value="">Select section</option>
-                              {referenceData.sections.map((section) => (
-                                <option key={section.id} value={section.id}>
-                                  {section.catalog_key} - {section.title}
-                                </option>
-                              ))}
-                            </Form.Select>
-                          </Col>
-                          <Col md={2}>
-                            <Form.Label className="small mb-1">{isTogo ? "Half Tray Price" : "Value 1"}</Form.Label>
-                            <Form.Control
-                              value={row.value_1}
-                              placeholder={isTogo ? "$45" : "Value 1"}
-                              onChange={(event) =>
-                                updateAssignmentList("section_row_assignments", (rows) =>
-                                  rows.map((current, rowIndex) =>
-                                    rowIndex === index ? { ...current, value_1: event.target.value } : current
-                                  )
-                                )
-                              }
-                            />
-                          </Col>
-                          <Col md={2}>
-                            <Form.Label className="small mb-1">{isTogo ? "Full Tray Price" : "Value 2"}</Form.Label>
-                            <Form.Control
-                              value={row.value_2}
-                              placeholder={isTogo ? "$85" : "Value 2"}
-                              onChange={(event) =>
-                                updateAssignmentList("section_row_assignments", (rows) =>
-                                  rows.map((current, rowIndex) =>
-                                    rowIndex === index ? { ...current, value_2: event.target.value } : current
-                                  )
-                                )
-                              }
-                            />
-                          </Col>
-                          <Col md={2}>
-                            <Form.Label className="small mb-1">Order</Form.Label>
-                            <Form.Control
-                              type="number"
-                              min={1}
-                              value={row.display_order}
-                              onChange={(event) =>
-                                updateAssignmentList("section_row_assignments", (rows) =>
-                                  rows.map((current, rowIndex) =>
-                                    rowIndex === index ? { ...current, display_order: Number(event.target.value) || 1 } : current
-                                  )
-                                )
-                              }
-                            />
-                          </Col>
-                          <Col md={2} className="d-grid">
-                            <Button
-                              variant="outline-danger"
-                              onClick={() =>
-                                updateAssignmentList("section_row_assignments", (rows) =>
-                                  rows.filter((_, rowIndex) => rowIndex !== index)
-                                )
-                              }>
-                              Remove
-                            </Button>
-                          </Col>
-                        </Row>
-                      );
-                    })}
-                  </div>
-
-                  <div className="admin-assignment-panel">
-                    <div className="d-flex justify-content-between align-items-center mb-2">
-                      <h4 className="h6 mb-0">Tier Assignments</h4>
-                      <Button
-                        size="sm"
-                        variant="outline-secondary"
-                        onClick={() =>
-                          updateAssignmentList("tier_bullet_assignments", (rows) => [...rows, emptyTierRow(rows.length + 1)])
-                        }>
-                        Add Tier
-                      </Button>
-                    </div>
-                    {!itemForm.tier_bullet_assignments.length ? <p className="small text-secondary mb-2">No tiers assigned.</p> : null}
-                    {itemForm.tier_bullet_assignments.map((row, index) => (
-                      <Row className="g-2 align-items-end mb-2 admin-assignment-row" key={`tier-row-${index}`}>
-                        <Col md={8}>
-                          <Form.Label className="small mb-1">Tier</Form.Label>
-                          <Form.Select
-                            value={row.tier_id || ""}
-                            onChange={(event) =>
-                              updateAssignmentList("tier_bullet_assignments", (rows) =>
-                                rows.map((current, rowIndex) =>
-                                  rowIndex === index ? { ...current, tier_id: toId(event.target.value) } : current
-                                )
-                              )
-                            }>
-                            <option value="">Select tier</option>
-                            {referenceData.tiers.map((tier) => (
-                              <option key={tier.id} value={tier.id}>
-                                {tier.catalog_key} - {tier.section_title} - {tier.tier_title}
-                              </option>
-                            ))}
-                          </Form.Select>
-                        </Col>
-                        <Col md={2}>
-                          <Form.Label className="small mb-1">Order</Form.Label>
-                          <Form.Control
-                            type="number"
-                            min={1}
-                            value={row.display_order}
-                            onChange={(event) =>
-                              updateAssignmentList("tier_bullet_assignments", (rows) =>
-                                rows.map((current, rowIndex) =>
-                                  rowIndex === index ? { ...current, display_order: Number(event.target.value) || 1 } : current
-                                )
-                              )
-                            }
-                          />
-                        </Col>
-                        <Col md={2} className="d-grid">
-                          <Button
-                            variant="outline-danger"
-                            onClick={() =>
-                              updateAssignmentList("tier_bullet_assignments", (rows) =>
-                                rows.filter((_, rowIndex) => rowIndex !== index)
-                              )
-                            }>
-                            Remove
-                          </Button>
-                        </Col>
-                      </Row>
-                    ))}
+                    <h4 className="h6 mb-2">Option Group Assignment</h4>
+                    <Form.Label className="small mb-1">Group</Form.Label>
+                    <Form.Select
+                      value={itemForm.option_group_assignments?.[0]?.group_id || ""}
+                      onChange={(event) => {
+                        const nextGroupId = toId(event.target.value);
+                        setItemForm((prev) => {
+                          if (!prev) return prev;
+                          return {
+                            ...prev,
+                            option_group_assignments: nextGroupId
+                              ? [{ group_id: nextGroupId, display_order: 1, is_active: true }]
+                              : [],
+                          };
+                        });
+                      }}>
+                      <option value="">Select group</option>
+                      {applicableEditGroupOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.title}
+                        </option>
+                      ))}
+                    </Form.Select>
                   </div>
 
                   <Button
                     className="btn-inquiry-action mt-3"
                     variant="secondary"
-                    onClick={() => queueConfirm("Save menu item", "Apply item changes and assignments?", "Save", saveItem)}>
+                    onClick={() =>
+                      queueConfirm("Save menu item", "Apply item changes and assignments?", "Save", saveItem, FORM_ERROR_EDIT_ITEM)
+                    }>
                     Save Item
                   </Button>
                 </Card.Body>
               </Card>
             ) : null}
 
-            <Card className="mb-3">
-              <Card.Body className="admin-scroll-card">
-                <h3 className="h6">Sections</h3>
-                <Table hover responsive size="sm">
-                  <thead>
-                    <tr>
-                      <th>Catalog</th>
-                      <th>Section</th>
-                      <th>Price</th>
-                      <th>Active</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sections.map((section) => (
-                      <tr
-                        key={section.id}
-                        role="button"
-                        onClick={async () => {
-                          setSelectedSectionId(section.id);
-                          await loadSectionDetail(section.id);
-                        }}>
-                        <td>{section.catalog_key}</td>
-                        <td>
-                          {section.title}
-                          <div className="small text-secondary">{section.section_key}</div>
-                        </td>
-                        <td>{section.price || "-"}</td>
-                        <td>{section.is_active ? "Yes" : "No"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
-              </Card.Body>
-            </Card>
-
-            {selectedSectionId && sectionForm ? (
-              <Card>
-                <Card.Body>
-                  <h3 className="h6">Edit Section Metadata & Rules</h3>
-                  <Form.Control
-                    className="mb-2"
-                    placeholder="Title"
-                    value={sectionForm.title}
-                    onChange={(event) => setSectionForm((prev) => ({ ...prev, title: event.target.value }))}
-                  />
-                  <Form.Control
-                    className="mb-2"
-                    placeholder="Description"
-                    value={sectionForm.description}
-                    onChange={(event) => setSectionForm((prev) => ({ ...prev, description: event.target.value }))}
-                  />
-                  <Row className="g-2 mb-2">
-                    <Col>
-                      <Form.Control
-                        placeholder="Price"
-                        value={sectionForm.price}
-                        onChange={(event) => setSectionForm((prev) => ({ ...prev, price: event.target.value }))}
-                      />
-                    </Col>
-                    <Col>
-                      <Form.Control
-                        type="number"
-                        min={1}
-                        value={sectionForm.display_order}
-                        onChange={(event) =>
-                          setSectionForm((prev) => ({ ...prev, display_order: Number(event.target.value) || 1 }))
-                        }
-                      />
-                    </Col>
-                  </Row>
-                  <Row className="g-2 mb-2">
-                    <Col>
-                      <Form.Control
-                        placeholder="section_type"
-                        value={sectionForm.section_type}
-                        onChange={(event) => setSectionForm((prev) => ({ ...prev, section_type: event.target.value }))}
-                      />
-                    </Col>
-                    <Col>
-                      <Form.Control
-                        placeholder="category"
-                        value={sectionForm.category}
-                        onChange={(event) => setSectionForm((prev) => ({ ...prev, category: event.target.value }))}
-                      />
-                    </Col>
-                    <Col>
-                      <Form.Control
-                        placeholder="course_type"
-                        value={sectionForm.course_type}
-                        onChange={(event) => setSectionForm((prev) => ({ ...prev, course_type: event.target.value }))}
-                      />
-                    </Col>
-                  </Row>
-                  <Form.Check
-                    className="mb-2"
-                    type="switch"
-                    label="Active"
-                    checked={sectionForm.is_active}
-                    onChange={(event) => setSectionForm((prev) => ({ ...prev, is_active: event.target.checked }))}
-                  />
-                  <Form.Label className="small fw-semibold">Included Option Groups</Form.Label>
-                  <Form.Select
-                    className="mb-2"
-                    multiple
-                    value={(sectionForm.include_group_ids || []).map((value) => String(value))}
-                    onChange={(event) =>
-                      setSectionForm((prev) => ({
-                        ...prev,
-                        include_group_ids: Array.from(event.target.selectedOptions)
-                          .map((option) => Number(option.value))
-                          .filter((value) => Number.isFinite(value) && value > 0),
-                      }))
-                    }>
-                    {(referenceData.option_groups || []).map((group) => (
-                      <option key={group.id} value={group.id}>
-                        {group.title} ({group.option_key})
-                      </option>
-                    ))}
-                  </Form.Select>
-                  <p className="small text-secondary mb-2">Use Ctrl/Cmd + click to select more than one group.</p>
-
-                  <div className="admin-assignment-panel">
-                    <div className="d-flex justify-content-between align-items-center mb-2">
-                      <h4 className="h6 mb-0">Section Constraints</h4>
-                      <Button
-                        size="sm"
-                        variant="outline-secondary"
-                        onClick={() =>
-                          setSectionForm((prev) => ({
-                            ...prev,
-                            constraints: [...(prev.constraints || []), emptyConstraintRow()],
-                          }))
-                        }>
-                        Add Constraint
-                      </Button>
-                    </div>
-                    {!sectionForm.constraints?.length ? (
-                      <p className="small text-secondary mb-2">No section constraints configured.</p>
-                    ) : null}
-                    {(sectionForm.constraints || []).map((constraint, constraintIndex) => (
-                      <Row className="g-2 align-items-end mb-2 admin-assignment-row" key={`section-constraint-${constraintIndex}`}>
-                        <Col md={5}>
-                          <Form.Label className="small mb-1">Constraint Key</Form.Label>
-                          <Form.Control
-                            value={constraint.constraint_key}
-                            placeholder="ex: proteins"
-                            onChange={(event) =>
-                              setSectionForm((prev) => ({
-                                ...prev,
-                                constraints: (prev.constraints || []).map((row, rowIndex) =>
-                                  rowIndex === constraintIndex ? { ...row, constraint_key: event.target.value } : row
-                                ),
-                              }))
-                            }
-                          />
-                        </Col>
-                        <Col md={2}>
-                          <Form.Label className="small mb-1">Min</Form.Label>
-                          <Form.Control
-                            type="number"
-                            min={0}
-                            value={constraint.min_select}
-                            onChange={(event) =>
-                              setSectionForm((prev) => ({
-                                ...prev,
-                                constraints: (prev.constraints || []).map((row, rowIndex) =>
-                                  rowIndex === constraintIndex ? { ...row, min_select: toNonNegativeInt(event.target.value) } : row
-                                ),
-                              }))
-                            }
-                          />
-                        </Col>
-                        <Col md={2}>
-                          <Form.Label className="small mb-1">Max</Form.Label>
-                          <Form.Control
-                            type="number"
-                            min={0}
-                            value={constraint.max_select}
-                            onChange={(event) =>
-                              setSectionForm((prev) => ({
-                                ...prev,
-                                constraints: (prev.constraints || []).map((row, rowIndex) =>
-                                  rowIndex === constraintIndex ? { ...row, max_select: toNonNegativeInt(event.target.value) } : row
-                                ),
-                              }))
-                            }
-                          />
-                        </Col>
-                        <Col md={3} className="d-grid">
-                          <Button
-                            variant="outline-danger"
-                            onClick={() =>
-                              setSectionForm((prev) => ({
-                                ...prev,
-                                constraints: (prev.constraints || []).filter((_, rowIndex) => rowIndex !== constraintIndex),
-                              }))
-                            }>
-                            Remove
-                          </Button>
-                        </Col>
-                      </Row>
-                    ))}
-                  </div>
-
-                  <div className="admin-assignment-panel">
-                    <h4 className="h6 mb-2">Tier Settings</h4>
-                    {!sectionForm.tiers?.length ? <p className="small text-secondary mb-2">No tiers available for this section.</p> : null}
-                    {(sectionForm.tiers || []).map((tier, tierIndex) => (
-                      <div className="admin-assignment-row mb-2" key={`section-tier-${tier.id || tierIndex}`}>
-                        <Row className="g-2 align-items-end mb-2">
-                          <Col md={4}>
-                            <Form.Label className="small mb-1">Tier Title</Form.Label>
-                            <Form.Control
-                              value={tier.tier_title}
-                              onChange={(event) =>
-                                setSectionForm((prev) => ({
-                                  ...prev,
-                                  tiers: (prev.tiers || []).map((current, rowIndex) =>
-                                    rowIndex === tierIndex ? { ...current, tier_title: event.target.value } : current
-                                  ),
-                                }))
-                              }
-                            />
-                          </Col>
-                          <Col md={3}>
-                            <Form.Label className="small mb-1">Price</Form.Label>
-                            <Form.Control
-                              value={tier.price}
-                              onChange={(event) =>
-                                setSectionForm((prev) => ({
-                                  ...prev,
-                                  tiers: (prev.tiers || []).map((current, rowIndex) =>
-                                    rowIndex === tierIndex ? { ...current, price: event.target.value } : current
-                                  ),
-                                }))
-                              }
-                            />
-                          </Col>
-                          <Col md={2}>
-                            <Form.Label className="small mb-1">Order</Form.Label>
-                            <Form.Control
-                              type="number"
-                              min={1}
-                              value={tier.display_order}
-                              onChange={(event) =>
-                                setSectionForm((prev) => ({
-                                  ...prev,
-                                  tiers: (prev.tiers || []).map((current, rowIndex) =>
-                                    rowIndex === tierIndex
-                                      ? { ...current, display_order: Number(event.target.value) > 0 ? Number(event.target.value) : 1 }
-                                      : current
-                                  ),
-                                }))
-                              }
-                            />
-                          </Col>
-                          <Col md={3}>
-                            <Form.Check
-                              className="mt-4"
-                              type="switch"
-                              label="Active"
-                              checked={Boolean(tier.is_active)}
-                              onChange={(event) =>
-                                setSectionForm((prev) => ({
-                                  ...prev,
-                                  tiers: (prev.tiers || []).map((current, rowIndex) =>
-                                    rowIndex === tierIndex ? { ...current, is_active: event.target.checked } : current
-                                  ),
-                                }))
-                              }
-                            />
-                          </Col>
-                        </Row>
-
-                        <div className="d-flex justify-content-between align-items-center mb-2">
-                          <Form.Label className="small fw-semibold mb-0">Tier Constraints</Form.Label>
-                          <Button
-                            size="sm"
-                            variant="outline-secondary"
-                            onClick={() =>
-                              setSectionForm((prev) => ({
-                                ...prev,
-                                tiers: (prev.tiers || []).map((current, rowIndex) =>
-                                  rowIndex === tierIndex
-                                    ? { ...current, constraints: [...(current.constraints || []), emptyConstraintRow()] }
-                                    : current
-                                ),
-                              }))
-                            }>
-                            Add Tier Constraint
-                          </Button>
-                        </div>
-                        {!(tier.constraints || []).length ? (
-                          <p className="small text-secondary mb-2">No tier constraints configured.</p>
-                        ) : null}
-                        {(tier.constraints || []).map((constraint, constraintIndex) => (
-                          <Row className="g-2 align-items-end mb-2" key={`tier-constraint-${tier.id || tierIndex}-${constraintIndex}`}>
-                            <Col md={5}>
-                              <Form.Control
-                                value={constraint.constraint_key}
-                                placeholder="Constraint key"
-                                onChange={(event) =>
-                                  setSectionForm((prev) => ({
-                                    ...prev,
-                                    tiers: (prev.tiers || []).map((currentTier, tierRowIndex) => {
-                                      if (tierRowIndex !== tierIndex) return currentTier;
-                                      return {
-                                        ...currentTier,
-                                        constraints: (currentTier.constraints || []).map((row, rowIndex) =>
-                                          rowIndex === constraintIndex ? { ...row, constraint_key: event.target.value } : row
-                                        ),
-                                      };
-                                    }),
-                                  }))
-                                }
-                              />
-                            </Col>
-                            <Col md={2}>
-                              <Form.Control
-                                type="number"
-                                min={0}
-                                value={constraint.min_select}
-                                onChange={(event) =>
-                                  setSectionForm((prev) => ({
-                                    ...prev,
-                                    tiers: (prev.tiers || []).map((currentTier, tierRowIndex) => {
-                                      if (tierRowIndex !== tierIndex) return currentTier;
-                                      return {
-                                        ...currentTier,
-                                        constraints: (currentTier.constraints || []).map((row, rowIndex) =>
-                                          rowIndex === constraintIndex ? { ...row, min_select: toNonNegativeInt(event.target.value) } : row
-                                        ),
-                                      };
-                                    }),
-                                  }))
-                                }
-                              />
-                            </Col>
-                            <Col md={2}>
-                              <Form.Control
-                                type="number"
-                                min={0}
-                                value={constraint.max_select}
-                                onChange={(event) =>
-                                  setSectionForm((prev) => ({
-                                    ...prev,
-                                    tiers: (prev.tiers || []).map((currentTier, tierRowIndex) => {
-                                      if (tierRowIndex !== tierIndex) return currentTier;
-                                      return {
-                                        ...currentTier,
-                                        constraints: (currentTier.constraints || []).map((row, rowIndex) =>
-                                          rowIndex === constraintIndex ? { ...row, max_select: toNonNegativeInt(event.target.value) } : row
-                                        ),
-                                      };
-                                    }),
-                                  }))
-                                }
-                              />
-                            </Col>
-                            <Col md={3} className="d-grid">
-                              <Button
-                                variant="outline-danger"
-                                onClick={() =>
-                                  setSectionForm((prev) => ({
-                                    ...prev,
-                                    tiers: (prev.tiers || []).map((currentTier, tierRowIndex) => {
-                                      if (tierRowIndex !== tierIndex) return currentTier;
-                                      return {
-                                        ...currentTier,
-                                        constraints: (currentTier.constraints || []).filter((_, rowIndex) => rowIndex !== constraintIndex),
-                                      };
-                                    }),
-                                  }))
-                                }>
-                                Remove
-                              </Button>
-                            </Col>
-                          </Row>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                  <Button
-                    className="btn-inquiry-action mt-3"
-                    variant="secondary"
-                    onClick={() => queueConfirm("Save section", "Apply section pricing and rule updates?", "Save", saveSection)}>
-                    Save Section
-                  </Button>
-                </Card.Body>
-              </Card>
-            ) : null}
           </Col>
         </Row>
       ) : null}
@@ -1446,6 +836,7 @@ const AdminDashboard = () => {
             <Card className="mb-3">
               <Card.Body>
                 <h3 className="h6">Upload Media</h3>
+                {formErrors[FORM_ERROR_UPLOAD_MEDIA] ? <Alert variant="danger">{formErrors[FORM_ERROR_UPLOAD_MEDIA]}</Alert> : null}
                 <Form.Control
                   className="mb-2"
                   type="file"
@@ -1493,7 +884,7 @@ const AdminDashboard = () => {
                 <Button
                   className="btn-inquiry-action"
                   variant="secondary"
-                  onClick={() => queueConfirm("Upload media", "Upload this file?", "Upload", uploadMedia)}>
+                  onClick={() => queueConfirm("Upload media", "Upload this file?", "Upload", uploadMedia, FORM_ERROR_UPLOAD_MEDIA)}>
                   Upload
                 </Button>
               </Card.Body>
@@ -1581,6 +972,7 @@ const AdminDashboard = () => {
               <Card>
                 <Card.Body>
                   <h3 className="h6">Edit Media</h3>
+                  {formErrors[FORM_ERROR_EDIT_MEDIA] ? <Alert variant="danger">{formErrors[FORM_ERROR_EDIT_MEDIA]}</Alert> : null}
                   <Form.Control
                     className="mb-2"
                     value={mediaForm.title}
@@ -1620,7 +1012,7 @@ const AdminDashboard = () => {
                   <Button
                     className="btn-inquiry-action mt-2"
                     variant="secondary"
-                    onClick={() => queueConfirm("Save media", "Apply media metadata and order changes?", "Save", saveMedia)}>
+                    onClick={() => queueConfirm("Save media", "Apply media metadata and order changes?", "Save", saveMedia, FORM_ERROR_EDIT_MEDIA)}>
                     Save Media
                   </Button>
                 </Card.Body>
@@ -1667,7 +1059,7 @@ const AdminDashboard = () => {
         body={confirmState.body}
         confirmLabel={confirmState.confirmLabel}
         busy={confirmBusy}
-        onCancel={() => setConfirmState((prev) => ({ ...prev, show: false, action: null }))}
+        onCancel={() => setConfirmState((prev) => ({ ...prev, show: false, action: null, errorTarget: null }))}
         onConfirm={runConfirmedAction}
       />
     </main>
