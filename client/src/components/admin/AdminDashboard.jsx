@@ -572,15 +572,21 @@ const AdminDashboard = () => {
       {statusMessage ? <Alert variant="success">{statusMessage}</Alert> : null}
       {errorMessage ? <Alert variant="danger">{errorMessage}</Alert> : null}
 
-      <Nav variant="tabs" activeKey={activeTab} onSelect={(key) => setActiveTab(key || TAB_MENU)} className="mb-3">
+      <Nav variant="tabs" activeKey={activeTab} onSelect={(key) => setActiveTab(key || TAB_MENU)} className="mb-3" role="tablist">
         <Nav.Item>
-          <Nav.Link eventKey={TAB_MENU}>Menu Operations</Nav.Link>
+          <Nav.Link eventKey={TAB_MENU} role="tab" aria-selected={activeTab === TAB_MENU}>
+            Menu Operations
+          </Nav.Link>
         </Nav.Item>
         <Nav.Item>
-          <Nav.Link eventKey={TAB_MEDIA}>Media Manager</Nav.Link>
+          <Nav.Link eventKey={TAB_MEDIA} role="tab" aria-selected={activeTab === TAB_MEDIA}>
+            Media Manager
+          </Nav.Link>
         </Nav.Item>
         <Nav.Item>
-          <Nav.Link eventKey={TAB_AUDIT}>Audit History</Nav.Link>
+          <Nav.Link eventKey={TAB_AUDIT} role="tab" aria-selected={activeTab === TAB_AUDIT}>
+            Audit History
+          </Nav.Link>
         </Nav.Item>
       </Nav>
 
@@ -598,8 +604,11 @@ const AdminDashboard = () => {
                   checked={newItemForm.is_active}
                   onChange={(event) => setNewItemForm((prev) => ({ ...prev, is_active: event.target.checked }))}
                 />
-                <Form.Label className="small mb-1">Item Name</Form.Label>
+                <Form.Label className="small mb-1" htmlFor="admin-create-item-name">
+                  Item Name
+                </Form.Label>
                 <Form.Control
+                  id="admin-create-item-name"
                   className="mb-2"
                   placeholder="Item name"
                   value={newItemForm.item_name}
@@ -611,8 +620,11 @@ const AdminDashboard = () => {
                     }
                   }}
                 />
-                <Form.Label className="small mb-1">Menu Type</Form.Label>
+                <Form.Label className="small mb-1" htmlFor="admin-create-menu-type">
+                  Menu Type
+                </Form.Label>
                 <Form.Select
+                  id="admin-create-menu-type"
                   className="mb-2"
                   value={newItemForm.menu_type}
                   onChange={(event) =>
@@ -630,8 +642,11 @@ const AdminDashboard = () => {
                 </Form.Select>
                 {selectedCreateMenuType ? (
                   <>
-                    <Form.Label className="small mb-1">Group</Form.Label>
+                    <Form.Label className="small mb-1" htmlFor="admin-create-group">
+                      Group
+                    </Form.Label>
                     <Form.Select
+                      id="admin-create-group"
                       className="mb-2"
                       value={newItemForm.group_id}
                       onChange={(event) => setNewItemForm((prev) => ({ ...prev, group_id: event.target.value }))}>

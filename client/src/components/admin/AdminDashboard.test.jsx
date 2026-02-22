@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import AdminDashboard from "./AdminDashboard";
@@ -192,9 +192,10 @@ describe("AdminDashboard", () => {
 
     fireEvent.change(screen.getByLabelText("Menu Type"), { target: { value: "formal" } });
     await waitFor(() => {
-      expect(screen.getByLabelText("Group")).toBeInTheDocument();
-      expect(screen.getByRole("option", { name: "Formal Entrees" })).toBeInTheDocument();
-      expect(screen.queryByRole("option", { name: "Proteins" })).not.toBeInTheDocument();
+      const createGroupSelect = screen.getByLabelText("Group");
+      expect(createGroupSelect).toBeInTheDocument();
+      expect(within(createGroupSelect).getByRole("option", { name: "Formal Entrees" })).toBeInTheDocument();
+      expect(within(createGroupSelect).queryByRole("option", { name: "Proteins" })).not.toBeInTheDocument();
       expect(screen.queryByPlaceholderText("Half Tray Price")).not.toBeInTheDocument();
       expect(screen.queryByPlaceholderText("Full Tray Price")).not.toBeInTheDocument();
     });
