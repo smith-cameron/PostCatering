@@ -561,6 +561,11 @@ describe("AdminDashboard", () => {
     fireEvent.change(screen.getByLabelText("Full Tray Price"), { target: { value: "14500" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Update Item" }));
+    const confirmDialog = await screen.findByRole("dialog");
+    expect(within(confirmDialog).queryByText("Apply item changes and assignments?")).not.toBeInTheDocument();
+    expect(within(confirmDialog).getByText("$80.00")).toBeInTheDocument();
+    expect(within(confirmDialog).getByText("$145.00")).toBeInTheDocument();
+    expect(within(confirmDialog).queryByText(/Menu Type:/i)).not.toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Update" }));
 
     await waitFor(() => {
@@ -877,18 +882,18 @@ describe("AdminDashboard", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText("jerk_chicken");
+    await screen.findByText("Jerk Chicken");
     expect(screen.getAllByText("Jerk Chicken")).toHaveLength(1);
 
-    const jerkKey = screen.getByText("jerk_chicken");
-    const jerkRow = jerkKey.closest("tr");
+    const jerkItemName = screen.getByText("Jerk Chicken");
+    const jerkRow = jerkItemName.closest("tr");
     expect(jerkRow).toBeTruthy();
 
     const rowScope = within(jerkRow);
     expect(rowScope.getByText("Regular")).toBeInTheDocument();
     expect(rowScope.getByText("Formal")).toBeInTheDocument();
-    expect(rowScope.getByText("Active")).toBeInTheDocument();
-    expect(rowScope.getByText("Inactive")).toBeInTheDocument();
+    expect(rowScope.getByRole("img", { name: "Active" })).toBeInTheDocument();
+    expect(rowScope.getByRole("img", { name: "Inactive" })).toBeInTheDocument();
     expect(rowScope.getByText("Proteins")).toBeInTheDocument();
     expect(rowScope.getByText("Formal Entrees")).toBeInTheDocument();
 

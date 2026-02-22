@@ -224,6 +224,14 @@ const formatMenuTypeLabel = (value) => {
   return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : "-";
 };
 
+const orderMenuTypes = (values) => {
+  const normalized = uniqueMenuTypeList(values);
+  return [
+    ...MENU_TYPE_OPTIONS.filter((typeKey) => normalized.includes(typeKey)),
+    ...normalized.filter((typeKey) => !MENU_TYPE_OPTIONS.includes(typeKey)),
+  ];
+};
+
 const decodeRawItemId = (value) => {
   const parsed = Number.parseInt(String(value ?? "").trim(), 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return "";
@@ -409,6 +417,7 @@ const AdminDashboard = () => {
   const [menuItems, setMenuItems] = useState([]);
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [itemForm, setItemForm] = useState(null);
+  const [itemFormOriginal, setItemFormOriginal] = useState(null);
   const [showCreatedItemHighlight, setShowCreatedItemHighlight] = useState(false);
   const [newItemForm, setNewItemForm] = useState({
     item_name: "",
@@ -557,7 +566,9 @@ const AdminDashboard = () => {
 
   const loadItemDetail = useCallback(async (itemId) => {
     const payload = await requestJson(`/api/admin/menu/items/${itemId}`);
-    setItemForm(buildItemForm(payload.item));
+    const nextForm = buildItemForm(payload.item);
+    setItemForm(nextForm);
+    setItemFormOriginal(nextForm);
   }, []);
 
   const hasMenuItemNameConflict = useCallback(
@@ -804,8 +815,10 @@ const AdminDashboard = () => {
     setCreateValidationLocked(false);
     await Promise.all([loadMenuItems(), loadAudit()]);
     if (payload.item?.id) {
+      const nextForm = buildItemForm(payload.item);
       setSelectedItemId(payload.item.id);
-      setItemForm(buildItemForm(payload.item));
+      setItemForm(nextForm);
+      setItemFormOriginal(nextForm);
       setShowCreatedItemHighlight(true);
     }
   };
@@ -847,6 +860,76 @@ const AdminDashboard = () => {
       </div>
     );
   }, [newItemForm, getGroupOptionsForType]);
+
+  const buildUpdateConfirmBody = useCallback(() => {
+    if (!itemForm || !itemFormOriginal) return "Update this menu item?";
+
+    const currentTypes = orderMenuTypes(itemForm.menu_types || []);
+    const originalTypes = orderMenuTypes(itemFormOriginal.menu_types || []);
+    const currentUsesRegular = currentTypes.includes("regular");
+    const originalUsesRegular = originalTypes.includes("regular");
+
+    const summarizeGroups = (form, types) => {
+      if (!types.length) return "None";
+      return types
+        .map((typeKey) => {
+          const groupId = getAssignmentGroupIdForType(form.option_group_assignments, typeKey);
+          const option = getGroupOptionsForType(typeKey).find((group) => Number(group.id) === Number(groupId));
+          return `${formatMenuTypeLabel(typeKey)}: ${option?.title || "None selected"}`;
+        })
+        .join(" | ");
+    };
+
+    const currentMenuTypeSummary = currentTypes.length ? currentTypes.map((typeKey) => formatMenuTypeLabel(typeKey)).join(", ") : "None";
+    const originalMenuTypeSummary = originalTypes.length ? originalTypes.map((typeKey) => formatMenuTypeLabel(typeKey)).join(", ") : "None";
+    const currentGroupSummary = summarizeGroups(itemForm, currentTypes);
+    const originalGroupSummary = summarizeGroups(itemFormOriginal, originalTypes);
+    const currentActive = currentTypes.length ? (itemForm.is_active ? "Yes" : "No") : "No";
+    const originalActive = originalTypes.length ? (itemFormOriginal.is_active ? "Yes" : "No") : "No";
+    const currentHalf = currentUsesRegular ? formatCurrencyDisplay(itemForm.tray_price_half) : "N/A";
+    const originalHalf = originalUsesRegular ? formatCurrencyDisplay(itemFormOriginal.tray_price_half) : "N/A";
+    const currentFull = currentUsesRegular ? formatCurrencyDisplay(itemForm.tray_price_full) : "N/A";
+    const originalFull = originalUsesRegular ? formatCurrencyDisplay(itemFormOriginal.tray_price_full) : "N/A";
+
+    const changes = [];
+    if (String(itemForm.item_name || "").trim() !== String(itemFormOriginal.item_name || "").trim()) {
+      changes.push({ label: "Item Name", value: String(itemForm.item_name || "").trim() || "-" });
+    }
+    if (currentActive !== originalActive) {
+      changes.push({ label: "Active", value: currentActive });
+    }
+    if (currentMenuTypeSummary !== originalMenuTypeSummary) {
+      changes.push({ label: "Menu Type", value: currentMenuTypeSummary });
+    }
+    if (currentGroupSummary !== originalGroupSummary) {
+      changes.push({ label: "Group(s)", value: currentGroupSummary });
+    }
+    if (currentHalf !== originalHalf) {
+      changes.push({ label: "Half Tray Price", value: currentHalf });
+    }
+    if (currentFull !== originalFull) {
+      changes.push({ label: "Full Tray Price", value: currentFull });
+    }
+
+    return (
+      <div className="admin-confirm-review">
+        {changes.length ? (
+          changes.map((change) => (
+            <div key={change.label}>
+              <strong>{change.label}:</strong> {change.value}
+            </div>
+          ))
+        ) : (
+          <div>No field changes detected.</div>
+        )}
+      </div>
+    );
+  }, [itemForm, itemFormOriginal, getGroupOptionsForType]);
+
+  const buildUpdateConfirmTitle = useCallback(() => {
+    const itemName = String(itemForm?.item_name || "").trim();
+    return itemName ? `Update ${itemName}?` : "Update item?";
+  }, [itemForm?.item_name]);
 
   const saveItem = async () => {
     if (!itemForm?.id) return;
@@ -909,7 +992,9 @@ const AdminDashboard = () => {
       method: "PATCH",
       body: JSON.stringify(payload),
     });
-    setItemForm(buildItemForm(response.item));
+    const nextForm = buildItemForm(response.item);
+    setItemForm(nextForm);
+    setItemFormOriginal(nextForm);
     setShowCreatedItemHighlight(true);
     await Promise.all([loadMenuItems(), loadAudit()]);
   };
@@ -923,6 +1008,7 @@ const AdminDashboard = () => {
     });
     setSelectedItemId(null);
     setItemForm(null);
+    setItemFormOriginal(null);
     setShowCreatedItemHighlight(false);
     await Promise.all([loadMenuItems(), loadAudit()]);
   };
@@ -1276,14 +1362,14 @@ const AdminDashboard = () => {
               <Card.Header className="admin-card-header">Menu Items</Card.Header>
               <Card.Body className="admin-scroll-card p-0">
                 <Table hover size="sm" className="admin-sticky-table mb-0">
-                  <thead>
-                    <tr>
-                      <th>Item</th>
-                      <th>Menu Type</th>
-                      <th>Active</th>
-                      <th>Group</th>
-                    </tr>
-                  </thead>
+	                  <thead>
+	                    <tr>
+	                      <th>Item</th>
+	                      <th>Active</th>
+	                      <th>Menu Type</th>
+	                      <th>Group</th>
+	                    </tr>
+	                  </thead>
 	                  <tbody>
 	                    {menuTableError ? (
 	                      <tr>
@@ -1302,48 +1388,46 @@ const AdminDashboard = () => {
                             setSelectedItemId(item.id);
                             await loadItemDetail(item.id);
                           }}>
-                          <td>
-                            {item.item_name || "Untitled Item"}
-                            <div className="small text-secondary">{item.item_key || "-"}</div>
-                          </td>
-                          <td>
-                            {item.menu_types.length ? (
-                              item.menu_types.map((menuType, menuTypeIndex) => (
-                                <div key={`${item.row_key}-menu-type-${menuTypeIndex}`} className="admin-table-stack-line">
-                                  {menuType === "formal" ? (
-                                    <Badge bg="warning" text="dark">
-                                      {formatMenuTypeLabel(menuType)}
-                                    </Badge>
-                                  ) : (
-                                    <Badge bg="info" text="dark">
-                                      {formatMenuTypeLabel(menuType)}
-                                    </Badge>
-                                  )}
-                                </div>
-                              ))
-                            ) : (
-                              <Badge bg="secondary">None</Badge>
-                            )}
-                          </td>
-                          <td>
-                            {item.active_statuses.length ? (
-                              item.active_statuses.map((status, statusIndex) => (
-                                <div key={`${item.row_key}-active-status-${statusIndex}`} className="admin-table-stack-line admin-status-line">
-                                  <span
-                                    className={`admin-status-dot ${status ? "admin-status-dot-active" : "admin-status-dot-inactive"}`}
-                                    role="img"
-                                    aria-label={status ? "Active" : "Inactive"}
-                                    title={status ? "Active" : "Inactive"}
-                                  />
-                                  <span className="small">{status ? "Active" : "Inactive"}</span>
-                                </div>
-                              ))
-                            ) : (
-                              <span>-</span>
-                            )}
-                          </td>
-                          <td>
-                            {item.group_names.length ? (
+	                          <td>
+	                            {item.item_name || "Untitled Item"}
+	                          </td>
+	                          <td className="text-center align-middle">
+	                            {item.active_statuses.length ? (
+	                              item.active_statuses.map((status, statusIndex) => (
+	                                <div key={`${item.row_key}-active-status-${statusIndex}`} className="admin-table-stack-line admin-status-line">
+	                                  <span
+	                                    className={`admin-status-dot ${status ? "admin-status-dot-active" : "admin-status-dot-inactive"}`}
+	                                    role="img"
+	                                    aria-label={status ? "Active" : "Inactive"}
+	                                    title={status ? "Active" : "Inactive"}
+	                                  />
+	                                </div>
+	                              ))
+	                            ) : (
+	                              <span>-</span>
+	                            )}
+	                          </td>
+	                          <td>
+	                            {item.menu_types.length ? (
+	                              item.menu_types.map((menuType, menuTypeIndex) => (
+	                                <div key={`${item.row_key}-menu-type-${menuTypeIndex}`} className="admin-table-stack-line">
+	                                  {menuType === "formal" ? (
+	                                    <Badge bg="warning" text="dark">
+	                                      {formatMenuTypeLabel(menuType)}
+	                                    </Badge>
+	                                  ) : (
+	                                    <Badge bg="info" text="dark">
+	                                      {formatMenuTypeLabel(menuType)}
+	                                    </Badge>
+	                                  )}
+	                                </div>
+	                              ))
+	                            ) : (
+	                              <Badge bg="secondary">None</Badge>
+	                            )}
+	                          </td>
+	                          <td>
+	                            {item.group_names.length ? (
                               item.group_names.map((groupName, groupIndex) => (
                                 <div key={`${item.row_key}-group-${groupIndex}`} className="admin-group-line admin-table-stack-line">
                                   {groupName}
@@ -1381,6 +1465,7 @@ const AdminDashboard = () => {
                       onClick={() => {
                         setSelectedItemId(null);
                         setItemForm(null);
+                        setItemFormOriginal(null);
                         setShowCreatedItemHighlight(false);
                       }}
                     />
@@ -1550,16 +1635,17 @@ const AdminDashboard = () => {
                     </Row>
                   ) : null}
 
-                  <div className="d-flex gap-2 mt-3">
+                  <div className="d-flex gap-2 mt-3 align-items-center">
                     <Button
                       className="btn-inquiry-action"
                       variant="secondary"
                       onClick={() =>
-                        queueConfirm("Update menu item", "Apply item changes and assignments?", "Update", saveItem, FORM_ERROR_EDIT_ITEM)
+                        queueConfirm(buildUpdateConfirmTitle(), buildUpdateConfirmBody(), "Update", saveItem, FORM_ERROR_EDIT_ITEM)
                       }>
                       Update Item
                     </Button>
                     <Button
+                      className="ms-auto"
                       variant="danger"
                       onClick={() =>
                         queueConfirm(
