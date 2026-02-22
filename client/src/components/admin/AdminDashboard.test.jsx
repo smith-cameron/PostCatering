@@ -20,14 +20,14 @@ describe("AdminDashboard", () => {
           buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
         );
       }
-      if (url === "/api/admin/menu/reference-data") {
-        return Promise.resolve(buildResponse({ catalogs: [], option_groups: [], sections: [], tiers: [] }));
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/items?")) {
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
-      }
-      if (String(url).startsWith("/api/admin/menu/sections?")) {
-        return Promise.resolve(buildResponse({ sections: [] }));
       }
       if (String(url).startsWith("/api/admin/media?")) {
         return Promise.resolve(buildResponse({ media: [] }));
@@ -62,69 +62,81 @@ describe("AdminDashboard", () => {
     });
   });
 
-  it("renders structured section controls instead of JSON textareas", async () => {
+  it("loads simplified menu endpoints instead of legacy reference/section endpoints", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
       if (url === "/api/admin/auth/me") {
         return Promise.resolve(
           buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
         );
       }
-      if (url === "/api/admin/menu/reference-data") {
-        return Promise.resolve(
-          buildResponse({
-            catalogs: [{ id: 1, catalog_key: "community", page_title: "Community", display_order: 1, is_active: true }],
-            option_groups: [{ id: 10, option_key: "proteins", title: "Proteins", is_active: true }],
-            sections: [{ id: 1, catalog_key: "community", title: "Entrees", is_active: true }],
-            tiers: [{ id: 100, section_id: 1, tier_title: "Tier 1", is_active: true }],
-          })
-        );
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [{ id: 10, key: "entree", name: "Entree", is_active: true }] }));
       }
-      if (String(url).startsWith("/api/admin/menu/items?")) {
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [{ id: 11, key: "entrees", name: "Entrees", is_active: true }] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/sections?")) {
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Create Menu Item");
+    const requests = globalThis.fetch.mock.calls.map((call) => String(call[0]));
+    expect(requests).toContain("/api/menu/general/groups");
+    expect(requests).toContain("/api/menu/formal/groups");
+    expect(requests.some((requestUrl) => requestUrl.startsWith("/api/admin/menu/catalog-items?"))).toBe(true);
+    expect(requests.some((requestUrl) => requestUrl.startsWith("/api/admin/menu/reference-data"))).toBe(false);
+    expect(requests.some((requestUrl) => requestUrl.startsWith("/api/admin/menu/sections?"))).toBe(false);
+  });
+
+  it("creates regular items from one form with group + tray prices and auto-assignments", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
         return Promise.resolve(
           buildResponse({
-            sections: [
-              {
-                id: 1,
-                catalog_key: "community",
-                section_key: "community_entrees",
-                title: "Entrees",
-                price: "",
-                is_active: true,
-              },
-            ],
+            groups: [{ id: 10, key: "signature_proteins", name: "Proteins", sort_order: 1, is_active: true }],
           })
         );
       }
-      if (url === "/api/admin/menu/sections/1") {
+      if (url === "/api/menu/formal/groups") {
         return Promise.resolve(
           buildResponse({
-            section: {
-              id: 1,
-              catalog_key: "community",
-              section_key: "community_entrees",
-              title: "Entrees",
-              description: "",
-              price: "",
-              section_type: "",
-              category: "",
-              course_type: "",
-              display_order: 1,
+            groups: [{ id: 11, key: "entrees", name: "Formal Entrees", sort_order: 1, is_active: true }],
+          })
+        );
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      if (url === "/api/admin/menu/items" && options?.method === "POST") {
+        return Promise.resolve(
+          buildResponse({
+            item: {
+              id: 55,
+              item_name: "Jerk Chicken",
+              item_key: "jerk_chicken",
               is_active: true,
-              include_groups: [{ id: 91, group_id: 10, option_key: "proteins", group_title: "Proteins", is_active: true }],
-              constraints: [{ id: 77, constraint_key: "proteins", min_select: 1, max_select: 2, is_active: true }],
-              tiers: [
-                {
-                  id: 100,
-                  tier_title: "Tier 1",
-                  price: "$18",
-                  display_order: 1,
-                  is_active: true,
-                  constraints: [{ id: 88, constraint_key: "proteins", min_select: 1, max_select: 1, is_active: true }],
-                },
-              ],
+              option_group_assignments: [],
+              section_row_assignments: [],
+              tier_bullet_assignments: [],
             },
           })
         );
@@ -141,13 +153,50 @@ describe("AdminDashboard", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText("Sections");
-    fireEvent.click(await screen.findByText("Entrees"));
+    await screen.findByText("Create Menu Item");
+    expect(screen.queryByLabelText("Group")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Half Tray Price")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Full Tray Price")).not.toBeInTheDocument();
 
-    await screen.findByText("Edit Section Metadata & Rules");
-    expect(screen.getByText("Section Constraints")).toBeInTheDocument();
-    expect(screen.getByText("Tier Settings")).toBeInTheDocument();
-    expect(screen.queryByText("Constraints JSON")).not.toBeInTheDocument();
-    expect(screen.queryByText("Tiers JSON")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Item Name"), { target: { value: "Jerk Chicken" } });
+    fireEvent.change(screen.getByLabelText("Menu Type"), { target: { value: "regular" } });
+    expect(screen.getByLabelText("Group")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Half Tray Price")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Full Tray Price")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Proteins" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Formal Entrees" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Group"), { target: { value: "10" } });
+    fireEvent.change(screen.getByPlaceholderText("Half Tray Price"), { target: { value: "75" } });
+    fireEvent.change(screen.getByPlaceholderText("Full Tray Price"), { target: { value: "140" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Item" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      const createCall = globalThis.fetch.mock.calls.find(
+        (call) => call[0] === "/api/admin/menu/items" && call[1]?.method === "POST"
+      );
+      expect(createCall).toBeTruthy();
+      const payload = JSON.parse(createCall[1].body);
+      expect(payload.item_name).toBe("Jerk Chicken");
+      expect(payload.menu_type).toBe("regular");
+      expect(payload.group_id).toBe(10);
+      expect(payload.tray_price_half).toBe("75");
+      expect(payload.tray_price_full).toBe("140");
+      expect(payload.item_key).toBeUndefined();
+      expect(payload.option_group_assignments).toHaveLength(1);
+      expect(payload.section_row_assignments).toHaveLength(0);
+      expect(payload.tier_bullet_assignments).toHaveLength(0);
+    });
+
+    fireEvent.change(screen.getByLabelText("Menu Type"), { target: { value: "formal" } });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Group")).toBeInTheDocument();
+      expect(screen.getByRole("option", { name: "Formal Entrees" })).toBeInTheDocument();
+      expect(screen.queryByRole("option", { name: "Proteins" })).not.toBeInTheDocument();
+      expect(screen.queryByPlaceholderText("Half Tray Price")).not.toBeInTheDocument();
+      expect(screen.queryByPlaceholderText("Full Tray Price")).not.toBeInTheDocument();
+    });
   });
 });

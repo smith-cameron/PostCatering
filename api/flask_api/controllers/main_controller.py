@@ -287,6 +287,20 @@ def admin_menu_items():
     return jsonify(response_body), status_code
 
 
+@app.route("/api/admin/menu/catalog-items", methods=["GET", "OPTIONS"])
+@_require_admin_auth
+def admin_menu_catalog_items(admin_user=None):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    items = AdminMenuService.list_menu_items(
+        search=request.args.get("search", ""),
+        is_active=request.args.get("is_active"),
+        limit=request.args.get("limit", 250),
+    )
+    return jsonify({"items": items}), 200
+
+
 @app.route("/api/admin/menu/items/<int:item_id>", methods=["GET", "PATCH", "OPTIONS"])
 @_require_admin_auth
 def admin_menu_item_detail(item_id, admin_user=None):

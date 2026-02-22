@@ -7,6 +7,7 @@ import { requestJson, requestWithFormData } from "./adminApi";
 const TAB_MENU = "menu";
 const TAB_MEDIA = "media";
 const TAB_AUDIT = "audit";
+const FORMAL_ID_OFFSET = 1000000;
 
 const toId = (value) => {
   const parsed = Number.parseInt(String(value ?? "").trim(), 10);
@@ -18,6 +19,11 @@ const withDisplayOrder = (rows) =>
     ...row,
     display_order: Number.isFinite(Number(row.display_order)) && Number(row.display_order) > 0 ? Number(row.display_order) : index + 1,
   }));
+
+const isFormalGroup = (group) => {
+  const marker = `${group?.option_key || ""} ${group?.category || ""} ${group?.title || ""}`.toLowerCase();
+  return marker.includes("formal");
+};
 
 const toNonNegativeInt = (value) => {
   const parsed = Number.parseInt(String(value ?? "").trim(), 10);
@@ -118,6 +124,24 @@ const emptyOptionGroupRow = (displayOrder) => ({ group_id: "", display_order: di
 const emptySectionRow = (displayOrder) => ({ section_id: "", value_1: "", value_2: "", display_order: displayOrder, is_active: true });
 const emptyTierRow = (displayOrder) => ({ tier_id: "", display_order: displayOrder, is_active: true });
 const emptyConstraintRow = () => ({ constraint_key: "", min_select: 0, max_select: 0, is_active: true });
+const toOptionGroupFromCatalog = (group, menuType) => {
+  const sourceGroupId = toId(group?.id);
+  if (!sourceGroupId) return null;
+  const normalizedType = String(menuType || "").toLowerCase() === "formal" ? "formal" : "regular";
+  const encodedId = normalizedType === "formal" ? sourceGroupId + FORMAL_ID_OFFSET : sourceGroupId;
+  return {
+    id: encodedId,
+    option_key: `${normalizedType}_${group?.key || ""}`,
+    option_id: `${normalizedType}:${group?.key || sourceGroupId}`,
+    category: normalizedType,
+    title: group?.name || "Unnamed Group",
+    display_order: Number(group?.sort_order) || 0,
+    is_active: group?.is_active !== false,
+    menu_type: normalizedType,
+    group_key: group?.key || "",
+    source_group_id: sourceGroupId,
+  };
+};
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -135,7 +159,14 @@ const AdminDashboard = () => {
   const [menuItems, setMenuItems] = useState([]);
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [itemForm, setItemForm] = useState(null);
-  const [newItemForm, setNewItemForm] = useState({ item_name: "", item_key: "", is_active: true });
+  const [newItemForm, setNewItemForm] = useState({
+    item_name: "",
+    is_active: true,
+    menu_type: "",
+    group_id: "",
+    tray_price_half: "",
+    tray_price_full: "",
+  });
 
   const [sectionFilters, setSectionFilters] = useState({ search: "", catalog_key: "", is_active: "all" });
   const [sections, setSections] = useState([]);
@@ -155,14 +186,41 @@ const AdminDashboard = () => {
   const [confirmBusy, setConfirmBusy] = useState(false);
 
   const catalogOptions = useMemo(() => referenceData.catalogs || [], [referenceData.catalogs]);
+  const activeGroupOptions = useMemo(
+    () =>
+      (referenceData.option_groups || [])
+        .filter((group) => group?.is_active)
+        .sort((left, right) => String(left?.title || "").localeCompare(String(right?.title || ""))),
+    [referenceData.option_groups]
+  );
+  const selectedCreateMenuType = String(newItemForm.menu_type || "").toLowerCase();
+  const applicableGroupOptions = useMemo(() => {
+    if (!selectedCreateMenuType) return [];
+    const formalGroups = activeGroupOptions.filter((group) => isFormalGroup(group));
+    if (selectedCreateMenuType === "formal") {
+      return formalGroups.length ? formalGroups : activeGroupOptions;
+    }
+    const regularGroups = activeGroupOptions.filter((group) => !isFormalGroup(group));
+    return regularGroups.length ? regularGroups : activeGroupOptions;
+  }, [activeGroupOptions, selectedCreateMenuType]);
 
   const loadReferenceData = useCallback(async () => {
-    const payload = await requestJson("/api/admin/menu/reference-data");
+    const [generalPayload, formalPayload] = await Promise.all([
+      requestJson("/api/menu/general/groups"),
+      requestJson("/api/menu/formal/groups"),
+    ]);
+    const optionGroups = [
+      ...((generalPayload.groups || []).map((group) => toOptionGroupFromCatalog(group, "regular")).filter(Boolean)),
+      ...((formalPayload.groups || []).map((group) => toOptionGroupFromCatalog(group, "formal")).filter(Boolean)),
+    ];
     setReferenceData({
-      catalogs: payload.catalogs || [],
-      option_groups: payload.option_groups || [],
-      sections: payload.sections || [],
-      tiers: payload.tiers || [],
+      catalogs: [
+        { id: 1, catalog_key: "regular", page_title: "Regular Menu", display_order: 1, is_active: true },
+        { id: 2, catalog_key: "formal", page_title: "Formal Menu", display_order: 2, is_active: true },
+      ],
+      option_groups: optionGroups,
+      sections: [],
+      tiers: [],
     });
   }, []);
 
@@ -171,19 +229,15 @@ const AdminDashboard = () => {
     if (itemFilters.search.trim()) params.set("search", itemFilters.search.trim());
     if (itemFilters.is_active !== "all") params.set("is_active", itemFilters.is_active);
     params.set("limit", "500");
-    const payload = await requestJson(`/api/admin/menu/items?${params.toString()}`);
+    const payload = await requestJson(`/api/admin/menu/catalog-items?${params.toString()}`);
     setMenuItems(payload.items || []);
   }, [itemFilters]);
 
   const loadSections = useCallback(async () => {
-    const params = new URLSearchParams();
-    if (sectionFilters.search.trim()) params.set("search", sectionFilters.search.trim());
-    if (sectionFilters.catalog_key) params.set("catalog_key", sectionFilters.catalog_key);
-    if (sectionFilters.is_active !== "all") params.set("is_active", sectionFilters.is_active);
-    params.set("limit", "500");
-    const payload = await requestJson(`/api/admin/menu/sections?${params.toString()}`);
-    setSections(payload.sections || []);
-  }, [sectionFilters]);
+    setSections([]);
+    setSelectedSectionId(null);
+    setSectionForm(null);
+  }, []);
 
   const loadMedia = useCallback(async () => {
     const params = new URLSearchParams();
@@ -236,7 +290,7 @@ const AdminDashboard = () => {
     const loadInitial = async () => {
       try {
         setBusy(true);
-        await Promise.all([loadReferenceData(), loadMenuItems(), loadSections()]);
+        await Promise.all([loadReferenceData(), loadMenuItems()]);
       } catch (error) {
         setErrorMessage(error.message || "Failed to load admin data.");
       } finally {
@@ -244,7 +298,7 @@ const AdminDashboard = () => {
       }
     };
     loadInitial();
-  }, [adminUser, loadReferenceData, loadMenuItems, loadSections]);
+  }, [adminUser, loadReferenceData, loadMenuItems]);
 
   useEffect(() => {
     if (!adminUser) return;
@@ -282,7 +336,7 @@ const AdminDashboard = () => {
     try {
       setBusy(true);
       if (activeTab === TAB_MENU) {
-        await Promise.all([loadReferenceData(), loadMenuItems(), loadSections()]);
+        await Promise.all([loadReferenceData(), loadMenuItems()]);
       } else if (activeTab === TAB_MEDIA) {
         await loadMedia();
       } else {
@@ -293,7 +347,7 @@ const AdminDashboard = () => {
     } finally {
       setBusy(false);
     }
-  }, [activeTab, loadReferenceData, loadMenuItems, loadSections, loadMedia, loadAudit]);
+  }, [activeTab, loadReferenceData, loadMenuItems, loadMedia, loadAudit]);
 
   const queueConfirm = (title, body, confirmLabel, action) => {
     setConfirmState({ show: true, title, body, confirmLabel, action });
@@ -313,12 +367,82 @@ const AdminDashboard = () => {
   };
 
   const createItem = async () => {
+    const itemName = String(newItemForm.item_name || "").trim();
+    if (!itemName) throw new Error("Item name is required.");
+    const menuType = String(newItemForm.menu_type || "").toLowerCase();
+    if (!["regular", "formal"].includes(menuType)) throw new Error("Please select a menu type.");
+
+    const groupId = Number(newItemForm.group_id);
+    if (!Number.isFinite(groupId) || groupId <= 0) throw new Error("Please select a group.");
+    if (!applicableGroupOptions.some((group) => Number(group.id) === groupId)) {
+      throw new Error("Please select a group for the chosen menu type.");
+    }
+
+    const isRegular = menuType === "regular";
+    const trayHalfRaw = String(newItemForm.tray_price_half || "").trim();
+    const trayFullRaw = String(newItemForm.tray_price_full || "").trim();
+    const trayHalf = Number.parseFloat(trayHalfRaw);
+    const trayFull = Number.parseFloat(trayFullRaw);
+    if (isRegular && (!Number.isFinite(trayHalf) || trayHalf < 0)) {
+      throw new Error("Half tray price is required for regular menu items.");
+    }
+    if (isRegular && (!Number.isFinite(trayFull) || trayFull < 0)) {
+      throw new Error("Full tray price is required for regular menu items.");
+    }
+
+    const nonFormalSections = (referenceData.sections || []).filter(
+      (section) => section?.is_active && String(section?.catalog_key || "").toLowerCase() !== "formal"
+    );
+    const nonFormalTiers = (referenceData.tiers || []).filter(
+      (tier) => tier?.is_active && String(tier?.catalog_key || "").toLowerCase() !== "formal"
+    );
+
+    const sectionRowAssignments = isRegular
+      ? nonFormalSections.map((section, index) => {
+          const isToGoSection =
+            String(section?.catalog_key || "").toLowerCase() === "togo" ||
+            String(section?.section_key || "").toLowerCase().startsWith("togo_");
+          return {
+            section_id: Number(section.id),
+            value_1: isToGoSection ? trayHalfRaw : "",
+            value_2: isToGoSection ? trayFullRaw : "",
+            display_order: index + 1,
+            is_active: true,
+          };
+        })
+      : [];
+
+    const tierBulletAssignments = isRegular
+      ? nonFormalTiers.map((tier, index) => ({
+          tier_id: Number(tier.id),
+          display_order: index + 1,
+          is_active: true,
+        }))
+      : [];
+
     const payload = await requestJson("/api/admin/menu/items", {
       method: "POST",
-      body: JSON.stringify(newItemForm),
+      body: JSON.stringify({
+        item_name: itemName,
+        is_active: Boolean(newItemForm.is_active),
+        menu_type: menuType,
+        group_id: groupId,
+        tray_price_half: isRegular ? trayHalfRaw : null,
+        tray_price_full: isRegular ? trayFullRaw : null,
+        option_group_assignments: [{ group_id: groupId, display_order: 1, is_active: true }],
+        section_row_assignments: sectionRowAssignments,
+        tier_bullet_assignments: tierBulletAssignments,
+      }),
     });
     setStatusMessage(`Created menu item: ${payload.item?.item_name || "New Item"}`);
-    setNewItemForm({ item_name: "", item_key: "", is_active: true });
+    setNewItemForm({
+      item_name: "",
+      is_active: true,
+      menu_type: "",
+      group_id: "",
+      tray_price_half: "",
+      tray_price_full: "",
+    });
     await Promise.all([loadMenuItems(), loadAudit()]);
     if (payload.item?.id) {
       setSelectedItemId(payload.item.id);
@@ -483,18 +607,70 @@ const AdminDashboard = () => {
             <Card className="mb-3">
               <Card.Body>
                 <h3 className="h6">Create Menu Item</h3>
+                <Form.Label className="small mb-1">Item Name</Form.Label>
                 <Form.Control
                   className="mb-2"
                   placeholder="Item name"
                   value={newItemForm.item_name}
                   onChange={(event) => setNewItemForm((prev) => ({ ...prev, item_name: event.target.value }))}
                 />
-                <Form.Control
+                <Form.Label className="small mb-1">Menu Type</Form.Label>
+                <Form.Select
                   className="mb-2"
-                  placeholder="Item key (optional)"
-                  value={newItemForm.item_key}
-                  onChange={(event) => setNewItemForm((prev) => ({ ...prev, item_key: event.target.value }))}
-                />
+                  value={newItemForm.menu_type}
+                  onChange={(event) =>
+                    setNewItemForm((prev) => ({
+                      ...prev,
+                      menu_type: event.target.value,
+                      group_id: "",
+                      tray_price_half: "",
+                      tray_price_full: "",
+                    }))
+                  }>
+                  <option value="">Select menu type</option>
+                  <option value="regular">Regular</option>
+                  <option value="formal">Formal</option>
+                </Form.Select>
+                {selectedCreateMenuType ? (
+                  <>
+                    <Form.Label className="small mb-1">Group</Form.Label>
+                    <Form.Select
+                      className="mb-2"
+                      value={newItemForm.group_id}
+                      onChange={(event) => setNewItemForm((prev) => ({ ...prev, group_id: event.target.value }))}>
+                      <option value="">Select group</option>
+                      {applicableGroupOptions.map((group) => (
+                        <option key={group.id} value={group.id}>
+                          {group.title}
+                        </option>
+                      ))}
+                    </Form.Select>
+                  </>
+                ) : null}
+                {selectedCreateMenuType === "regular" ? (
+                  <Row className="g-2 mb-2">
+                    <Col>
+                      <Form.Control
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        placeholder="Half Tray Price"
+                        value={newItemForm.tray_price_half}
+                        onChange={(event) => setNewItemForm((prev) => ({ ...prev, tray_price_half: event.target.value }))}
+                      />
+                    </Col>
+                    <Col>
+                      <Form.Control
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        placeholder="Full Tray Price"
+                        value={newItemForm.tray_price_full}
+                        onChange={(event) => setNewItemForm((prev) => ({ ...prev, tray_price_full: event.target.value }))}
+                      />
+                    </Col>
+                  </Row>
+                ) : null}
                 <Form.Check
                   className="mb-2"
                   type="switch"
