@@ -12,6 +12,7 @@ const FORM_ERROR_CREATE_ITEM = "create_item";
 const FORM_ERROR_EDIT_ITEM = "edit_item";
 const FORM_ERROR_UPLOAD_MEDIA = "upload_media";
 const FORM_ERROR_EDIT_MEDIA = "edit_media";
+const MENU_TYPE_OPTIONS = ["regular", "formal"];
 const EMPTY_FORM_ERRORS = {
   [FORM_ERROR_CREATE_ITEM]: "",
   [FORM_ERROR_EDIT_ITEM]: "",
@@ -35,36 +36,50 @@ const isFormalGroup = (group) => {
   return marker.includes("formal");
 };
 
-const buildItemForm = (item) => ({
-  id: item?.id ?? null,
-  menu_type: String(item?.menu_type || "").toLowerCase(),
-  item_name: item?.item_name ?? "",
-  item_key: item?.item_key ?? "",
-  is_active: Boolean(item?.is_active),
-  option_group_assignments: withDisplayOrder(
-    (item?.option_group_assignments || []).map((row) => ({
-      group_id: toId(row.group_id),
-      display_order: row.display_order,
-      is_active: row?.is_active !== false,
-    }))
-  ),
-  section_row_assignments: withDisplayOrder(
-    (item?.section_row_assignments || []).map((row) => ({
-      section_id: toId(row.section_id),
-      value_1: String(row.value_1 ?? ""),
-      value_2: String(row.value_2 ?? ""),
-      display_order: row.display_order,
-      is_active: row?.is_active !== false,
-    }))
-  ),
-  tier_bullet_assignments: withDisplayOrder(
-    (item?.tier_bullet_assignments || []).map((row) => ({
-      tier_id: toId(row.tier_id),
-      display_order: row.display_order,
-      is_active: row?.is_active !== false,
-    }))
-  ),
-});
+const buildItemForm = (item) => {
+  const hasExplicitMenuTypes = Array.isArray(item?.menu_types);
+  const menuTypes = Array.from(
+    new Set(
+      (hasExplicitMenuTypes ? item.menu_types : [item?.menu_type])
+        .map((value) => String(value || "").trim().toLowerCase())
+        .filter((value) => value === "regular" || value === "formal")
+    )
+  );
+  return {
+    id: item?.id ?? null,
+    menu_type: String(item?.menu_type || "").toLowerCase(),
+    menu_types: menuTypes,
+    item_name: item?.item_name ?? "",
+    tray_price_half: item?.tray_price_half ?? "",
+    tray_price_full: item?.tray_price_full ?? "",
+    is_active: Boolean(item?.is_active),
+    option_group_assignments: withDisplayOrder(
+      (item?.option_group_assignments || []).map((row) => ({
+        menu_type: String(row?.menu_type || row?.category || "").toLowerCase(),
+        category: String(row?.menu_type || row?.category || "").toLowerCase(),
+        group_id: toId(row.group_id),
+        display_order: row.display_order,
+        is_active: row?.is_active !== false,
+      }))
+    ),
+    section_row_assignments: withDisplayOrder(
+      (item?.section_row_assignments || []).map((row) => ({
+        section_id: toId(row.section_id),
+        value_1: String(row.value_1 ?? ""),
+        value_2: String(row.value_2 ?? ""),
+        display_order: row.display_order,
+        is_active: row?.is_active !== false,
+      }))
+    ),
+    tier_bullet_assignments: withDisplayOrder(
+      (item?.tier_bullet_assignments || []).map((row) => ({
+        tier_id: toId(row.tier_id),
+        display_order: row.display_order,
+        is_active: row?.is_active !== false,
+      }))
+    ),
+  };
+};
 
 const buildMediaForm = (item) => ({
   id: item?.id ?? null,
@@ -112,6 +127,217 @@ const resolveGroupNames = (item) => {
 };
 
 const normalizeMenuItemName = (value) => String(value || "").trim().toLowerCase();
+const normalizeFilterText = (value) => String(value || "").trim().toLowerCase();
+
+const uniqueMenuTypeList = (values) => {
+  const seen = new Set();
+  return (values || []).reduce((next, value) => {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (!normalized || seen.has(normalized)) return next;
+    seen.add(normalized);
+    next.push(normalized);
+    return next;
+  }, []);
+};
+
+const uniqueTextList = (values) => {
+  const seen = new Set();
+  return (values || []).reduce((next, value) => {
+    const normalized = String(value || "").trim();
+    if (!normalized) return next;
+    const dedupeKey = normalized.toLowerCase();
+    if (seen.has(dedupeKey)) return next;
+    seen.add(dedupeKey);
+    next.push(normalized);
+    return next;
+  }, []);
+};
+
+const uniqueBooleanList = (values) => {
+  const seen = new Set();
+  return (values || []).reduce((next, value) => {
+    if (value !== true && value !== false) return next;
+    if (seen.has(value)) return next;
+    seen.add(value);
+    next.push(value);
+    return next;
+  }, []);
+};
+
+const formatMenuTypeLabel = (value) => {
+  const normalized = normalizeFilterText(value);
+  if (normalized === "formal") return "Formal";
+  if (normalized === "regular") return "Regular";
+  return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : "-";
+};
+
+const decodeRawItemId = (value) => {
+  const parsed = Number.parseInt(String(value ?? "").trim(), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return "";
+  return parsed > FORMAL_ID_OFFSET ? parsed - FORMAL_ID_OFFSET : parsed;
+};
+
+const resolveMenuTypes = (item) =>
+  uniqueMenuTypeList([
+    ...(Array.isArray(item?.menu_types) ? item.menu_types : []),
+    item?.menu_type,
+  ]);
+
+const resolveAssignmentMenuType = (assignment) =>
+  normalizeFilterText(assignment?.menu_type || assignment?.category);
+
+const getAssignmentGroupIdForType = (assignments, typeKey) => {
+  const normalizedType = normalizeFilterText(typeKey);
+  if (!normalizedType) return "";
+  const match = (assignments || []).find(
+    (assignment) => resolveAssignmentMenuType(assignment) === normalizedType && assignment?.is_active !== false
+  );
+  return toId(match?.group_id);
+};
+
+const upsertAssignmentForType = (assignments, typeKey, groupId) => {
+  const normalizedType = normalizeFilterText(typeKey);
+  if (!normalizedType) return withDisplayOrder(assignments || []);
+  const next = (assignments || []).filter((assignment) => resolveAssignmentMenuType(assignment) !== normalizedType);
+  next.push({
+    menu_type: normalizedType,
+    category: normalizedType,
+    group_id: toId(groupId),
+    is_active: true,
+  });
+  return withDisplayOrder(next);
+};
+
+const removeAssignmentForType = (assignments, typeKey) => {
+  const normalizedType = normalizeFilterText(typeKey);
+  if (!normalizedType) return withDisplayOrder(assignments || []);
+  return withDisplayOrder((assignments || []).filter((assignment) => resolveAssignmentMenuType(assignment) !== normalizedType));
+};
+
+const resolveActiveStatuses = (item) => {
+  const statuses = [];
+  if (Array.isArray(item?.active_statuses)) {
+    item.active_statuses.forEach((status) => {
+      if (status === true || status === false) statuses.push(status);
+    });
+  }
+  if (Array.isArray(item?.groups)) {
+    item.groups.forEach((group) => {
+      if (group && typeof group === "object" && (group.is_active === true || group.is_active === false)) {
+        statuses.push(group.is_active);
+      }
+    });
+  }
+  if (Array.isArray(item?.option_group_assignments)) {
+    item.option_group_assignments.forEach((assignment) => {
+      if (assignment && typeof assignment === "object" && (assignment.is_active === true || assignment.is_active === false)) {
+        statuses.push(assignment.is_active);
+      }
+    });
+  }
+  if (item?.is_active === true || item?.is_active === false) {
+    statuses.push(item.is_active);
+  } else if (item?.is_active !== undefined && item?.is_active !== null) {
+    statuses.push(Boolean(item.is_active));
+  }
+  return uniqueBooleanList(statuses);
+};
+
+const toMenuItemRowKey = (item, index) => {
+  const itemKey = normalizeFilterText(item?.item_key);
+  if (itemKey) return `key:${itemKey}`;
+  const rawItemId = decodeRawItemId(item?.id);
+  if (rawItemId) return `id:${rawItemId}`;
+  const nameToken = normalizeMenuItemName(item?.item_name) || "item";
+  return `name:${nameToken}:${index}`;
+};
+
+const buildMenuItemTableRows = (items) => {
+  const rowsByKey = new Map();
+  (items || []).forEach((item, index) => {
+    const rowKey = toMenuItemRowKey(item, index);
+    const menuTypes = resolveMenuTypes(item);
+    const groupNames = resolveGroupNames(item);
+    const activeStatuses = resolveActiveStatuses(item);
+    const menuType = normalizeFilterText(item?.menu_type);
+    const encodedId = toId(item?.id);
+    const existing = rowsByKey.get(rowKey);
+
+    if (!existing) {
+      rowsByKey.set(rowKey, {
+        row_key: rowKey,
+        id: encodedId || "",
+        item_name: String(item?.item_name || "").trim(),
+        item_key: String(item?.item_key || "").trim(),
+        menu_types: menuTypes,
+        group_names: groupNames,
+        active_statuses: activeStatuses,
+      });
+      return;
+    }
+
+    existing.menu_types = uniqueMenuTypeList([...existing.menu_types, ...menuTypes]);
+    existing.group_names = uniqueTextList([...existing.group_names, ...groupNames]);
+    existing.active_statuses = uniqueBooleanList([...existing.active_statuses, ...activeStatuses]);
+    if (menuType === "regular" && encodedId) {
+      existing.id = encodedId;
+    } else if (!existing.id && encodedId) {
+      existing.id = encodedId;
+    }
+  });
+
+  return Array.from(rowsByKey.values());
+};
+
+const MENU_ITEM_FILTERS = [
+  {
+    key: "search",
+    shouldApply: (value) => Boolean(String(value || "").trim()),
+    apply: (row, value) => {
+      const normalized = normalizeFilterText(value);
+      if (!normalized) return true;
+      const haystack = [
+        row.item_name,
+        row.item_key,
+        row.menu_types.join(" "),
+        row.group_names.join(" "),
+        row.active_statuses.map((status) => (status ? "active" : "inactive")).join(" "),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(normalized);
+    },
+  },
+  {
+    key: "is_active",
+    shouldApply: (value) => String(value || "all") !== "all",
+    apply: (row, value) => {
+      const target = String(value || "all");
+      if (target === "all") return true;
+      if (target === "true") return row.active_statuses.some((status) => status === true);
+      if (target === "false") return row.active_statuses.some((status) => status === false);
+      return true;
+    },
+  },
+  {
+    key: "menu_type",
+    shouldApply: (value) => String(value || "all") !== "all",
+    apply: (row, value) => {
+      const normalized = normalizeFilterText(value);
+      if (!normalized || normalized === "all") return true;
+      return row.menu_types.includes(normalized);
+    },
+  },
+  {
+    key: "group_name",
+    shouldApply: (value) => String(value || "all") !== "all",
+    apply: (row, value) => {
+      const normalized = normalizeFilterText(value);
+      if (!normalized || normalized === "all") return true;
+      return row.group_names.some((groupName) => normalizeFilterText(groupName) === normalized);
+    },
+  },
+];
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -126,7 +352,7 @@ const AdminDashboard = () => {
   const [busy, setBusy] = useState(false);
 
   const [referenceData, setReferenceData] = useState({ catalogs: [], option_groups: [], sections: [], tiers: [] });
-  const [itemFilters, setItemFilters] = useState({ search: "", is_active: "all" });
+  const [itemFilters, setItemFilters] = useState({ search: "", is_active: "all", menu_type: "all", group_name: "all" });
   const [menuItems, setMenuItems] = useState([]);
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [itemForm, setItemForm] = useState(null);
@@ -179,16 +405,44 @@ const AdminDashboard = () => {
     const regularGroups = activeGroupOptions.filter((group) => !isFormalGroup(group));
     return regularGroups.length ? regularGroups : activeGroupOptions;
   }, [activeGroupOptions, selectedCreateMenuType]);
-  const selectedEditMenuType = String(itemForm?.menu_type || "").toLowerCase();
-  const applicableEditGroupOptions = useMemo(() => {
-    if (!selectedEditMenuType) return activeGroupOptions;
+  const groupOptionsByType = useMemo(() => {
     const formalGroups = activeGroupOptions.filter((group) => isFormalGroup(group));
-    if (selectedEditMenuType === "formal") {
-      return formalGroups.length ? formalGroups : activeGroupOptions;
-    }
     const regularGroups = activeGroupOptions.filter((group) => !isFormalGroup(group));
-    return regularGroups.length ? regularGroups : activeGroupOptions;
-  }, [activeGroupOptions, selectedEditMenuType]);
+    return {
+      regular: regularGroups.length ? regularGroups : activeGroupOptions,
+      formal: formalGroups.length ? formalGroups : activeGroupOptions,
+    };
+  }, [activeGroupOptions]);
+  const selectedEditMenuTypes = useMemo(() => uniqueMenuTypeList(itemForm?.menu_types || []), [itemForm?.menu_types]);
+  const editUsesRegular = selectedEditMenuTypes.includes("regular");
+  const getGroupOptionsForType = useCallback(
+    (menuType) => {
+      const normalized = normalizeFilterText(menuType);
+      if (normalized === "formal") return groupOptionsByType.formal;
+      if (normalized === "regular") return groupOptionsByType.regular;
+      return [];
+    },
+    [groupOptionsByType]
+  );
+  const menuItemRows = useMemo(() => buildMenuItemTableRows(menuItems), [menuItems]);
+  const menuItemTypeFilterOptions = useMemo(
+    () => uniqueMenuTypeList(menuItemRows.flatMap((row) => row.menu_types)),
+    [menuItemRows]
+  );
+  const menuItemGroupFilterOptions = useMemo(
+    () =>
+      uniqueTextList(menuItemRows.flatMap((row) => row.group_names)).sort((left, right) => left.localeCompare(right)),
+    [menuItemRows]
+  );
+  const filteredMenuItemRows = useMemo(
+    () =>
+      MENU_ITEM_FILTERS.reduce((rows, filterDefinition) => {
+        const filterValue = itemFilters[filterDefinition.key];
+        if (!filterDefinition.shouldApply(filterValue)) return rows;
+        return rows.filter((row) => filterDefinition.apply(row, filterValue));
+      }, menuItemRows),
+    [itemFilters, menuItemRows]
+  );
 
   const loadReferenceData = useCallback(async () => {
     const [generalPayload, formalPayload] = await Promise.all([
@@ -211,13 +465,9 @@ const AdminDashboard = () => {
   }, []);
 
   const loadMenuItems = useCallback(async () => {
-    const params = new URLSearchParams();
-    if (itemFilters.search.trim()) params.set("search", itemFilters.search.trim());
-    if (itemFilters.is_active !== "all") params.set("is_active", itemFilters.is_active);
-    params.set("limit", "500");
-    const payload = await requestJson(`/api/admin/menu/catalog-items?${params.toString()}`);
+    const payload = await requestJson("/api/admin/menu/catalog-items?limit=500");
     setMenuItems(payload.items || []);
-  }, [itemFilters]);
+  }, []);
 
   const loadMedia = useCallback(async () => {
     const params = new URLSearchParams();
@@ -250,15 +500,17 @@ const AdminDashboard = () => {
   }, [newItemForm.item_name]);
 
   const hasMenuItemNameConflict = useCallback(
-    (itemName, menuType, excludeId = null) => {
+    (itemName, menuTypes, excludeId = null) => {
       const normalizedName = normalizeMenuItemName(itemName);
-      const normalizedType = String(menuType || "").trim().toLowerCase();
-      if (!normalizedName || !normalizedType) return false;
+      const normalizedTypes = uniqueMenuTypeList(Array.isArray(menuTypes) ? menuTypes : [menuTypes]);
+      if (!normalizedName || !normalizedTypes.length) return false;
+      const excludedRawId = excludeId === null ? null : decodeRawItemId(excludeId);
       return menuItems.some((item) => {
-        if (excludeId !== null && Number(item?.id) === Number(excludeId)) return false;
+        const currentRawId = decodeRawItemId(item?.id);
+        if (excludedRawId !== null && Number(currentRawId) === Number(excludedRawId)) return false;
         const currentType = String(item?.menu_type || "").trim().toLowerCase();
         const currentName = normalizeMenuItemName(item?.item_name);
-        return currentType === normalizedType && currentName === normalizedName;
+        return normalizedTypes.includes(currentType) && currentName === normalizedName;
       });
     },
     [menuItems]
@@ -472,18 +724,57 @@ const AdminDashboard = () => {
     setFormErrors((prev) => ({ ...prev, [FORM_ERROR_EDIT_ITEM]: "" }));
     const itemName = String(itemForm.item_name || "").trim();
     if (!itemName) throw new Error("Item name is required.");
-    const menuType = String(itemForm.menu_type || "").toLowerCase();
-    if (hasMenuItemNameConflict(itemName, menuType, itemForm.id)) {
+    const selectedTypes = uniqueMenuTypeList(itemForm.menu_types || []);
+    const hasSelectedTypes = selectedTypes.length > 0;
+    if (hasSelectedTypes && hasMenuItemNameConflict(itemName, selectedTypes, itemForm.id)) {
       throw new Error("Item name must be unique within this menu type.");
     }
-    const selectedGroupId = toId(itemForm.option_group_assignments?.[0]?.group_id);
-    if (!selectedGroupId) throw new Error("Please select a group.");
+    const optionGroupAssignments = hasSelectedTypes
+      ? selectedTypes.map((typeKey, index) => {
+          const selectedGroupId = getAssignmentGroupIdForType(itemForm.option_group_assignments, typeKey);
+          if (!selectedGroupId) {
+            throw new Error(`Select a group for ${formatMenuTypeLabel(typeKey)} menu type.`);
+          }
+          const allowedGroups = getGroupOptionsForType(typeKey);
+          if (!allowedGroups.some((group) => Number(group.id) === Number(selectedGroupId))) {
+            throw new Error(`Group assignment is not valid for ${formatMenuTypeLabel(typeKey)} menu type.`);
+          }
+          return {
+            menu_type: typeKey,
+            category: typeKey,
+            group_id: Number(selectedGroupId),
+            display_order: index + 1,
+            is_active: true,
+          };
+        })
+      : [];
+
+    const usesRegular = selectedTypes.includes("regular");
+    const trayHalfRaw = String(itemForm.tray_price_half || "").trim();
+    const trayFullRaw = String(itemForm.tray_price_full || "").trim();
+    const trayHalf = Number.parseFloat(trayHalfRaw);
+    const trayFull = Number.parseFloat(trayFullRaw);
+    if (usesRegular && (!Number.isFinite(trayHalf) || trayHalf < 0)) {
+      throw new Error("Half tray price is required for regular menu items.");
+    }
+    if (usesRegular && (!Number.isFinite(trayFull) || trayFull < 0)) {
+      throw new Error("Full tray price is required for regular menu items.");
+    }
+
     const payload = {
       id: itemForm.id,
       item_name: itemName,
-      is_active: itemForm.is_active,
-      option_group_assignments: [{ group_id: Number(selectedGroupId), display_order: 1, is_active: true }],
+      is_active: hasSelectedTypes ? itemForm.is_active : false,
     };
+    if (hasSelectedTypes) {
+      payload.menu_type = selectedTypes;
+      payload.tray_price_half = usesRegular ? trayHalfRaw : null;
+      payload.tray_price_full = usesRegular ? trayFullRaw : null;
+      payload.option_group_assignments = optionGroupAssignments;
+    } else {
+      payload.menu_type = [];
+      payload.option_group_assignments = [];
+    }
 
     const response = await requestJson(`/api/admin/menu/items/${itemForm.id}`, {
       method: "PATCH",
@@ -698,21 +989,73 @@ const AdminDashboard = () => {
             <Card className="mb-3">
               <Card.Body>
                 <h3 className="h6">Find Menu Items</h3>
+                <Form.Label className="small mb-1" htmlFor="admin-item-filter-search">
+                  Search
+                </Form.Label>
                 <Form.Control
+                  id="admin-item-filter-search"
                   className="mb-2"
                   placeholder="Search name or key"
                   value={itemFilters.search}
                   onChange={(event) => setItemFilters((prev) => ({ ...prev, search: event.target.value }))}
                 />
+                <Form.Label className="small mb-1" htmlFor="admin-item-filter-status">
+                  Item Status
+                </Form.Label>
                 <Form.Select
+                  id="admin-item-filter-status"
+                  className="mb-2"
                   value={itemFilters.is_active}
                   onChange={(event) => setItemFilters((prev) => ({ ...prev, is_active: event.target.value }))}>
-                  <option value="all">All</option>
+                  <option value="all">All status</option>
                   <option value="true">Active</option>
                   <option value="false">Inactive</option>
                 </Form.Select>
+                <Form.Label className="small mb-1" htmlFor="admin-item-filter-menu-type">
+                  Filter Menu Type
+                </Form.Label>
+                <Form.Select
+                  id="admin-item-filter-menu-type"
+                  className="mb-2"
+                  value={itemFilters.menu_type}
+                  onChange={(event) => setItemFilters((prev) => ({ ...prev, menu_type: event.target.value }))}>
+                  <option value="all">All menu types</option>
+                  {menuItemTypeFilterOptions.map((menuType) => (
+                    <option key={`item-filter-menu-type-${menuType}`} value={menuType}>
+                      {formatMenuTypeLabel(menuType)}
+                    </option>
+                  ))}
+                </Form.Select>
+                <Form.Label className="small mb-1" htmlFor="admin-item-filter-group">
+                  Filter Group
+                </Form.Label>
+                <Form.Select
+                  id="admin-item-filter-group"
+                  className="mb-2"
+                  value={itemFilters.group_name}
+                  onChange={(event) => setItemFilters((prev) => ({ ...prev, group_name: event.target.value }))}>
+                  <option value="all">All groups</option>
+                  {menuItemGroupFilterOptions.map((groupName) => (
+                    <option key={`item-filter-group-${groupName}`} value={groupName}>
+                      {groupName}
+                    </option>
+                  ))}
+                </Form.Select>
+                <Button
+                  className="mt-2 me-2"
+                  variant="outline-secondary"
+                  onClick={() =>
+                    setItemFilters({
+                      search: "",
+                      is_active: "all",
+                      menu_type: "all",
+                      group_name: "all",
+                    })
+                  }>
+                  Reset Filters
+                </Button>
                 <Button className="mt-2" variant="outline-secondary" onClick={loadMenuItems}>
-                  Apply
+                  Refresh Items
                 </Button>
               </Card.Body>
             </Card>
@@ -732,50 +1075,76 @@ const AdminDashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {menuItems.map((item) => (
-                      <tr
-                        key={item.id}
-                        role="button"
-                        onClick={async () => {
-                          setSelectedItemId(item.id);
-                          await loadItemDetail(item.id);
-                        }}>
-                        <td>
-                          {item.item_name}
-                          <div className="small text-secondary">{item.item_key}</div>
-                        </td>
-                        <td>
-                          {String(item.menu_type || "").toLowerCase() === "formal" ? (
-                            <Badge bg="warning" text="dark">
-                              Formal
-                            </Badge>
-                          ) : (
-                            <Badge bg="info" text="dark">
-                              General
-                            </Badge>
-                          )}
-                        </td>
-                        <td>
-                          <span
-                            className={`admin-status-dot ${item.is_active ? "admin-status-dot-active" : "admin-status-dot-inactive"}`}
-                            role="img"
-                            aria-label={item.is_active ? "Active" : "Inactive"}
-                            title={item.is_active ? "Active" : "Inactive"}
-                          />
-                        </td>
-                        <td>
-                          {resolveGroupNames(item).length ? (
-                            resolveGroupNames(item).map((groupName, groupIndex) => (
-                              <div key={`${item.id}-group-${groupIndex}`} className="admin-group-line">
-                                {groupName}
-                              </div>
-                            ))
-                          ) : (
-                            <span>-</span>
-                          )}
+                    {filteredMenuItemRows.length ? (
+                      filteredMenuItemRows.map((item) => (
+                        <tr
+                          key={item.row_key}
+                          role={item.id ? "button" : undefined}
+                          onClick={async () => {
+                            if (!item.id) return;
+                            setSelectedItemId(item.id);
+                            await loadItemDetail(item.id);
+                          }}>
+                          <td>
+                            {item.item_name || "Untitled Item"}
+                            <div className="small text-secondary">{item.item_key || "-"}</div>
+                          </td>
+                          <td>
+                            {item.menu_types.length ? (
+                              item.menu_types.map((menuType, menuTypeIndex) => (
+                                <div key={`${item.row_key}-menu-type-${menuTypeIndex}`} className="admin-table-stack-line">
+                                  {menuType === "formal" ? (
+                                    <Badge bg="warning" text="dark">
+                                      {formatMenuTypeLabel(menuType)}
+                                    </Badge>
+                                  ) : (
+                                    <Badge bg="info" text="dark">
+                                      {formatMenuTypeLabel(menuType)}
+                                    </Badge>
+                                  )}
+                                </div>
+                              ))
+                            ) : (
+                              <Badge bg="secondary">None</Badge>
+                            )}
+                          </td>
+                          <td>
+                            {item.active_statuses.length ? (
+                              item.active_statuses.map((status, statusIndex) => (
+                                <div key={`${item.row_key}-active-status-${statusIndex}`} className="admin-table-stack-line admin-status-line">
+                                  <span
+                                    className={`admin-status-dot ${status ? "admin-status-dot-active" : "admin-status-dot-inactive"}`}
+                                    role="img"
+                                    aria-label={status ? "Active" : "Inactive"}
+                                    title={status ? "Active" : "Inactive"}
+                                  />
+                                  <span className="small">{status ? "Active" : "Inactive"}</span>
+                                </div>
+                              ))
+                            ) : (
+                              <span>-</span>
+                            )}
+                          </td>
+                          <td>
+                            {item.group_names.length ? (
+                              item.group_names.map((groupName, groupIndex) => (
+                                <div key={`${item.row_key}-group-${groupIndex}`} className="admin-group-line admin-table-stack-line">
+                                  {groupName}
+                                </div>
+                              ))
+                            ) : (
+                              <span>-</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4} className="text-center text-secondary py-3">
+                          No menu items match the current filters.
                         </td>
                       </tr>
-                    ))}
+                    )}
                   </tbody>
                 </Table>
               </Card.Body>
@@ -795,39 +1164,124 @@ const AdminDashboard = () => {
                   />
                   <Row className="g-2 mb-2">
                     <Col md={12}>
-                      <Form.Label className="small mb-1">Item Name</Form.Label>
+                      <Form.Label className="small mb-1" htmlFor="admin-edit-item-name">
+                        Item Name
+                      </Form.Label>
                       <Form.Control
+                        id="admin-edit-item-name"
                         value={itemForm.item_name}
                         onChange={(event) => setItemForm((prev) => ({ ...prev, item_name: event.target.value }))}
                       />
                     </Col>
                   </Row>
 
-                  <div className="admin-assignment-panel">
-                    <h4 className="h6 mb-2">Option Group Assignment</h4>
-                    <Form.Label className="small mb-1">Group</Form.Label>
-                    <Form.Select
-                      value={itemForm.option_group_assignments?.[0]?.group_id || ""}
-                      onChange={(event) => {
-                        const nextGroupId = toId(event.target.value);
-                        setItemForm((prev) => {
-                          if (!prev) return prev;
-                          return {
-                            ...prev,
-                            option_group_assignments: nextGroupId
-                              ? [{ group_id: nextGroupId, display_order: 1, is_active: true }]
-                              : [],
-                          };
-                        });
-                      }}>
-                      <option value="">Select group</option>
-                      {applicableEditGroupOptions.map((option) => (
-                        <option key={option.id} value={option.id}>
-                          {option.title}
-                        </option>
-                      ))}
-                    </Form.Select>
+                  <div className="admin-assignment-panel mb-3">
+                    <h4 className="h6 mb-2">Menu Type Associations</h4>
+                    <div className="d-flex gap-3 flex-wrap">
+                      {MENU_TYPE_OPTIONS.map((typeKey) => {
+                        const normalizedType = normalizeFilterText(typeKey);
+                        const checked = selectedEditMenuTypes.includes(normalizedType);
+                        return (
+                          <Form.Check
+                            key={`edit-menu-type-${normalizedType}`}
+                            inline
+                            type="checkbox"
+                            id={`edit-menu-type-${normalizedType}`}
+                            label={formatMenuTypeLabel(normalizedType)}
+                            checked={checked}
+                            onChange={(event) => {
+                              const wantsEnabled = event.target.checked;
+                              setItemForm((prev) => {
+                                if (!prev) return prev;
+                                const currentTypes = uniqueMenuTypeList(prev.menu_types || []);
+                                const nextTypes = wantsEnabled
+                                  ? uniqueMenuTypeList([...currentTypes, normalizedType])
+                                  : currentTypes.filter((value) => value !== normalizedType);
+                                const options = getGroupOptionsForType(normalizedType);
+                                const fallbackGroupId = getAssignmentGroupIdForType(prev.option_group_assignments, normalizedType) || toId(options[0]?.id);
+                                const nextAssignments = wantsEnabled
+                                  ? upsertAssignmentForType(prev.option_group_assignments, normalizedType, fallbackGroupId)
+                                  : removeAssignmentForType(prev.option_group_assignments, normalizedType);
+                                return {
+                                  ...prev,
+                                  menu_types: nextTypes,
+                                  option_group_assignments: nextAssignments,
+                                };
+                              });
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
                   </div>
+
+                  <div className="admin-assignment-panel">
+                    <h4 className="h6 mb-2">Group Assignments</h4>
+                    {selectedEditMenuTypes.length ? (
+                      selectedEditMenuTypes.map((typeKey) => {
+                        const options = getGroupOptionsForType(typeKey);
+                        const groupSelectId = `admin-edit-group-${typeKey}`;
+                        return (
+                          <div key={`edit-group-${typeKey}`} className="mb-2">
+                            <Form.Label className="small mb-1" htmlFor={groupSelectId}>{`${formatMenuTypeLabel(typeKey)} Group`}</Form.Label>
+                            <Form.Select
+                              id={groupSelectId}
+                              value={getAssignmentGroupIdForType(itemForm.option_group_assignments, typeKey)}
+                              onChange={(event) => {
+                                const nextGroupId = toId(event.target.value);
+                                setItemForm((prev) => {
+                                  if (!prev) return prev;
+                                  return {
+                                    ...prev,
+                                    option_group_assignments: upsertAssignmentForType(prev.option_group_assignments, typeKey, nextGroupId),
+                                  };
+                                });
+                              }}>
+                              <option value="">Select group</option>
+                              {options.map((option) => (
+                                <option key={option.id} value={option.id}>
+                                  {option.title}
+                                </option>
+                              ))}
+                            </Form.Select>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="small text-secondary">Select at least one menu type to configure group assignments.</div>
+                    )}
+                  </div>
+
+                  {editUsesRegular ? (
+                    <Row className="g-2 mt-2">
+                      <Col md={6}>
+                        <Form.Label className="small mb-1" htmlFor="admin-edit-half-tray-price">
+                          Half Tray Price
+                        </Form.Label>
+                        <Form.Control
+                          id="admin-edit-half-tray-price"
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={itemForm.tray_price_half}
+                          onChange={(event) => setItemForm((prev) => ({ ...prev, tray_price_half: event.target.value }))}
+                        />
+                      </Col>
+                      <Col md={6}>
+                        <Form.Label className="small mb-1" htmlFor="admin-edit-full-tray-price">
+                          Full Tray Price
+                        </Form.Label>
+                        <Form.Control
+                          id="admin-edit-full-tray-price"
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={itemForm.tray_price_full}
+                          onChange={(event) => setItemForm((prev) => ({ ...prev, tray_price_full: event.target.value }))}
+                        />
+                      </Col>
+                    </Row>
+                  ) : null}
 
                   <Button
                     className="btn-inquiry-action mt-3"
