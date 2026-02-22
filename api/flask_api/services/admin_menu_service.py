@@ -223,11 +223,10 @@ class AdminMenuService:
         g.group_key,
         g.group_name AS group_title
       FROM menu_items i
-      JOIN menu_item_type_groups mitg ON mitg.menu_item_id = i.id
-      JOIN menu_types mt ON mt.id = mitg.menu_type_id
-      JOIN menu_groups g ON g.id = mitg.menu_group_id
-      WHERE mitg.is_active = 1
-      ORDER BY i.item_name ASC, i.id ASC, mt.sort_order ASC;
+      LEFT JOIN menu_item_type_groups mitg ON mitg.menu_item_id = i.id AND mitg.is_active = 1
+      LEFT JOIN menu_types mt ON mt.id = mitg.menu_type_id
+      LEFT JOIN menu_groups g ON g.id = mitg.menu_group_id
+      ORDER BY i.item_name ASC, i.id ASC, mt.sort_order ASC, mt.id ASC;
       """
         )
 
@@ -248,19 +247,27 @@ class AdminMenuService:
                 if normalized_search not in haystack:
                     continue
 
+            normalized_type = menu_type if menu_type in ("regular", "formal") else None
+            encoded_item_id = cls._encode_item_id(normalized_type or "regular", row.get("id"))
+            encoded_group_id = (
+                cls._encode_group_id(normalized_type, row.get("group_id"))
+                if normalized_type and row.get("group_id")
+                else None
+            )
             filtered.append(
                 {
-                    "id": cls._encode_item_id(menu_type, row.get("id")),
-                    "menu_type": menu_type,
+                    "id": encoded_item_id,
+                    "menu_type": normalized_type,
+                    "menu_types": [normalized_type] if normalized_type else [],
                     "item_key": row.get("item_key"),
                     "item_name": row.get("item_name"),
                     "is_active": is_active_value,
-                    "group_id": cls._encode_group_id(menu_type, row.get("group_id")),
+                    "group_id": encoded_group_id,
                     "group_key": row.get("group_key"),
                     "group_title": row.get("group_title"),
-                    "tray_price_half": (cls._serialize_price(half_price) if menu_type == "regular" else None),
-                    "tray_price_full": (cls._serialize_price(full_price) if menu_type == "regular" else None),
-                    "option_group_count": 1,
+                    "tray_price_half": (cls._serialize_price(half_price) if normalized_type == "regular" else None),
+                    "tray_price_full": (cls._serialize_price(full_price) if normalized_type == "regular" else None),
+                    "option_group_count": 1 if row.get("group_id") else 0,
                     "section_row_count": 0,
                     "tier_bullet_count": 0,
                     "created_at": cls._to_iso(row.get("created_at")),
@@ -269,6 +276,27 @@ class AdminMenuService:
             )
 
         return filtered[:normalized_limit]
+
+    @classmethod
+    def _build_unassigned_item_detail(cls, menu_type, row_id, raw_row):
+        return {
+            "id": cls._encode_item_id(menu_type or "regular", row_id),
+            "menu_type": menu_type,
+            "menu_types": [],
+            "item_key": raw_row.get("item_key"),
+            "item_name": raw_row.get("item_name"),
+            "item_type": raw_row.get("item_type"),
+            "item_category": raw_row.get("item_category"),
+            "is_active": bool(raw_row.get("is_active", 0)),
+            "group_id": None,
+            "group_key": None,
+            "group_title": None,
+            "tray_price_half": cls._serialize_price(raw_row.get("tray_price_half")),
+            "tray_price_full": cls._serialize_price(raw_row.get("tray_price_full")),
+            "option_group_assignments": [],
+            "section_row_assignments": [],
+            "tier_bullet_assignments": [],
+        }
 
     @classmethod
     def _fetch_item_types(cls, row_id, connection=None):
@@ -332,6 +360,8 @@ class AdminMenuService:
         i.id,
         i.item_key,
         i.item_name,
+        i.item_type,
+        i.item_category,
         i.is_active,
         i.tray_price_half,
         i.tray_price_full,
@@ -360,6 +390,8 @@ class AdminMenuService:
             "menu_type": normalized_type,
             "item_key": row.get("item_key"),
             "item_name": row.get("item_name"),
+            "item_type": row.get("item_type"),
+            "item_category": row.get("item_category"),
             "is_active": bool(row.get("is_active", 0)),
             "group_id": cls._encode_group_id(normalized_type, row.get("group_id")),
             "group_key": row.get("group_key"),
@@ -383,25 +415,55 @@ class AdminMenuService:
 
         item = cls._fetch_item_row(menu_type, row_id)
         if not item:
-            return None
+            raw_row = cls._fetch_raw_item_row(row_id=row_id, connection=None)
+            if not raw_row:
+                return None
+            return cls._build_unassigned_item_detail(menu_type, row_id, raw_row)
 
         menu_types = cls._fetch_item_types(row_id)
+        assignments_by_type = cls._fetch_item_assignments(row_id)
+        ordered_types = [type_key for type_key in menu_types if type_key in assignments_by_type]
+        if not ordered_types:
+            ordered_types = list(assignments_by_type.keys())
 
         response_item = {k: v for k, v in item.items() if not k.startswith("_")}
         response_item["menu_types"] = menu_types
 
-        return {
-            **response_item,
-            "option_group_assignments": [
+        option_group_assignments = []
+        for index, type_key in enumerate(ordered_types):
+            assignment = assignments_by_type.get(type_key)
+            if not assignment:
+                continue
+            option_group_assignments.append(
+                {
+                    "id": assignment.get("encoded_group_id"),
+                    "group_id": assignment.get("encoded_group_id"),
+                    "option_key": assignment.get("group_key"),
+                    "group_title": assignment.get("group_title"),
+                    "menu_type": type_key,
+                    "category": type_key,
+                    "display_order": index + 1,
+                    "is_active": bool(assignment.get("is_active", 0)),
+                }
+            )
+
+        if not option_group_assignments:
+            option_group_assignments = [
                 {
                     "id": response_item.get("group_id"),
                     "group_id": response_item.get("group_id"),
                     "option_key": response_item.get("group_key"),
                     "group_title": response_item.get("group_title"),
+                    "menu_type": response_item.get("menu_type"),
+                    "category": response_item.get("menu_type"),
                     "display_order": 1,
                     "is_active": True,
                 }
-            ],
+            ]
+
+        return {
+            **response_item,
+            "option_group_assignments": option_group_assignments,
             "section_row_assignments": [],
             "tier_bullet_assignments": [],
         }
@@ -651,7 +713,7 @@ class AdminMenuService:
     def _fetch_raw_item_row(cls, row_id, connection):
         return query_db(
             """
-      SELECT id, item_key, item_name, tray_price_half, tray_price_full, is_active
+      SELECT id, item_key, item_name, item_type, item_category, tray_price_half, tray_price_full, is_active
       FROM menu_items
       WHERE id = %(row_id)s
       LIMIT 1;
@@ -699,6 +761,8 @@ class AdminMenuService:
                 return {"error": "Item name must be unique within this menu type."}, 409
 
             is_active = cls._to_bool(body.get("is_active"), default=True)
+            item_type = str(body.get("item_type") or "").strip() or None
+            item_category = str(body.get("item_category") or "").strip() or None
             item_key = cls._generate_unique_item_key(
                 item_name=item_name,
                 provided_key=body.get("item_key"),
@@ -717,12 +781,14 @@ class AdminMenuService:
 
             inserted_row_id = query_db(
                 """
-        INSERT INTO menu_items (item_key, item_name, is_active, tray_price_half, tray_price_full)
-        VALUES (%(item_key)s, %(item_name)s, %(is_active)s, %(tray_price_half)s, %(tray_price_full)s);
+        INSERT INTO menu_items (item_key, item_name, item_type, item_category, is_active, tray_price_half, tray_price_full)
+        VALUES (%(item_key)s, %(item_name)s, %(item_type)s, %(item_category)s, %(is_active)s, %(tray_price_half)s, %(tray_price_full)s);
         """,
                 {
                     "item_key": item_key,
                     "item_name": item_name,
+                    "item_type": item_type,
+                    "item_category": item_category,
                     "is_active": 1 if is_active else 0,
                     "tray_price_half": cls._serialize_price(half_price),
                     "tray_price_full": cls._serialize_price(full_price),
@@ -751,7 +817,24 @@ class AdminMenuService:
 
         current = cls._fetch_item_row(menu_type, row_id)
         if not current:
-            return {"error": "Menu item not found."}, 404
+            raw_row = cls._fetch_raw_item_row(row_id=row_id, connection=None)
+            if not raw_row:
+                return {"error": "Menu item not found."}, 404
+            current = {
+                "id": cls._encode_item_id(menu_type or "regular", row_id),
+                "menu_type": menu_type,
+                "item_key": raw_row.get("item_key"),
+                "item_name": raw_row.get("item_name"),
+                "item_type": raw_row.get("item_type"),
+                "item_category": raw_row.get("item_category"),
+                "is_active": bool(raw_row.get("is_active", 0)),
+                "group_id": None,
+                "group_key": None,
+                "group_title": None,
+                "tray_price_half": cls._serialize_price(raw_row.get("tray_price_half")),
+                "tray_price_full": cls._serialize_price(raw_row.get("tray_price_full")),
+                "_raw_row_id": row_id,
+            }
 
         body = payload or {}
         next_name = str(body.get("item_name") if "item_name" in body else current["item_name"] or "").strip()
@@ -760,55 +843,68 @@ class AdminMenuService:
 
         next_is_active = cls._to_bool(body.get("is_active"), default=current["is_active"])
         existing_type_keys = cls._fetch_item_types(row_id)
+        explicit_empty_type_selection = isinstance(body.get("menu_type"), (list, tuple, set)) and len(body.get("menu_type")) == 0
         next_type_keys = (
-            cls._normalize_menu_type_request(body.get("menu_type")) if "menu_type" in body else (existing_type_keys or [menu_type])
+            [] if explicit_empty_type_selection else (
+                cls._normalize_menu_type_request(body.get("menu_type"))
+                if "menu_type" in body
+                else (existing_type_keys or [menu_type])
+            )
         )
         if not next_type_keys:
-            return {"error": "At least one menu_type is required."}, 400
+            next_is_active = False
 
         with db_transaction() as connection:
-            type_id_map = cls._fetch_type_id_map(connection=connection)
-            if any(type_id_map.get(type_key) is None for type_key in next_type_keys):
-                return {"error": "Invalid menu_type supplied."}, 400
+            if next_type_keys:
+                type_id_map = cls._fetch_type_id_map(connection=connection)
+                if any(type_id_map.get(type_key) is None for type_key in next_type_keys):
+                    return {"error": "Invalid menu_type supplied."}, 400
 
-            existing_assignments = cls._fetch_item_assignments(row_id=row_id, connection=connection)
-            fan_out_untyped = str(body.get("menu_type") or "").strip().lower() == "both"
-            requested_group_map = cls._extract_requested_group_map(
-                type_keys=next_type_keys,
-                body=body,
-                existing_assignments=existing_assignments,
-                default_type=menu_type,
-                fan_out_untyped=fan_out_untyped,
-            )
-
-            missing_type_keys = [
-                type_key
-                for type_key in next_type_keys
-                if requested_group_map.get(type_key) in (None, "")
-            ]
-            if missing_type_keys and requested_group_map:
-                fallback_group = next(
-                    (requested_group_map.get(type_key) for type_key in next_type_keys if requested_group_map.get(type_key) not in (None, "")),
-                    None,
+                existing_assignments = cls._fetch_item_assignments(row_id=row_id, connection=connection)
+                fan_out_untyped = str(body.get("menu_type") or "").strip().lower() == "both"
+                requested_group_map = cls._extract_requested_group_map(
+                    type_keys=next_type_keys,
+                    body=body,
+                    existing_assignments=existing_assignments,
+                    default_type=menu_type,
+                    fan_out_untyped=fan_out_untyped,
                 )
-                if fallback_group not in (None, ""):
-                    for type_key in missing_type_keys:
-                        requested_group_map[type_key] = fallback_group
 
-            resolved_assignments, assignment_error = cls._resolve_group_assignments(
-                type_keys=next_type_keys,
-                requested_group_map=requested_group_map,
-                connection=connection,
-            )
-            if assignment_error:
-                return {"error": assignment_error}, 400
+                missing_type_keys = [
+                    type_key
+                    for type_key in next_type_keys
+                    if requested_group_map.get(type_key) in (None, "")
+                ]
+                if missing_type_keys and requested_group_map:
+                    fallback_group = next(
+                        (
+                            requested_group_map.get(type_key)
+                            for type_key in next_type_keys
+                            if requested_group_map.get(type_key) not in (None, "")
+                        ),
+                        None,
+                    )
+                    if fallback_group not in (None, ""):
+                        for type_key in missing_type_keys:
+                            requested_group_map[type_key] = fallback_group
 
-            conflict_error = cls._validate_group_conflicts(resolved_assignments, connection=connection)
-            if conflict_error:
-                return {"error": conflict_error}, 400
+                resolved_assignments, assignment_error = cls._resolve_group_assignments(
+                    type_keys=next_type_keys,
+                    requested_group_map=requested_group_map,
+                    connection=connection,
+                )
+                if assignment_error:
+                    return {"error": assignment_error}, 400
 
-            if cls._has_item_name_conflict(next_name, next_type_keys, connection, exclude_row_id=row_id):
-                return {"error": "Item name must be unique within this menu type."}, 409
+                conflict_error = cls._validate_group_conflicts(resolved_assignments, connection=connection)
+                if conflict_error:
+                    return {"error": conflict_error}, 400
+
+                if cls._has_item_name_conflict(next_name, next_type_keys, connection, exclude_row_id=row_id):
+                    return {"error": "Item name must be unique within this menu type."}, 409
+            else:
+                type_id_map = {}
+                resolved_assignments = {}
 
             next_key = cls._generate_unique_item_key(
                 item_name=next_name,
@@ -818,6 +914,13 @@ class AdminMenuService:
             )
 
             raw_row = cls._fetch_raw_item_row(row_id=row_id, connection=connection)
+            next_item_type = (
+                str(body.get("item_type") if "item_type" in body else raw_row.get("item_type") or "").strip() or None
+            )
+            next_item_category = (
+                str(body.get("item_category") if "item_category" in body else raw_row.get("item_category") or "").strip()
+                or None
+            )
             has_regular = "regular" in next_type_keys
             half_input = body.get("tray_price_half")
             full_input = body.get("tray_price_full")
@@ -837,6 +940,8 @@ class AdminMenuService:
         SET
           item_key = %(item_key)s,
           item_name = %(item_name)s,
+          item_type = %(item_type)s,
+          item_category = %(item_category)s,
           is_active = %(is_active)s,
           tray_price_half = %(tray_price_half)s,
           tray_price_full = %(tray_price_full)s,
@@ -847,6 +952,8 @@ class AdminMenuService:
                     "id": row_id,
                     "item_key": next_key,
                     "item_name": next_name,
+                    "item_type": next_item_type,
+                    "item_category": next_item_category,
                     "is_active": 1 if next_is_active else 0,
                     "tray_price_half": cls._serialize_price(next_half),
                     "tray_price_full": cls._serialize_price(next_full),
@@ -861,6 +968,11 @@ class AdminMenuService:
                 type_id_map=type_id_map,
                 connection=connection,
             )
+
+        if not next_type_keys:
+            raw_row = cls._fetch_raw_item_row(row_id=row_id, connection=None) or {}
+            updated = cls._build_unassigned_item_detail(menu_type, row_id, raw_row)
+            return {"item": updated}, 200
 
         response_type = menu_type if menu_type in next_type_keys else ("regular" if "regular" in next_type_keys else "formal")
         updated = cls.get_menu_item_detail(cls._encode_item_id(response_type, row_id))
