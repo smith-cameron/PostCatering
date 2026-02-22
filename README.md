@@ -513,6 +513,13 @@ Backend:
 - Add production file-based logging (for example `api/logs/app.log`) alongside console logging for persistent operational/audit troubleshooting.
 - Implement Docker containers for backend, frontend, and MySQL (with a `docker-compose` workflow for local and deployment parity).
 
+### Planned menu schema consolidation
+- Current schema still needs one more DB refactor toward a single shared menu-item table with foreign keys for menu type and group relationships.
+- Goal: enable moving items between menu types/groups without duplicating item records.
+- Target behavior: one item can be available in either menu type or both at the same time, while still having only one group designation at a time.
+- End state should remove duplicate menu-item table patterns and keep one canonical menu-item table, one menu-type table, and one menu-group table.
+- This should be delivered as a migration with compatibility updates across API/admin/public menu queries to preserve current display behavior.
+
 ## Program And Menu Reference (Current Data)
 
 This section preserves the current business/program content and pricing snapshot for maintainers.
