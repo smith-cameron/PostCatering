@@ -134,11 +134,14 @@ class MenuService:
         return statements
 
     @staticmethod
-    def _is_ignorable_alter_error(exc, normalized_statement):
-        if not normalized_statement.startswith("alter table"):
-            return False
+    def _is_ignorable_schema_error(exc, normalized_statement):
         error_code = getattr(exc, "args", [None])[0]
-        return error_code in {1060, 1061, 1091}
+        if normalized_statement.startswith("alter table"):
+            return error_code in {1060, 1061, 1091}
+        # schema.sql includes fixed slide seed inserts; allow repeat applies.
+        if normalized_statement.startswith("insert into slides"):
+            return error_code == 1062
+        return False
 
     @classmethod
     def _apply_schema(cls):
@@ -167,7 +170,7 @@ class MenuService:
                             cursor.execute(statement)
                             executed += 1
                         except Exception as exc:
-                            if cls._is_ignorable_alter_error(exc, normalized):
+                            if cls._is_ignorable_schema_error(exc, normalized):
                                 continue
                             raise
             connection.commit()
