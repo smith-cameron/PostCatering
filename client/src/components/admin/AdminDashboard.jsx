@@ -1378,12 +1378,12 @@ const AdminDashboard = () => {
                 <Form.Label className="small mb-1" htmlFor="admin-create-menu-type">
                   Menu Type
                 </Form.Label>
-                <Form.Select
-                  id="admin-create-menu-type"
-                  className="mb-2"
-                  isInvalid={Boolean(createFieldErrors.menu_type)}
-                  value={newItemForm.menu_type}
-                  onChange={(event) => {
+	                <Form.Select
+	                  id="admin-create-menu-type"
+	                  className={`mb-2 ${newItemForm.menu_type ? "" : "admin-select-placeholder"}`.trim()}
+	                  isInvalid={Boolean(createFieldErrors.menu_type)}
+	                  value={newItemForm.menu_type}
+	                  onChange={(event) => {
                     const hadFieldError = Boolean(
                       createFieldErrors.menu_type ||
                         createFieldErrors.group_id ||
@@ -1417,12 +1417,12 @@ const AdminDashboard = () => {
                     <Form.Label className="small mb-1" htmlFor="admin-create-group">
                       Group
                     </Form.Label>
-                    <Form.Select
-                      id="admin-create-group"
-                      className="mb-2"
-                      isInvalid={Boolean(createFieldErrors.group_id)}
-                      value={newItemForm.group_id}
-                      onChange={(event) => {
+	                    <Form.Select
+	                      id="admin-create-group"
+	                      className={`mb-2 ${newItemForm.group_id ? "" : "admin-select-placeholder"}`.trim()}
+	                      isInvalid={Boolean(createFieldErrors.group_id)}
+	                      value={newItemForm.group_id}
+	                      onChange={(event) => {
                         const hadFieldError = Boolean(createFieldErrors.group_id);
                         setCreateFieldErrors((prev) => ({ ...prev, group_id: "" }));
                         if (hadFieldError) {

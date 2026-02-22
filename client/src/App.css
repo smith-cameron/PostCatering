@@ -323,6 +323,20 @@ button:hover {
   color: var(--admin-text);
 }
 
+.admin-dashboard .form-control::placeholder,
+.admin-dashboard .form-control.is-invalid::placeholder {
+  color: var(--admin-muted);
+  opacity: 0.85;
+}
+
+.admin-dashboard .admin-select-placeholder {
+  color: var(--admin-muted);
+}
+
+.admin-dashboard .admin-select-placeholder option {
+  color: var(--admin-text);
+}
+
 .admin-dashboard .form-control,
 .admin-dashboard .form-select,
 .admin-dashboard .input-group-text,
@@ -507,6 +521,16 @@ button:hover {
 }
 
 .admin-dashboard.admin-dashboard-dark .form-control::placeholder {
+  color: #95a4bc;
+  opacity: 0.9;
+}
+
+.admin-dashboard.admin-dashboard-dark .form-control.is-invalid::placeholder {
+  color: #95a4bc;
+  opacity: 0.9;
+}
+
+.admin-dashboard.admin-dashboard-dark .admin-select-placeholder {
   color: #95a4bc;
 }
 
