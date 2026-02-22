@@ -293,6 +293,31 @@ button:hover {
   border-bottom: 1.5px solid var(--admin-border);
 }
 
+.admin-dashboard .admin-filter-accordion .accordion-item {
+  border: 1.5px solid var(--admin-border);
+  background: var(--admin-surface);
+}
+
+.admin-dashboard .admin-filter-accordion .accordion-button {
+  background: var(--admin-surface);
+  color: var(--admin-text);
+  box-shadow: none;
+  font-weight: 700;
+}
+
+.admin-dashboard .admin-filter-accordion .accordion-button:not(.collapsed) {
+  background: var(--admin-surface);
+  color: var(--admin-text);
+}
+
+.admin-dashboard .admin-filter-accordion .accordion-button:focus {
+  box-shadow: 0 0 0 0.2rem rgba(52, 115, 164, 0.25);
+}
+
+.admin-dashboard .admin-filter-accordion .accordion-body {
+  border-top: 1.5px solid var(--admin-border);
+}
+
 .admin-dashboard .form-label,
 .admin-dashboard .form-check-label {
   color: var(--admin-text);
@@ -466,6 +491,18 @@ button:hover {
 .admin-dashboard.admin-dashboard-dark .form-select option {
   background-color: #121a27;
   color: var(--admin-text);
+}
+
+.admin-dashboard.admin-dashboard-dark .admin-filter-accordion .accordion-item,
+.admin-dashboard.admin-dashboard-dark .admin-filter-accordion .accordion-button,
+.admin-dashboard.admin-dashboard-dark .admin-filter-accordion .accordion-button:not(.collapsed) {
+  background: #1a2432;
+  color: var(--admin-text);
+  border-color: var(--admin-border);
+}
+
+.admin-dashboard.admin-dashboard-dark .admin-filter-accordion .accordion-button::after {
+  filter: invert(0.9);
 }
 
 .admin-dashboard.admin-dashboard-dark .nav-tabs .nav-link {

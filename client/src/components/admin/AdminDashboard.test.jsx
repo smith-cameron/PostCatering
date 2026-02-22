@@ -897,6 +897,8 @@ describe("AdminDashboard", () => {
     expect(rowScope.getByText("Proteins")).toBeInTheDocument();
     expect(rowScope.getByText("Formal Entrees")).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "Find Menu Items" }));
+
     fireEvent.change(screen.getByLabelText("Filter Menu Type"), { target: { value: "formal" } });
     expect(screen.getByText("Jerk Chicken")).toBeInTheDocument();
     expect(screen.queryByText("Rice")).not.toBeInTheDocument();

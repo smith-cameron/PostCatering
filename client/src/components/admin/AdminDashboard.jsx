@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Badge, Button, Card, Col, Form, InputGroup, Nav, Row, Spinner, Table } from "react-bootstrap";
+import { Accordion, Alert, Badge, Button, Card, Col, Form, InputGroup, Nav, Row, Spinner, Table } from "react-bootstrap";
 import { Navigate, useNavigate } from "react-router-dom";
 import ConfirmActionModal from "./ConfirmActionModal";
 import { requestJson, requestWithFormData } from "./adminApi";
@@ -1514,79 +1514,81 @@ const AdminDashboard = () => {
 
 	            {shouldRenderEditCardAboveList ? editMenuItemCard : null}
 
-	            <Card className="mb-3">
-	              <Card.Body>
-                <h3 className="h6">Find Menu Items</h3>
-                <Form.Label className="small mb-1" htmlFor="admin-item-filter-search">
-                  Search
-                </Form.Label>
-                <Form.Control
-                  id="admin-item-filter-search"
-                  className="mb-2"
-                  placeholder="Search name or key"
-                  value={itemFilters.search}
-                  onChange={(event) => setItemFilters((prev) => ({ ...prev, search: event.target.value }))}
-                />
-                <Form.Label className="small mb-1" htmlFor="admin-item-filter-status">
-                  Item Status
-                </Form.Label>
-                <Form.Select
-                  id="admin-item-filter-status"
-                  className="mb-2"
-                  value={itemFilters.is_active}
-                  onChange={(event) => setItemFilters((prev) => ({ ...prev, is_active: event.target.value }))}>
-                  <option value="all">All status</option>
-                  <option value="true">Active</option>
-                  <option value="false">Inactive</option>
-                </Form.Select>
-                <Form.Label className="small mb-1" htmlFor="admin-item-filter-menu-type">
-                  Filter Menu Type
-                </Form.Label>
-                <Form.Select
-                  id="admin-item-filter-menu-type"
-                  className="mb-2"
-                  value={itemFilters.menu_type}
-                  onChange={(event) => setItemFilters((prev) => ({ ...prev, menu_type: event.target.value }))}>
-                  <option value="all">All menu types</option>
-                  {menuItemTypeFilterOptions.map((menuType) => (
-                    <option key={`item-filter-menu-type-${menuType}`} value={menuType}>
-                      {formatMenuTypeLabel(menuType)}
-                    </option>
-                  ))}
-                </Form.Select>
-                <Form.Label className="small mb-1" htmlFor="admin-item-filter-group">
-                  Filter Group
-                </Form.Label>
-                <Form.Select
-                  id="admin-item-filter-group"
-                  className="mb-2"
-                  value={itemFilters.group_name}
-                  onChange={(event) => setItemFilters((prev) => ({ ...prev, group_name: event.target.value }))}>
-                  <option value="all">All groups</option>
-                  {menuItemGroupFilterOptions.map((groupName) => (
-                    <option key={`item-filter-group-${groupName}`} value={groupName}>
-                      {groupName}
-                    </option>
-                  ))}
-                </Form.Select>
-                <Button
-                  className="mt-2 me-2"
-                  variant="outline-secondary"
-                  onClick={() =>
-                    setItemFilters({
-                      search: "",
-                      is_active: "all",
-                      menu_type: "all",
-                      group_name: "all",
-                    })
-                  }>
-                  Reset Filters
-                </Button>
-                <Button className="mt-2" variant="outline-secondary" onClick={loadMenuItems}>
-                  Refresh Items
-                </Button>
-              </Card.Body>
-            </Card>
+	            <Accordion className="mb-3 admin-filter-accordion">
+	              <Accordion.Item eventKey="0">
+	                <Accordion.Header>Find Menu Items</Accordion.Header>
+	                <Accordion.Body>
+	                  <Form.Label className="small mb-1" htmlFor="admin-item-filter-search">
+	                    Search
+	                  </Form.Label>
+	                  <Form.Control
+	                    id="admin-item-filter-search"
+	                    className="mb-2"
+	                    placeholder="Search name or key"
+	                    value={itemFilters.search}
+	                    onChange={(event) => setItemFilters((prev) => ({ ...prev, search: event.target.value }))}
+	                  />
+	                  <Form.Label className="small mb-1" htmlFor="admin-item-filter-status">
+	                    Item Status
+	                  </Form.Label>
+	                  <Form.Select
+	                    id="admin-item-filter-status"
+	                    className="mb-2"
+	                    value={itemFilters.is_active}
+	                    onChange={(event) => setItemFilters((prev) => ({ ...prev, is_active: event.target.value }))}>
+	                    <option value="all">All status</option>
+	                    <option value="true">Active</option>
+	                    <option value="false">Inactive</option>
+	                  </Form.Select>
+	                  <Form.Label className="small mb-1" htmlFor="admin-item-filter-menu-type">
+	                    Filter Menu Type
+	                  </Form.Label>
+	                  <Form.Select
+	                    id="admin-item-filter-menu-type"
+	                    className="mb-2"
+	                    value={itemFilters.menu_type}
+	                    onChange={(event) => setItemFilters((prev) => ({ ...prev, menu_type: event.target.value }))}>
+	                    <option value="all">All menu types</option>
+	                    {menuItemTypeFilterOptions.map((menuType) => (
+	                      <option key={`item-filter-menu-type-${menuType}`} value={menuType}>
+	                        {formatMenuTypeLabel(menuType)}
+	                      </option>
+	                    ))}
+	                  </Form.Select>
+	                  <Form.Label className="small mb-1" htmlFor="admin-item-filter-group">
+	                    Filter Group
+	                  </Form.Label>
+	                  <Form.Select
+	                    id="admin-item-filter-group"
+	                    className="mb-2"
+	                    value={itemFilters.group_name}
+	                    onChange={(event) => setItemFilters((prev) => ({ ...prev, group_name: event.target.value }))}>
+	                    <option value="all">All groups</option>
+	                    {menuItemGroupFilterOptions.map((groupName) => (
+	                      <option key={`item-filter-group-${groupName}`} value={groupName}>
+	                        {groupName}
+	                      </option>
+	                    ))}
+	                  </Form.Select>
+	                  <Button
+	                    className="mt-2 me-2"
+	                    variant="outline-secondary"
+	                    onClick={() =>
+	                      setItemFilters({
+	                        search: "",
+	                        is_active: "all",
+	                        menu_type: "all",
+	                        group_name: "all",
+	                      })
+	                    }>
+	                    Reset Filters
+	                  </Button>
+	                  <Button className="mt-2" variant="outline-secondary" onClick={loadMenuItems}>
+	                    Refresh Items
+	                  </Button>
+	                </Accordion.Body>
+	              </Accordion.Item>
+	            </Accordion>
 
           </Col>
           <Col lg={8}>
