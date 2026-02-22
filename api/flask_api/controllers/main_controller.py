@@ -15,6 +15,19 @@ from flask_api.services.slide_service import SlideService
 SLIDES_ASSET_DIR = Path(__file__).resolve().parent.parent / "static" / "slides"
 
 
+def _require_admin_token():
+    configured_token = (os.getenv("MENU_ADMIN_TOKEN") or "").strip()
+    provided_token = (
+        request.headers.get("X-Menu-Admin-Token")
+        or request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    )
+    if not configured_token:
+        return {"error": "MENU_ADMIN_TOKEN is not configured on server."}, 403
+    if not provided_token or not hmac.compare_digest(provided_token, configured_token):
+        return {"error": "Unauthorized"}, 401
+    return None, None
+
+
 @app.route("/api/health", methods=["GET"])
 def api_health():
     try:
@@ -102,16 +115,9 @@ def admin_menu_sync():
     if request.method == "OPTIONS":
         return ("", 204)
 
-    configured_token = (os.getenv("MENU_ADMIN_TOKEN") or "").strip()
-    provided_token = (
-        request.headers.get("X-Menu-Admin-Token")
-        or request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-    )
-
-    if not configured_token:
-        return jsonify({"error": "MENU_ADMIN_TOKEN is not configured on server."}), 403
-    if not provided_token or not hmac.compare_digest(provided_token, configured_token):
-        return jsonify({"error": "Unauthorized"}), 401
+    auth_error, status_code = _require_admin_token()
+    if auth_error:
+        return jsonify(auth_error), status_code
 
     body = request.get_json(silent=True) or {}
     apply_schema = bool(body.get("apply_schema", False))

@@ -22,6 +22,8 @@ python -m venv venv
 # macOS/Linux: source venv/bin/activate
 pip install -r requirements.txt
 python -m unittest discover -s tests -v
+# From repo root, equivalent command:
+# python -m unittest discover -s api/tests -v
 deactivate
 ```
 
@@ -110,24 +112,69 @@ FLUSH PRIVILEGES;
 SQL
 ```
 
-## 6) Optional Data Import
+## 6) Optional Data Import (Dev Snapshot)
 
-Local export:
+Use this when you want staging to look like local/dev (sample inquiries, menu state, media metadata).
+
+Important:
+- A DB dump does **not** include media files in `api/flask_api/static/slides`.
+- On Windows PowerShell, avoid `>` redirection for `mysqldump`; use `--result-file` to prevent encoding-related import failures.
+
+### 6.1 Export DB on source machine
+
+macOS/Linux:
 
 ```bash
-mysqldump -u root -p --single-transaction --routines --triggers post_catering > post_catering.sql
+mysqldump -u root -p \
+  --single-transaction \
+  --routines \
+  --triggers \
+  --events \
+  --default-character-set=utf8mb4 \
+  post_catering > post_catering.sql
 ```
 
-Upload:
+Windows PowerShell:
+
+```powershell
+& "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqldump.exe" `
+  -u root -p `
+  --single-transaction `
+  --routines `
+  --triggers `
+  --events `
+  --default-character-set=utf8mb4 `
+  --result-file="C:\path\to\post_catering.sql" `
+  post_catering
+```
+
+### 6.2 Upload DB dump and media to EC2
 
 ```bash
 scp -i yourKey.pem post_catering.sql ubuntu@your-ec2-public-dns:/home/ubuntu/
+scp -i yourKey.pem -r /path/to/PostCatering/api/flask_api/static/slides ubuntu@your-ec2-public-dns:/home/ubuntu/
 ```
 
-Import:
+### 6.3 Import DB on EC2
 
 ```bash
-mysql -u postcatering_app -p post_catering < /home/ubuntu/post_catering.sql
+sudo mysql <<'SQL'
+DROP DATABASE IF EXISTS post_catering;
+CREATE DATABASE post_catering CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'postcatering_app'@'localhost' IDENTIFIED BY 'REPLACE_WITH_STRONG_PASSWORD';
+ALTER USER 'postcatering_app'@'localhost' IDENTIFIED BY 'REPLACE_WITH_STRONG_PASSWORD';
+GRANT ALL PRIVILEGES ON post_catering.* TO 'postcatering_app'@'localhost';
+FLUSH PRIVILEGES;
+SQL
+
+sudo mysql post_catering < /home/ubuntu/post_catering.sql
+```
+
+### 6.4 After repo clone, place media in app path
+
+```bash
+mkdir -p /home/ubuntu/PostCatering/api/flask_api/static/slides
+cp -a /home/ubuntu/slides/. /home/ubuntu/PostCatering/api/flask_api/static/slides/
 ```
 
 ## 7) Clone Repo + Backend Install
@@ -140,8 +187,19 @@ cd /home/ubuntu/PostCatering/api
 python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt
-pip install gunicorn
+pip install -r requirements.txt gunicorn cryptography
+deactivate
+```
+
+Private repo note:
+- If HTTPS clone prompts for credentials, authenticate first (`gh auth login`) or use an SSH remote (`git@github.com:...`) with a configured key.
+
+If this is a fresh DB (not imported from step 6), initialize schema + seed:
+
+```bash
+cd /home/ubuntu/PostCatering/api
+source venv/bin/activate
+python scripts/menu_admin_sync.py --apply-schema --reset
 deactivate
 ```
 
@@ -192,6 +250,10 @@ INQUIRY_ABUSE_ALERT_WINDOW_SECONDS=60
 INQUIRY_INTEGRITY_FIELD=company_website
 ```
 
+For pre-domain staging, set `CORS_ALLOW_ORIGIN` to the exact URL you are serving (EC2 DNS or IP), for example:
+- `http://ec2-3-145-198-183.us-east-2.compute.amazonaws.com`
+- `http://3.145.198.183`
+
 ## 9) Gunicorn systemd Service
 
 ```bash
@@ -208,8 +270,7 @@ EnvironmentFile=/etc/postcatering/api.env
 ExecStart=/home/ubuntu/PostCatering/api/venv/bin/gunicorn \
   --workers 2 \
   --threads 2 \
-  --umask 007 \
-  --bind unix:/home/ubuntu/PostCatering/api/postcatering.sock \
+  --bind 127.0.0.1:5000 \
   --access-logfile - \
   --error-logfile - \
   server:app
@@ -236,10 +297,13 @@ npm run build
 
 sudo mkdir -p /var/www/postcatering
 sudo rm -rf /var/www/postcatering/*
-sudo cp -r dist/* /var/www/postcatering/
+sudo cp -a dist/. /var/www/postcatering/
 ```
 
 ## 11) Nginx Config
+
+For domain-backed deploys, set `server_name` to your domain(s).
+For IP/DNS staging, use `server_name _;`.
 
 ```bash
 sudo tee /etc/nginx/sites-available/postcatering > /dev/null <<'EOF'
@@ -254,8 +318,7 @@ server {
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
 
     location /api/ {
-        include proxy_params;
-        proxy_pass http://unix:/home/ubuntu/PostCatering/api/postcatering.sock;
+        proxy_pass http://127.0.0.1:5000;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -283,6 +346,9 @@ sudo systemctl reload nginx
 
 ## 12) TLS (HTTPS)
 
+Skip this for temporary staging environments.
+Run this only when DNS already points to this instance and you are ready for production-style HTTPS.
+
 Point DNS first, then issue cert:
 
 ```bash
@@ -294,13 +360,16 @@ sudo certbot --nginx -d your-domain.com -d www.your-domain.com
 
 ```bash
 curl -f http://127.0.0.1/api/health
+curl -f http://your-domain-or-ec2-dns/api/health
+# If TLS is enabled:
 curl -f https://your-domain.com/api/health
 ```
 
 Open:
 
-- `https://your-domain.com/`
-- `https://your-domain.com/api/health`
+- `http://your-domain-or-ec2-dns/`
+- `http://your-domain-or-ec2-dns/api/health`
+- If TLS is enabled: `https://your-domain.com/`
 
 ## 14) Standard Update Procedure
 
@@ -318,7 +387,7 @@ cd ../client
 npm ci
 npm run build
 sudo rm -rf /var/www/postcatering/*
-sudo cp -r dist/* /var/www/postcatering/
+sudo cp -a dist/. /var/www/postcatering/
 
 sudo systemctl reload nginx
 ```
@@ -331,7 +400,26 @@ journalctl -u postcatering-api -n 200 --no-pager
 sudo nginx -t
 sudo tail -n 200 /var/log/nginx/error.log
 sudo tail -n 200 /var/log/nginx/access.log
-ls -l /home/ubuntu/PostCatering/api/*.sock
+sudo ss -ltnp | grep :5000
+```
+
+Common runtime issue:
+
+```bash
+# If API logs show:
+# RuntimeError: 'cryptography' package is required for sha256_password or caching_sha2_password auth methods
+cd /home/ubuntu/PostCatering/api
+source venv/bin/activate
+pip install cryptography
+deactivate
+sudo systemctl restart postcatering-api
+```
+
+IMDSv2 public IP lookup from instance:
+
+```bash
+TOKEN=$(curl -sX PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+curl -sH "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4
 ```
 
 ## 16) Temporary Account -> Owner Account Handoff Plan

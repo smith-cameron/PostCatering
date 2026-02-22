@@ -4,6 +4,9 @@ import re
 
 class Menu:
     PRICE_TOKEN_REGEX = re.compile(r"\$?\s*([0-9][0-9,]*(?:\.\d{1,2})?)\s*([kK])?\+?")
+    NON_FORMAL_CATALOG_KEYS = {"togo", "community"}
+    ITEM_FALLBACK_TYPE = "general"
+    ITEM_FALLBACK_CATEGORY = "other"
 
     @staticmethod
     def _coerce_price_number(value):
