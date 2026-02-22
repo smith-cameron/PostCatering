@@ -12,124 +12,96 @@ from flask_api.services.admin_menu_service import AdminMenuService  # noqa: E402
 
 class AdminMenuServiceTests(unittest.TestCase):
     @patch("flask_api.services.admin_menu_service.query_db")
-    def test_get_menu_item_detail_omits_inactive_assignments(self, mock_query_db):
+    def test_get_reference_data_uses_simplified_group_tables(self, mock_query_db):
         mock_query_db.side_effect = [
-            {
-                "id": 9,
-                "item_key": "jerk_chicken",
-                "item_name": "Jerk Chicken",
-                "is_active": 1,
-                "created_at": None,
-                "updated_at": None,
-            },
-            [
-                {
-                    "id": 1,
-                    "group_id": 2,
-                    "option_key": "proteins",
-                    "group_title": "Proteins",
-                    "display_order": 1,
-                    "is_active": 1,
-                },
-                {
-                    "id": 2,
-                    "group_id": 2,
-                    "option_key": "proteins",
-                    "group_title": "Proteins",
-                    "display_order": 2,
-                    "is_active": 0,
-                },
-            ],
+            [{"id": 1, "key": "entree", "name": "Entree", "sort_order": 1, "is_active": 1}],
+            [{"id": 2, "key": "entrees", "name": "Entrees", "sort_order": 1, "is_active": 1}],
+        ]
+
+        data = AdminMenuService.get_reference_data()
+
+        self.assertEqual(len(data["option_groups"]), 2)
+        self.assertEqual(data["sections"], [])
+        self.assertEqual(data["tiers"], [])
+        regular_group = data["option_groups"][0]
+        formal_group = data["option_groups"][1]
+        self.assertEqual(regular_group["category"], "regular")
+        self.assertEqual(formal_group["category"], "formal")
+        self.assertGreater(formal_group["id"], 1_000_000)
+
+        executed_queries = [call.args[0] for call in mock_query_db.call_args_list]
+        self.assertTrue(any("FROM general_menu_groups" in query for query in executed_queries))
+        self.assertTrue(any("FROM formal_menu_groups" in query for query in executed_queries))
+
+    @patch("flask_api.services.admin_menu_service.query_db")
+    def test_list_menu_items_reads_general_and_formal_tables(self, mock_query_db):
+        mock_query_db.side_effect = [
             [
                 {
                     "id": 3,
-                    "section_id": 4,
-                    "catalog_key": "community",
-                    "section_key": "community_entrees",
-                    "section_title": "Entrees",
-                    "value_1": None,
-                    "value_2": None,
-                    "display_order": 1,
+                    "item_key": "jerk_chicken",
+                    "item_name": "Jerk Chicken",
                     "is_active": 1,
-                },
-                {
-                    "id": 4,
-                    "section_id": 4,
-                    "catalog_key": "community",
-                    "section_key": "community_entrees",
-                    "section_title": "Entrees",
-                    "value_1": None,
-                    "value_2": None,
-                    "display_order": 2,
-                    "is_active": 0,
-                },
+                    "half_tray_price": "75.00",
+                    "full_tray_price": "140.00",
+                    "created_at": None,
+                    "updated_at": None,
+                    "group_id": 1,
+                    "group_key": "entree",
+                    "group_title": "Entree",
+                }
             ],
             [
                 {
-                    "id": 5,
-                    "tier_id": 10,
-                    "catalog_key": "community",
-                    "section_key": "community_tiers",
-                    "section_title": "Buffet Tiers",
-                    "tier_title": "Tier 1",
-                    "display_order": 1,
+                    "id": 4,
+                    "item_key": "short_rib",
+                    "item_name": "Braised Short Rib",
                     "is_active": 1,
-                },
-                {
-                    "id": 6,
-                    "tier_id": 10,
-                    "catalog_key": "community",
-                    "section_key": "community_tiers",
-                    "section_title": "Buffet Tiers",
-                    "tier_title": "Tier 1",
-                    "display_order": 2,
-                    "is_active": 0,
-                },
+                    "created_at": None,
+                    "updated_at": None,
+                    "group_id": 2,
+                    "group_key": "entrees",
+                    "group_title": "Entrees",
+                }
             ],
         ]
 
-        item = AdminMenuService.get_menu_item_detail(9)
+        rows = AdminMenuService.list_menu_items(search="", is_active="all", limit=50)
 
-        self.assertIsNotNone(item)
-        self.assertEqual(len(item["option_group_assignments"]), 1)
-        self.assertEqual(len(item["section_row_assignments"]), 1)
-        self.assertEqual(len(item["tier_bullet_assignments"]), 1)
-        self.assertEqual(item["option_group_assignments"][0]["id"], 1)
-        self.assertEqual(item["section_row_assignments"][0]["id"], 3)
-        self.assertEqual(item["tier_bullet_assignments"][0]["id"], 5)
-
-        option_query = mock_query_db.call_args_list[1].args[0]
-        section_query = mock_query_db.call_args_list[2].args[0]
-        tier_query = mock_query_db.call_args_list[3].args[0]
-        self.assertIn("AND gi.is_active = 1", option_query)
-        self.assertIn("AND r.is_active = 1", section_query)
-        self.assertIn("AND b.is_active = 1", tier_query)
-
-    @patch.object(AdminMenuService, "_resequence_display_order")
-    @patch("flask_api.services.admin_menu_service.query_db")
-    def test_sync_tier_bullet_assignments_reuses_existing_row(self, mock_query_db, mock_resequence):
-        mock_query_db.side_effect = [
-            [{"tier_id": 7}],
-            0,
-            {"id": 91},
-            0,
-        ]
-
-        AdminMenuService._sync_tier_bullet_assignments(
-            item_id=12,
-            assignments=[{"tier_id": 7, "display_order": 1, "is_active": True}],
-            connection=object(),
-        )
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["menu_type"], "formal")
+        self.assertEqual(rows[1]["menu_type"], "regular")
+        self.assertEqual(rows[1]["tray_price_half"], "75.00")
+        self.assertGreater(rows[0]["id"], 1_000_000)
 
         executed_queries = [call.args[0] for call in mock_query_db.call_args_list]
-        self.assertFalse(any("INSERT INTO menu_section_tier_bullets" in query for query in executed_queries))
-        self.assertTrue(
-            any(
-                "UPDATE menu_section_tier_bullets" in query and "WHERE id = %(id)s" in query
-                for query in executed_queries
-            )
-        )
-        mock_resequence.assert_called_once()
+        self.assertTrue(any("FROM general_menu_items" in query for query in executed_queries))
+        self.assertTrue(any("FROM formal_menu_items" in query for query in executed_queries))
+
+    @patch("flask_api.services.admin_menu_service.query_db")
+    def test_get_menu_item_detail_returns_single_group_assignment(self, mock_query_db):
+        mock_query_db.return_value = {
+            "id": 3,
+            "item_key": "jerk_chicken",
+            "item_name": "Jerk Chicken",
+            "is_active": 1,
+            "half_tray_price": "75.00",
+            "full_tray_price": "140.00",
+            "created_at": None,
+            "updated_at": None,
+            "group_id": 1,
+            "group_key": "entree",
+            "group_title": "Entree",
+        }
+
+        detail = AdminMenuService.get_menu_item_detail(3)
+
+        self.assertIsNotNone(detail)
+        self.assertEqual(len(detail["option_group_assignments"]), 1)
+        self.assertEqual(detail["option_group_assignments"][0]["group_title"], "Entree")
+        self.assertEqual(detail["section_row_assignments"], [])
+        self.assertEqual(detail["tier_bullet_assignments"], [])
+        self.assertEqual(detail["tray_price_half"], "75.00")
 
 
 if __name__ == "__main__":
