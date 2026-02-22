@@ -331,6 +331,8 @@ const buildMenuItemTableRows = (items) => {
     const activeStatuses = resolveActiveStatuses(item);
     const menuType = normalizeFilterText(item?.menu_type);
     const encodedId = toId(item?.id);
+    const trayPriceHalf = formatCurrencyToCents(item?.tray_price_half);
+    const trayPriceFull = formatCurrencyToCents(item?.tray_price_full);
     const existing = rowsByKey.get(rowKey);
 
     if (!existing) {
@@ -342,6 +344,8 @@ const buildMenuItemTableRows = (items) => {
         menu_types: menuTypes,
         group_names: groupNames,
         active_statuses: activeStatuses,
+        tray_price_half: trayPriceHalf,
+        tray_price_full: trayPriceFull,
       });
       return;
     }
@@ -349,6 +353,12 @@ const buildMenuItemTableRows = (items) => {
     existing.menu_types = uniqueMenuTypeList([...existing.menu_types, ...menuTypes]);
     existing.group_names = uniqueTextList([...existing.group_names, ...groupNames]);
     existing.active_statuses = uniqueBooleanList([...existing.active_statuses, ...activeStatuses]);
+    if (!existing.tray_price_half && trayPriceHalf) {
+      existing.tray_price_half = trayPriceHalf;
+    }
+    if (!existing.tray_price_full && trayPriceFull) {
+      existing.tray_price_full = trayPriceFull;
+    }
     if (menuType === "regular" && encodedId) {
       existing.id = encodedId;
     } else if (!existing.id && encodedId) {
@@ -1606,12 +1616,13 @@ const AdminDashboard = () => {
 	                      <th>Active</th>
 	                      <th>Menu Type</th>
 	                      <th>Group</th>
+	                      <th className="admin-tray-prices-col">Tray Prices</th>
 	                    </tr>
 	                  </thead>
 	                  <tbody>
 	                    {menuTableError ? (
 	                      <tr>
-	                        <td colSpan={4} className="text-center text-danger py-3">
+	                        <td colSpan={5} className="text-center text-danger py-3">
 	                          {menuTableError}
 	                        </td>
 	                      </tr>
@@ -1628,7 +1639,7 @@ const AdminDashboard = () => {
                             setSelectedItemId(item.id);
                             await loadItemDetail(item.id);
                           }}>
-	                          <td>
+	                          <td className="align-middle">
 	                            {item.item_name || "Untitled Item"}
 	                          </td>
 	                          <td className="text-center align-middle">
@@ -1668,24 +1679,32 @@ const AdminDashboard = () => {
 	                          </td>
 	                          <td>
 	                            {item.group_names.length ? (
-                              item.group_names.map((groupName, groupIndex) => (
-                                <div key={`${item.row_key}-group-${groupIndex}`} className="admin-group-line admin-table-stack-line">
-                                  {groupName}
-                                </div>
-                              ))
-                            ) : (
-                              <span>-</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={4} className="text-center text-secondary py-3">
-                          No menu items match the current filters.
-                        </td>
-                      </tr>
-                    )}
+	                              item.group_names.map((groupName, groupIndex) => (
+	                                <div key={`${item.row_key}-group-${groupIndex}`} className="admin-group-line admin-table-stack-line">
+	                                  {groupName}
+	                                </div>
+	                              ))
+	                            ) : (
+	                              <span>-</span>
+	                            )}
+	                          </td>
+	                          <td className="admin-tray-prices-cell">
+	                            <div className="admin-table-stack-line">
+	                              <span className="admin-price-label">H:</span> {formatCurrencyDisplay(item.tray_price_half)}
+	                            </div>
+	                            <div className="admin-table-stack-line">
+	                              <span className="admin-price-label">F:</span> {formatCurrencyDisplay(item.tray_price_full)}
+	                            </div>
+	                          </td>
+	                        </tr>
+	                      ))
+	                    ) : (
+	                      <tr>
+	                        <td colSpan={5} className="text-center text-secondary py-3">
+	                          No menu items match the current filters.
+	                        </td>
+	                      </tr>
+	                    )}
                   </tbody>
                 </Table>
               </Card.Body>

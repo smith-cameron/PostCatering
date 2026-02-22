@@ -382,6 +382,24 @@ button:hover {
   margin-top: 0.2rem;
 }
 
+.admin-tray-prices-col,
+.admin-tray-prices-cell {
+  width: 112px;
+  white-space: nowrap;
+}
+
+.admin-tray-prices-cell {
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
+.admin-price-label {
+  display: inline-block;
+  min-width: 1.1rem;
+  color: var(--admin-muted);
+  font-weight: 700;
+}
+
 .admin-status-line {
   display: flex;
   align-items: center;
