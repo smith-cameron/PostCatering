@@ -10,24 +10,36 @@ from flask_api.config.mysqlconnection import connect_to_mysql, db_transaction, q
 
 class MenuService:
     SIMPLIFIED_TABLES = (
-        "formal_menu_items",
-        "general_menu_items",
-        "formal_menu_groups",
-        "general_menu_groups",
+        "menu_item_type_groups",
+        "menu_group_conflicts",
+        "menu_type_groups",
+        "menu_groups",
+        "menu_types",
     )
 
-    GENERAL_GROUPS = (
-        {"key": "entree", "name": "Entree", "sort_order": 1},
-        {"key": "signature_protein", "name": "Signature Protein", "sort_order": 2},
-        {"key": "side", "name": "Side", "sort_order": 3},
-        {"key": "salad", "name": "Salad", "sort_order": 4},
+    MENU_TYPES = (
+        {"type_key": "regular", "type_name": "Regular", "sort_order": 1},
+        {"type_key": "formal", "type_name": "Formal", "sort_order": 2},
     )
 
-    FORMAL_GROUPS = (
-        {"key": "passed_appetizers", "name": "Passed Appetizers", "sort_order": 1},
-        {"key": "starter", "name": "Starter", "sort_order": 2},
-        {"key": "sides", "name": "Sides", "sort_order": 3},
-        {"key": "entrees", "name": "Entrees", "sort_order": 4},
+    MENU_GROUPS = (
+        {"group_key": "entree", "group_name": "Entree", "sort_order": 1},
+        {"group_key": "signature_protein", "group_name": "Signature Protein", "sort_order": 2},
+        {"group_key": "side", "group_name": "Side", "sort_order": 3},
+        {"group_key": "salad", "group_name": "Salad", "sort_order": 4},
+        {"group_key": "passed_appetizer", "group_name": "Passed Appetizer", "sort_order": 5},
+        {"group_key": "starter", "group_name": "Starter", "sort_order": 6},
+    )
+
+    MENU_TYPE_GROUP_LINKS = (
+        {"type_key": "regular", "group_key": "entree", "display_order": 1},
+        {"type_key": "regular", "group_key": "signature_protein", "display_order": 2},
+        {"type_key": "regular", "group_key": "side", "display_order": 3},
+        {"type_key": "regular", "group_key": "salad", "display_order": 4},
+        {"type_key": "formal", "group_key": "passed_appetizer", "display_order": 1},
+        {"type_key": "formal", "group_key": "starter", "display_order": 2},
+        {"type_key": "formal", "group_key": "entree", "display_order": 3},
+        {"type_key": "formal", "group_key": "side", "display_order": 4},
     )
 
     FORMAL_PLAN_OPTIONS = (
@@ -52,6 +64,19 @@ class MenuService:
             },
         },
     )
+
+    @staticmethod
+    def _to_bool(value, default=None):
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        normalized = str(value).strip().lower()
+        if normalized in ("1", "true", "yes", "on"):
+            return True
+        if normalized in ("0", "false", "no", "off"):
+            return False
+        return default
 
     @staticmethod
     def _to_snake_case(value):
@@ -105,6 +130,7 @@ class MenuService:
         return [
             sql_root / "schema.sql",
             sql_root / "migrations" / "20260221_menu_drop_legacy_tables.sql",
+            sql_root / "migrations" / "20260222_menu_unified_item_model.sql",
         ]
 
     @staticmethod
@@ -137,8 +163,7 @@ class MenuService:
     def _is_ignorable_schema_error(exc, normalized_statement):
         error_code = getattr(exc, "args", [None])[0]
         if normalized_statement.startswith("alter table"):
-            return error_code in {1060, 1061, 1091}
-        # schema.sql includes fixed slide seed inserts; allow repeat applies.
+            return error_code in {1060, 1061, 1091, 1826}
         if normalized_statement.startswith("insert into slides"):
             return error_code == 1062
         return False
@@ -205,7 +230,7 @@ class MenuService:
     @staticmethod
     def _parse_price_decimal(value):
         text = str(value or "").strip()
-        if not text or text in {"-", "—"}:
+        if not text or text in {"-", "--"}:
             return None
         match = re.search(r"([0-9][0-9,]*(?:\.[0-9]{1,2})?)", text.replace("$", ""))
         if not match:
@@ -219,10 +244,27 @@ class MenuService:
     def _format_price_display(amount):
         if amount is None:
             return None
-        value = Decimal(amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        value = Decimal(str(amount)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if value == value.to_integral():
             return f"${int(value):,}"
         return f"${value:,.2f}"
+
+    @staticmethod
+    def _price_to_float(value):
+        parsed = MenuService._parse_price_decimal(value)
+        if parsed is None:
+            return None
+        return float(parsed)
+
+    @staticmethod
+    def _serialize_price(value):
+        if value is None:
+            return None
+        try:
+            normalized = Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            return format(normalized, "f")
+        except (InvalidOperation, ValueError):
+            return None
 
     @classmethod
     def _general_group_from_legacy(cls, category, item_name, type_hint):
@@ -246,12 +288,12 @@ class MenuService:
     def _formal_group_from_legacy(course_type, section_id):
         source = f"{course_type or ''} {section_id or ''}".lower()
         if "passed" in source:
-            return "passed_appetizers"
+            return "passed_appetizer"
         if "starter" in source:
             return "starter"
         if "side" in source:
-            return "sides"
-        return "entrees"
+            return "side"
+        return "entree"
 
     @classmethod
     def _extract_simplified_items_from_payload(cls, payload):
@@ -289,7 +331,6 @@ class MenuService:
         for section in togo_sections:
             if not isinstance(section, dict):
                 continue
-            group_key = cls._general_group_from_legacy(section.get("category"), None, section.get("sectionId"))
             for row in section.get("rows", []) or []:
                 if not isinstance(row, list) or not row:
                     continue
@@ -357,177 +398,348 @@ class MenuService:
         return output
 
     @classmethod
+    def _merge_simplified_rows(cls, general_rows, formal_rows):
+        merged = {}
+
+        def merge_row(name, group_key, half, full, type_key, source_priority):
+            normalized_name = str(name or "").strip()
+            if not normalized_name:
+                return
+            bucket_key = normalized_name.lower()
+            current = merged.setdefault(
+                bucket_key,
+                {
+                    "name": normalized_name,
+                    "type_groups": {},
+                    "half_tray_price": None,
+                    "full_tray_price": None,
+                    "group_priority": {},
+                },
+            )
+
+            current["type_groups"].setdefault(type_key, None)
+            existing_priority = current["group_priority"].get(type_key, 99)
+            if group_key and source_priority < existing_priority:
+                current["type_groups"][type_key] = group_key
+                current["group_priority"][type_key] = source_priority
+
+            if half is not None and current["half_tray_price"] is None:
+                current["half_tray_price"] = half
+            if full is not None and current["full_tray_price"] is None:
+                current["full_tray_price"] = full
+
+        for row in general_rows:
+            merge_row(
+                name=row.get("name"),
+                group_key=row.get("group_key"),
+                half=row.get("half_tray_price"),
+                full=row.get("full_tray_price"),
+                type_key="regular",
+                source_priority=1,
+            )
+        for row in formal_rows:
+            merge_row(
+                name=row.get("name"),
+                group_key=row.get("group_key"),
+                half=None,
+                full=None,
+                type_key="formal",
+                source_priority=2,
+            )
+
+        rows = []
+        for value in merged.values():
+            type_groups = value["type_groups"]
+            type_keys = sorted(type_groups.keys())
+            half = value["half_tray_price"]
+            full = value["full_tray_price"]
+
+            if "regular" in type_keys:
+                if half is None and full is None:
+                    half = Decimal("0.00")
+                    full = Decimal("0.00")
+                elif half is None:
+                    half = full
+                elif full is None:
+                    full = half
+
+            rows.append(
+                {
+                    "name": value["name"],
+                    "half_tray_price": half,
+                    "full_tray_price": full,
+                    "menu_types": type_keys,
+                    "type_groups": {type_key: (type_groups.get(type_key) or "entree") for type_key in type_keys},
+                }
+            )
+
+        rows.sort(key=lambda row: row["name"].lower())
+        return cls._assign_unique_keys(rows)
+
+    @classmethod
+    def _ensure_reference_tables(cls, connection):
+        for menu_type in cls.MENU_TYPES:
+            query_db(
+                """
+          INSERT INTO menu_types (type_key, type_name, sort_order, is_active)
+          VALUES (%(type_key)s, %(type_name)s, %(sort_order)s, 1)
+          ON DUPLICATE KEY UPDATE
+            type_name = VALUES(type_name),
+            sort_order = VALUES(sort_order),
+            is_active = 1,
+            updated_at = CURRENT_TIMESTAMP;
+          """,
+                menu_type,
+                fetch="none",
+                connection=connection,
+                auto_commit=False,
+            )
+
+        for group in cls.MENU_GROUPS:
+            query_db(
+                """
+          INSERT INTO menu_groups (group_key, group_name, sort_order, is_active)
+          VALUES (%(group_key)s, %(group_name)s, %(sort_order)s, 1)
+          ON DUPLICATE KEY UPDATE
+            group_name = VALUES(group_name),
+            sort_order = VALUES(sort_order),
+            is_active = 1,
+            updated_at = CURRENT_TIMESTAMP;
+          """,
+                group,
+                fetch="none",
+                connection=connection,
+                auto_commit=False,
+            )
+
+        type_rows = query_db(
+            "SELECT id, type_key FROM menu_types;",
+            connection=connection,
+            auto_commit=False,
+        )
+        group_rows = query_db(
+            "SELECT id, group_key FROM menu_groups;",
+            connection=connection,
+            auto_commit=False,
+        )
+        type_ids = {row["type_key"]: row["id"] for row in type_rows}
+        group_ids = {row["group_key"]: row["id"] for row in group_rows}
+
+        for link in cls.MENU_TYPE_GROUP_LINKS:
+            menu_type_id = type_ids.get(link["type_key"])
+            menu_group_id = group_ids.get(link["group_key"])
+            if not menu_type_id or not menu_group_id:
+                continue
+            query_db(
+                """
+          INSERT INTO menu_type_groups (menu_type_id, menu_group_id, display_order, is_active)
+          VALUES (%(menu_type_id)s, %(menu_group_id)s, %(display_order)s, 1)
+          ON DUPLICATE KEY UPDATE
+            display_order = VALUES(display_order),
+            is_active = 1,
+            updated_at = CURRENT_TIMESTAMP;
+          """,
+                {
+                    "menu_type_id": menu_type_id,
+                    "menu_group_id": menu_group_id,
+                    "display_order": link["display_order"],
+                },
+                fetch="none",
+                connection=connection,
+                auto_commit=False,
+            )
+
+        side_id = group_ids.get("side")
+        salad_id = group_ids.get("salad")
+        if side_id and salad_id:
+            query_db(
+                """
+          INSERT INTO menu_group_conflicts (group_a_id, group_b_id)
+          VALUES (%(group_a_id)s, %(group_b_id)s)
+          ON DUPLICATE KEY UPDATE
+            group_a_id = VALUES(group_a_id),
+            group_b_id = VALUES(group_b_id);
+          """,
+                {
+                    "group_a_id": min(side_id, salad_id),
+                    "group_b_id": max(side_id, salad_id),
+                },
+                fetch="none",
+                connection=connection,
+                auto_commit=False,
+            )
+
+        return type_ids, group_ids
+
+    @classmethod
+    def _generate_unique_item_key(cls, item_name, provided_key=None, connection=None, exclude_row_id=None):
+        base_key = cls._slug_key(provided_key or item_name) or "item"
+        candidate = base_key
+        suffix = 2
+
+        while True:
+            payload = {"item_key": candidate}
+            where_clause = "item_key = %(item_key)s"
+            if exclude_row_id:
+                payload["exclude_row_id"] = exclude_row_id
+                where_clause += " AND id <> %(exclude_row_id)s"
+
+            existing = query_db(
+                f"SELECT id FROM menu_items WHERE {where_clause} LIMIT 1;",
+                payload,
+                fetch="one",
+                connection=connection,
+                auto_commit=False,
+            )
+            if not existing:
+                return candidate[:128]
+
+            candidate = f"{base_key}-{suffix}"
+            suffix += 1
+
+    @classmethod
     def sync_simplified_from_payload(cls, payload=None):
         source_payload = payload or cls._load_seed_payload()
         if not source_payload:
             return {"ok": False, "error": "No payload available for simplified migration."}
 
         general_rows, formal_rows = cls._extract_simplified_items_from_payload(source_payload)
-        general_rows = cls._assign_unique_keys(general_rows)
-        formal_rows = cls._assign_unique_keys(formal_rows)
+        merged_rows = cls._merge_simplified_rows(general_rows=general_rows, formal_rows=formal_rows)
 
         with db_transaction() as connection:
-            for group in cls.GENERAL_GROUPS:
-                query_db(
+            type_ids, group_ids = cls._ensure_reference_tables(connection=connection)
+            query_db("DELETE FROM menu_item_type_groups;", fetch="none", connection=connection, auto_commit=False)
+
+            assignment_rows = []
+            for row in merged_rows:
+                item_name = str(row.get("name") or "").strip()
+                if not item_name:
+                    continue
+
+                existing = query_db(
                     """
-          INSERT INTO general_menu_groups (`key`, name, sort_order, is_active)
-          VALUES (%(key)s, %(name)s, %(sort_order)s, 1)
-          ON DUPLICATE KEY UPDATE
-            name = VALUES(name),
-            sort_order = VALUES(sort_order),
-            is_active = 1,
-            updated_at = CURRENT_TIMESTAMP;
+          SELECT id
+          FROM menu_items
+          WHERE LOWER(TRIM(item_name)) = LOWER(TRIM(%(item_name)s))
+          LIMIT 1;
           """,
-                    group,
-                    fetch="none",
-                    connection=connection,
-                    auto_commit=False,
-                )
-            for group in cls.FORMAL_GROUPS:
-                query_db(
-                    """
-          INSERT INTO formal_menu_groups (`key`, name, sort_order, is_active)
-          VALUES (%(key)s, %(name)s, %(sort_order)s, 1)
-          ON DUPLICATE KEY UPDATE
-            name = VALUES(name),
-            sort_order = VALUES(sort_order),
-            is_active = 1,
-            updated_at = CURRENT_TIMESTAMP;
-          """,
-                    group,
-                    fetch="none",
+                    {"item_name": item_name},
+                    fetch="one",
                     connection=connection,
                     auto_commit=False,
                 )
 
-            general_group_rows = query_db(
-                "SELECT id, `key` FROM general_menu_groups;",
-                connection=connection,
-                auto_commit=False,
-            )
-            formal_group_rows = query_db(
-                "SELECT id, `key` FROM formal_menu_groups;",
-                connection=connection,
-                auto_commit=False,
-            )
-            general_group_ids = {row["key"]: row["id"] for row in general_group_rows}
-            formal_group_ids = {row["key"]: row["id"] for row in formal_group_rows}
+                half_serialized = cls._serialize_price(row.get("half_tray_price"))
+                full_serialized = cls._serialize_price(row.get("full_tray_price"))
 
-            query_db("DELETE FROM general_menu_items;", fetch="none", connection=connection, auto_commit=False)
-            query_db("DELETE FROM formal_menu_items;", fetch="none", connection=connection, auto_commit=False)
+                if existing:
+                    row_id = existing["id"]
+                    item_key = cls._generate_unique_item_key(
+                        item_name=item_name,
+                        provided_key=row.get("key"),
+                        connection=connection,
+                        exclude_row_id=row_id,
+                    )
+                    query_db(
+                        """
+            UPDATE menu_items
+            SET
+              item_key = %(item_key)s,
+              item_name = %(item_name)s,
+              tray_price_half = %(tray_price_half)s,
+              tray_price_full = %(tray_price_full)s,
+              is_active = 1,
+              updated_at = CURRENT_TIMESTAMP
+            WHERE id = %(id)s;
+            """,
+                        {
+                            "id": row_id,
+                            "item_key": item_key,
+                            "item_name": item_name,
+                            "tray_price_half": half_serialized,
+                            "tray_price_full": full_serialized,
+                        },
+                        fetch="none",
+                        connection=connection,
+                        auto_commit=False,
+                    )
+                else:
+                    item_key = cls._generate_unique_item_key(
+                        item_name=item_name,
+                        provided_key=row.get("key"),
+                        connection=connection,
+                    )
+                    row_id = query_db(
+                        """
+            INSERT INTO menu_items (item_key, item_name, tray_price_half, tray_price_full, is_active)
+            VALUES (%(item_key)s, %(item_name)s, %(tray_price_half)s, %(tray_price_full)s, 1);
+            """,
+                        {
+                            "item_key": item_key,
+                            "item_name": item_name,
+                            "tray_price_half": half_serialized,
+                            "tray_price_full": full_serialized,
+                        },
+                        fetch="none",
+                        connection=connection,
+                        auto_commit=False,
+                    )
 
-            general_insert_rows = [
-                {
-                    "name": row["name"],
-                    "key": row["key"],
-                    "is_active": 1,
-                    "group_id": general_group_ids.get(row["group_key"]),
-                    "half_tray_price": str(row["half_tray_price"]),
-                    "full_tray_price": str(row["full_tray_price"]),
-                }
-                for row in general_rows
-                if general_group_ids.get(row["group_key"])
-            ]
-            formal_insert_rows = [
-                {
-                    "name": row["name"],
-                    "key": row["key"],
-                    "is_active": 1,
-                    "group_id": formal_group_ids.get(row["group_key"]),
-                }
-                for row in formal_rows
-                if formal_group_ids.get(row["group_key"])
-            ]
+                for type_key in row.get("menu_types", []):
+                    type_id = type_ids.get(type_key)
+                    group_id = group_ids.get((row.get("type_groups") or {}).get(type_key))
+                    if not type_id or not group_id:
+                        continue
+                    assignment_rows.append(
+                        {
+                            "menu_item_id": row_id,
+                            "menu_type_id": type_id,
+                            "menu_group_id": group_id,
+                            "is_active": 1,
+                        }
+                    )
 
             query_db_many(
                 """
-        INSERT INTO general_menu_items (`key`, name, is_active, group_id, half_tray_price, full_tray_price)
-        VALUES (%(key)s, %(name)s, %(is_active)s, %(group_id)s, %(half_tray_price)s, %(full_tray_price)s);
+        INSERT INTO menu_item_type_groups (menu_item_id, menu_type_id, menu_group_id, is_active)
+        VALUES (%(menu_item_id)s, %(menu_type_id)s, %(menu_group_id)s, %(is_active)s)
+        ON DUPLICATE KEY UPDATE
+          menu_group_id = VALUES(menu_group_id),
+          is_active = VALUES(is_active),
+          updated_at = CURRENT_TIMESTAMP;
         """,
-                general_insert_rows,
-                connection=connection,
-                auto_commit=False,
-            )
-            query_db_many(
-                """
-        INSERT INTO formal_menu_items (`key`, name, is_active, group_id)
-        VALUES (%(key)s, %(name)s, %(is_active)s, %(group_id)s);
-        """,
-                formal_insert_rows,
+                assignment_rows,
                 connection=connection,
                 auto_commit=False,
             )
 
         return {
             "ok": True,
-            "general_item_count": len(general_rows),
-            "formal_item_count": len(formal_rows),
+            "item_count": len(merged_rows),
+            "assignment_count": len(assignment_rows),
         }
 
     @staticmethod
-    def _list_general_groups(active_only=True):
-        where_clause = "WHERE is_active = 1" if active_only else ""
-        rows = query_db(
-            f"""
-      SELECT id, name, `key`, is_active, sort_order
-      FROM general_menu_groups
-      {where_clause}
-      ORDER BY sort_order ASC, name ASC, id ASC;
-      """
-        )
-        return [
-            {
-                "id": row["id"],
-                "name": row["name"],
-                "key": row["key"],
-                "is_active": bool(row["is_active"]),
-                "sort_order": row["sort_order"],
-            }
-            for row in rows
-        ]
-
-    @staticmethod
-    def _list_formal_groups(active_only=True):
-        where_clause = "WHERE is_active = 1" if active_only else ""
-        rows = query_db(
-            f"""
-      SELECT id, name, `key`, is_active, sort_order
-      FROM formal_menu_groups
-      {where_clause}
-      ORDER BY sort_order ASC, name ASC, id ASC;
-      """
-        )
-        return [
-            {
-                "id": row["id"],
-                "name": row["name"],
-                "key": row["key"],
-                "is_active": bool(row["is_active"]),
-                "sort_order": row["sort_order"],
-            }
-            for row in rows
-        ]
-
-    @staticmethod
-    def _list_general_items(group_key="", active_only=True):
-        conditions = []
-        payload = {}
+    def _list_groups_by_type(type_key, active_only=True):
+        conditions = ["t.type_key = %(type_key)s"]
+        payload = {"type_key": str(type_key or "").strip().lower()}
         if active_only:
-            conditions.append("i.is_active = 1")
-            conditions.append("g.is_active = 1")
-        if str(group_key or "").strip():
-            payload["group_key"] = str(group_key).strip().lower()
-            conditions.append("g.`key` = %(group_key)s")
-        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            conditions.extend(["t.is_active = 1", "g.is_active = 1", "tg.is_active = 1"])
+        where_clause = f"WHERE {' AND '.join(conditions)}"
+
         rows = query_db(
             f"""
       SELECT
-        i.id, i.name, i.`key`, i.is_active, i.half_tray_price, i.full_tray_price,
-        g.id AS group_id, g.name AS group_name, g.`key` AS group_key, g.sort_order
-      FROM general_menu_items i
-      JOIN general_menu_groups g ON g.id = i.group_id
+        g.id,
+        g.group_name AS name,
+        g.group_key AS `key`,
+        g.is_active,
+        tg.display_order
+      FROM menu_type_groups tg
+      JOIN menu_types t ON t.id = tg.menu_type_id
+      JOIN menu_groups g ON g.id = tg.menu_group_id
       {where_clause}
-      ORDER BY g.sort_order ASC, i.name ASC, i.id ASC;
+      ORDER BY tg.display_order ASC, g.sort_order ASC, g.id ASC;
       """,
             payload,
         )
@@ -537,69 +749,91 @@ class MenuService:
                 "name": row["name"],
                 "key": row["key"],
                 "is_active": bool(row["is_active"]),
-                "group": {"id": row["group_id"], "name": row["group_name"], "key": row["group_key"]},
-                "half_tray_price": float(row["half_tray_price"]),
-                "full_tray_price": float(row["full_tray_price"]),
+                "sort_order": row["display_order"],
             }
             for row in rows
         ]
 
-    @staticmethod
-    def _list_formal_items(group_key="", active_only=True):
-        conditions = []
-        payload = {}
+    @classmethod
+    def _list_items_by_type(cls, type_key, group_key="", active_only=True):
+        conditions = ["t.type_key = %(type_key)s"]
+        payload = {"type_key": str(type_key or "").strip().lower()}
+
         if active_only:
-            conditions.append("i.is_active = 1")
-            conditions.append("g.is_active = 1")
+            conditions.extend(["i.is_active = 1", "mitg.is_active = 1", "t.is_active = 1", "g.is_active = 1", "tg.is_active = 1"])
         if str(group_key or "").strip():
             payload["group_key"] = str(group_key).strip().lower()
-            conditions.append("g.`key` = %(group_key)s")
-        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            conditions.append("g.group_key = %(group_key)s")
+
+        where_clause = f"WHERE {' AND '.join(conditions)}"
+
         rows = query_db(
             f"""
       SELECT
-        i.id, i.name, i.`key`, i.is_active,
-        g.id AS group_id, g.name AS group_name, g.`key` AS group_key, g.sort_order
-      FROM formal_menu_items i
-      JOIN formal_menu_groups g ON g.id = i.group_id
+        i.id,
+        i.item_name AS name,
+        i.item_key AS `key`,
+        i.is_active,
+        i.tray_price_half,
+        i.tray_price_full,
+        g.id AS group_id,
+        g.group_name AS group_name,
+        g.group_key AS group_key,
+        tg.display_order AS group_order
+      FROM menu_item_type_groups mitg
+      JOIN menu_types t ON t.id = mitg.menu_type_id
+      JOIN menu_items i ON i.id = mitg.menu_item_id
+      JOIN menu_groups g ON g.id = mitg.menu_group_id
+      JOIN menu_type_groups tg ON tg.menu_type_id = mitg.menu_type_id AND tg.menu_group_id = mitg.menu_group_id
       {where_clause}
-      ORDER BY g.sort_order ASC, i.name ASC, i.id ASC;
+      ORDER BY tg.display_order ASC, i.item_name ASC, i.id ASC;
       """,
             payload,
         )
+
         return [
             {
                 "id": row["id"],
                 "name": row["name"],
                 "key": row["key"],
                 "is_active": bool(row["is_active"]),
-                "group": {"id": row["group_id"], "name": row["group_name"], "key": row["group_key"]},
+                "group": {
+                    "id": row["group_id"],
+                    "name": row["group_name"],
+                    "key": row["group_key"],
+                },
+                "half_tray_price": cls._price_to_float(row.get("tray_price_half")),
+                "full_tray_price": cls._price_to_float(row.get("tray_price_full")),
             }
             for row in rows
         ]
 
     @classmethod
     def get_general_groups(cls):
-        return {"groups": cls._list_general_groups(active_only=True)}, 200
+        return {"groups": cls._list_groups_by_type("regular", active_only=True)}, 200
 
     @classmethod
     def get_general_items(cls, group_key=""):
-        return {"items": cls._list_general_items(group_key=group_key, active_only=True)}, 200
+        return {"items": cls._list_items_by_type("regular", group_key=group_key, active_only=True)}, 200
 
     @classmethod
     def get_formal_groups(cls):
-        return {"groups": cls._list_formal_groups(active_only=True)}, 200
+        return {"groups": cls._list_groups_by_type("formal", active_only=True)}, 200
 
     @classmethod
     def get_formal_items(cls, group_key=""):
-        return {"items": cls._list_formal_items(group_key=group_key, active_only=True)}, 200
+        items = cls._list_items_by_type("formal", group_key=group_key, active_only=True)
+        for row in items:
+            row.pop("half_tray_price", None)
+            row.pop("full_tray_price", None)
+        return {"items": items}, 200
 
     @classmethod
     def _build_catalog_payload_from_simplified_tables(cls):
-        general_groups = cls._list_general_groups(active_only=True)
-        formal_groups = cls._list_formal_groups(active_only=True)
-        general_items = cls._list_general_items(active_only=True)
-        formal_items = cls._list_formal_items(active_only=True)
+        general_groups = cls._list_groups_by_type("regular", active_only=True)
+        formal_groups = cls._list_groups_by_type("formal", active_only=True)
+        general_items = cls._list_items_by_type("regular", active_only=True)
+        formal_items = cls._list_items_by_type("formal", active_only=True)
 
         if not general_groups or not formal_groups:
             return None
@@ -607,6 +841,7 @@ class MenuService:
         general_by_group = {}
         for item in general_items:
             general_by_group.setdefault(item["group"]["key"], []).append(item)
+
         formal_by_group = {}
         for item in formal_items:
             formal_by_group.setdefault(item["group"]["key"], []).append(item)
@@ -650,8 +885,8 @@ class MenuService:
             rows = [
                 [
                     item["name"],
-                    cls._format_price_display(item["half_tray_price"]),
-                    cls._format_price_display(item["full_tray_price"]),
+                    cls._format_price_display(item.get("half_tray_price")),
+                    cls._format_price_display(item.get("full_tray_price")),
                 ]
                 for item in general_by_group.get(key, [])
             ]
@@ -668,15 +903,28 @@ class MenuService:
             )
 
         formal_section_meta = {
-            "passed_appetizers": {
+            "passed_appetizer": {
                 "sectionId": "formal_passed",
                 "courseType": "passed",
                 "title": "Passed Appetizers (Choose Two)",
             },
-            "starter": {"sectionId": "formal_starter", "courseType": "starter", "title": "Starter (Choose One)"},
-            "entrees": {"sectionId": "formal_entrees", "courseType": "entree", "title": "Entree (Choose One or Two)"},
-            "sides": {"sectionId": "formal_sides", "courseType": "sides", "title": "Sides"},
+            "starter": {
+                "sectionId": "formal_starter",
+                "courseType": "starter",
+                "title": "Starter (Choose One)",
+            },
+            "entree": {
+                "sectionId": "formal_entrees",
+                "courseType": "entree",
+                "title": "Entree (Choose One or Two)",
+            },
+            "side": {
+                "sectionId": "formal_sides",
+                "courseType": "sides",
+                "title": "Sides",
+            },
         }
+
         formal_sections = [
             {
                 "sectionId": "formal_pricing",
@@ -686,7 +934,8 @@ class MenuService:
                 "price": "$75-$110+ per person",
             }
         ]
-        for key in ("passed_appetizers", "starter", "entrees", "sides"):
+
+        for key in ("passed_appetizer", "starter", "entree", "side"):
             bullets = [item["name"] for item in formal_by_group.get(key, [])]
             if not bullets:
                 continue
@@ -709,13 +958,16 @@ class MenuService:
                     "pageTitle": "To-Go & Take-and-Bake Trays",
                     "subtitle": "Served hot or chilled to reheat",
                     "introBlocks": [
-                        {"title": "Tray Sizes", "bullets": ["Half Tray: Serves 8-10", "Full Tray: Serves 16-20"]}
+                        {
+                            "title": "Tray Sizes",
+                            "bullets": ["Half Tray: Serves 8-10", "Full Tray: Serves 16-20"],
+                        }
                     ],
                     "sections": togo_sections,
                 },
                 "community": {
                     "pageTitle": "Community & Crew Catering (Per Person)",
-                    "subtitle": "Drop-off or buffet setup • Minimums apply",
+                    "subtitle": "Drop-off or buffet setup - Minimums apply",
                     "sections": [
                         {
                             "sectionId": "community_taco_bar",
@@ -793,11 +1045,11 @@ class MenuService:
                 return {"error": "Menu seed payload not found.", "steps": steps}, 500
             migration_result = cls.sync_simplified_from_payload(payload=payload)
         else:
-            migration_result = {"ok": True, "general_item_count": 0, "formal_item_count": 0}
+            migration_result = {"ok": True, "item_count": 0, "assignment_count": 0}
 
         if migration_result.get("ok"):
             steps.append(
-                f"seeded_simplified_tables:g{migration_result.get('general_item_count', 0)}:f{migration_result.get('formal_item_count', 0)}"
+                f"seeded_simplified_tables:i{migration_result.get('item_count', 0)}:a{migration_result.get('assignment_count', 0)}"
             )
         else:
             steps.append("simplified_seed_skipped")
@@ -821,3 +1073,131 @@ class MenuService:
         if fallback:
             return {"source": "seed-file", **cls._normalize_menu_payload_for_api(fallback)}, 200
         return {"error": "Menu seed payload not found."}, 500
+
+    @classmethod
+    def upsert_non_formal_catalog_items(cls, payload):
+        body = payload or {}
+        rows = body.get("items") if isinstance(body.get("items"), list) else [body]
+        normalized_rows = [row for row in rows if isinstance(row, dict)]
+        if not normalized_rows:
+            return {"error": "No items supplied."}, 400
+
+        updated = []
+        with db_transaction() as connection:
+            type_ids, group_ids = cls._ensure_reference_tables(connection=connection)
+            regular_type_id = type_ids.get("regular")
+
+            for row in normalized_rows:
+                item_name = str(row.get("item_name") or row.get("name") or "").strip()
+                if not item_name:
+                    continue
+
+                group_key = cls._general_group_from_legacy(
+                    row.get("item_category") or row.get("category"),
+                    item_name,
+                    row.get("item_type") or row.get("type"),
+                )
+                group_id = group_ids.get(group_key)
+                if not group_id:
+                    continue
+
+                half_price = cls._parse_price_decimal(row.get("tray_price_half"))
+                full_price = cls._parse_price_decimal(row.get("tray_price_full"))
+                if half_price is None and full_price is not None:
+                    half_price = full_price
+                if full_price is None and half_price is not None:
+                    full_price = half_price
+
+                is_active = cls._to_bool(row.get("is_active"), default=True)
+
+                existing = query_db(
+                    """
+          SELECT id
+          FROM menu_items
+          WHERE LOWER(TRIM(item_name)) = LOWER(TRIM(%(item_name)s))
+          LIMIT 1;
+          """,
+                    {"item_name": item_name},
+                    fetch="one",
+                    connection=connection,
+                    auto_commit=False,
+                )
+
+                if existing:
+                    item_id = existing["id"]
+                    item_key = cls._generate_unique_item_key(
+                        item_name=item_name,
+                        provided_key=row.get("item_key") or row.get("key"),
+                        connection=connection,
+                        exclude_row_id=item_id,
+                    )
+                    query_db(
+                        """
+            UPDATE menu_items
+            SET
+              item_key = %(item_key)s,
+              item_name = %(item_name)s,
+              tray_price_half = %(tray_price_half)s,
+              tray_price_full = %(tray_price_full)s,
+              is_active = %(is_active)s,
+              updated_at = CURRENT_TIMESTAMP
+            WHERE id = %(id)s;
+            """,
+                        {
+                            "id": item_id,
+                            "item_key": item_key,
+                            "item_name": item_name,
+                            "tray_price_half": cls._serialize_price(half_price),
+                            "tray_price_full": cls._serialize_price(full_price),
+                            "is_active": 1 if is_active else 0,
+                        },
+                        fetch="none",
+                        connection=connection,
+                        auto_commit=False,
+                    )
+                else:
+                    item_key = cls._generate_unique_item_key(
+                        item_name=item_name,
+                        provided_key=row.get("item_key") or row.get("key"),
+                        connection=connection,
+                    )
+                    item_id = query_db(
+                        """
+            INSERT INTO menu_items (item_key, item_name, tray_price_half, tray_price_full, is_active)
+            VALUES (%(item_key)s, %(item_name)s, %(tray_price_half)s, %(tray_price_full)s, %(is_active)s);
+            """,
+                        {
+                            "item_key": item_key,
+                            "item_name": item_name,
+                            "tray_price_half": cls._serialize_price(half_price),
+                            "tray_price_full": cls._serialize_price(full_price),
+                            "is_active": 1 if is_active else 0,
+                        },
+                        fetch="none",
+                        connection=connection,
+                        auto_commit=False,
+                    )
+
+                if regular_type_id:
+                    query_db(
+                        """
+            INSERT INTO menu_item_type_groups (menu_item_id, menu_type_id, menu_group_id, is_active)
+            VALUES (%(menu_item_id)s, %(menu_type_id)s, %(menu_group_id)s, 1)
+            ON DUPLICATE KEY UPDATE
+              menu_group_id = VALUES(menu_group_id),
+              is_active = 1,
+              updated_at = CURRENT_TIMESTAMP;
+            """,
+                        {
+                            "menu_item_id": item_id,
+                            "menu_type_id": regular_type_id,
+                            "menu_group_id": group_id,
+                        },
+                        fetch="none",
+                        connection=connection,
+                        auto_commit=False,
+                    )
+
+                updated.append({"id": item_id, "item_name": item_name, "group_key": group_key})
+
+        return {"ok": True, "items": updated, "count": len(updated)}, 200

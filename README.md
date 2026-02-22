@@ -44,7 +44,6 @@ PostCatering/
     sql/
       schema.sql
       menu_seed_payload.json
-      menu_seed.sql
     scripts/
       menu_admin_sync.py
     tests/
@@ -352,33 +351,84 @@ Maintenance details and SQL examples:
 Key maintenance rule:
 - Use `is_active = 0` to hide rows instead of deleting data.
 
-### Non-Formal Shared Catalog Workflow (Current)
+### Unified Menu Item Model (Current, Updated February 22, 2026)
 
-Non-formal menu items are now modeled as a single shared catalog in `menu_items` and reused by reference across To-Go and Community/Crew contexts.
+The menu schema now uses one canonical `menu_items` table for all item identities, with per-type group assignments in a join table.
 
-- `menu_items` is the source of truth for non-formal item identity.
-- New classification fields on `menu_items`:
-  - `item_type`
-  - `item_category`
-  - `is_active`
-- Tray-pricing fields on `menu_items` (supported for all non-formal items):
-  - `tray_price_half`
-  - `tray_price_full`
-- `menu_option_group_items`, `menu_section_rows`, and non-formal tier/item links reuse shared `item_id` references (no per-context item duplication).
-- Formal menu behavior remains isolated in formal plan tables and formal sections.
+Picture 1: ERD (high-level)
 
-Rendering behavior:
-- Tray prices are shown only in the To-Go accordion/table presentation.
-- Non-To-Go contexts continue to render item names without tray-price display.
+```text
++------------------+        +------------------+
+|    menu_types    |        |    menu_groups   |
+|------------------|        |------------------|
+| id (PK)          |        | id (PK)          |
+| type_key (UQ)    |        | group_key (UQ)   |
+| type_name (UQ)   |        | group_name (UQ)  |
+| sort_order       |        | sort_order       |
+| is_active        |        | is_active        |
++------------------+        +------------------+
+         |                           ^
+         |                           |
+         v                           |
++-----------------------+            |
+|   menu_type_groups    |------------+
+|-----------------------|
+| id (PK)               |
+| menu_type_id (FK)     |
+| menu_group_id (FK)    |
+| display_order         |
+| is_active             |
+| UQ(menu_type_id,menu_group_id)
++-----------------------+
 
-Compatibility/migration notes:
-- `python scripts/menu_admin_sync.py --apply-schema --reset` adds/backfills the new `menu_items` fields.
-- Backfill pulls existing To-Go row prices into `menu_items.tray_price_half`/`tray_price_full`.
-- Legacy section row values remain supported as fallback during transition.
++------------------+        +---------------------------+
+|    menu_items    |<-------|   menu_item_type_groups   |
+|------------------|        |---------------------------|
+| id (PK)          |        | id (PK)                   |
+| item_key (UQ)    |        | menu_item_id (FK)         |
+| item_name (UQ)   |        | menu_type_id (FK)         |
+| tray_price_*     |        | menu_group_id (FK)        |
+| is_active        |        | is_active                 |
++------------------+        | UQ(menu_item_id,menu_type_id)
+                            +---------------------------+
 
-Admin scope note:
-- This change updates backend/admin APIs and public-site data consumption only.
-- Admin panel UI changes were intentionally out of scope for this task.
++-----------------------+
+| menu_group_conflicts  |
+|-----------------------|
+| id (PK)               |
+| group_a_id (FK)       |
+| group_b_id (FK)       |
+| UQ(group_a_id,group_b_id)
+| CHECK(group_a_id < group_b_id)
++-----------------------+
+```
+
+What each table does
+
+- `menu_types`
+  - Reference table for type dimension.
+  - Rows use singular, unique keys (for example: `regular`, `formal`).
+- `menu_groups`
+  - Reference table for group dimension.
+  - Rows use singular, unique keys (for example: `entree`, `side`, `salad`, `starter`).
+- `menu_type_groups`
+  - Defines which groups are valid for each type and their display order.
+  - Example: `regular -> entree, signature_protein, side, salad`
+  - Example: `formal -> passed_appetizer, starter, entree, side`
+- `menu_item_type_groups`
+  - Canonical assignment table between `menu_items` and `menu_types`, with one group per item per type.
+  - This enables an item to exist in `regular`, `formal`, or both, without duplicating item rows.
+- `menu_group_conflicts`
+  - Optional policy table for cross-type group conflicts (for example: `side` vs `salad`).
+  - Enforced in generic service validation, not hardcoded per menu flow.
+- `menu_items`
+  - Canonical item identity + pricing table for all menu items (regular and formal).
+  - No duplicated item rows across menu types.
+
+Compatibility notes:
+- Existing public endpoints (`/api/menu/general/*`, `/api/menu/formal/*`, `/api/menus`) preserve current display behavior.
+- Existing admin endpoints remain compatible while now reading/writing per-type group assignments.
+- Migration `api/sql/migrations/20260222_menu_unified_item_model.sql` backfills assignments and removes stale split/transitional tables.
 
 CLI maintenance task:
 
@@ -415,10 +465,8 @@ Content-Type: application/json
       "item_type": "signature_proteins",
       "item_category": "entree",
       "is_active": true,
-      "tray_prices": {
-        "half": "$75",
-        "full": "$140"
-      }
+      "tray_price_half": "$75",
+      "tray_price_full": "$140"
     }
   ]
 }
@@ -513,12 +561,11 @@ Backend:
 - Add production file-based logging (for example `api/logs/app.log`) alongside console logging for persistent operational/audit troubleshooting.
 - Implement Docker containers for backend, frontend, and MySQL (with a `docker-compose` workflow for local and deployment parity).
 
-### Planned menu schema consolidation
-- Current schema still needs one more DB refactor toward a single shared menu-item table with foreign keys for menu type and group relationships.
-- Goal: enable moving items between menu types/groups without duplicating item records.
-- Target behavior: one item can be available in either menu type or both at the same time, while still having only one group designation at a time.
-- End state should remove duplicate menu-item table patterns and keep one canonical menu-item table, one menu-type table, and one menu-group table.
-- This should be delivered as a migration with compatibility updates across API/admin/public menu queries to preserve current display behavior.
+### Menu Schema Consolidation Status (February 22, 2026)
+- Implemented: single canonical `menu_items` table with per-type group assignments via `menu_item_type_groups`.
+- Implemented: reference-driven type/group validity via `menu_types`, `menu_groups`, and `menu_type_groups`.
+- Implemented: optional logical-path restrictions via `menu_group_conflicts` and shared service-layer validation.
+- Implemented: compatibility updates across API/admin/public menu queries to preserve current display behavior.
 
 ## Program And Menu Reference (Current Data)
 
