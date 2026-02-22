@@ -1689,12 +1689,16 @@ const AdminDashboard = () => {
 	                            )}
 	                          </td>
 	                          <td className="admin-tray-prices-cell">
-	                            <div className="admin-table-stack-line">
-	                              <span className="admin-price-label">H:</span> {formatCurrencyDisplay(item.tray_price_half)}
-	                            </div>
-	                            <div className="admin-table-stack-line">
-	                              <span className="admin-price-label">F:</span> {formatCurrencyDisplay(item.tray_price_full)}
-	                            </div>
+	                            {item.tray_price_half ? (
+	                              <div className="admin-table-stack-line">
+	                                <span className="admin-price-label">H:</span> ${item.tray_price_half}
+	                              </div>
+	                            ) : null}
+	                            {item.tray_price_full ? (
+	                              <div className="admin-table-stack-line">
+	                                <span className="admin-price-label">F:</span> ${item.tray_price_full}
+	                              </div>
+	                            ) : null}
 	                          </td>
 	                        </tr>
 	                      ))

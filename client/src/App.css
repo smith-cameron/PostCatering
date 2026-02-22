@@ -367,6 +367,10 @@ button:hover {
   border-bottom-width: 1.5px;
 }
 
+.admin-dashboard .table.table-sm > :not(caption) > * > * {
+  padding: 0.45rem 0.6rem;
+}
+
 .admin-group-count-col,
 .admin-group-count-cell {
   width: 72px;
