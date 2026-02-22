@@ -235,6 +235,12 @@ class AdminMenuService:
         for row in rows:
             menu_type = str(row.get("menu_type") or "").strip().lower()
             is_active_value = bool(row.get("is_active", 0))
+            half_price = row.get("tray_price_half")
+            if half_price is None:
+                half_price = row.get("half_tray_price")
+            full_price = row.get("tray_price_full")
+            if full_price is None:
+                full_price = row.get("full_tray_price")
             if is_active_filter is not None and int(is_active_value) != is_active_filter:
                 continue
             if normalized_search:
@@ -252,12 +258,8 @@ class AdminMenuService:
                     "group_id": cls._encode_group_id(menu_type, row.get("group_id")),
                     "group_key": row.get("group_key"),
                     "group_title": row.get("group_title"),
-                    "tray_price_half": (
-                        cls._serialize_price(row.get("tray_price_half")) if menu_type == "regular" else None
-                    ),
-                    "tray_price_full": (
-                        cls._serialize_price(row.get("tray_price_full")) if menu_type == "regular" else None
-                    ),
+                    "tray_price_half": (cls._serialize_price(half_price) if menu_type == "regular" else None),
+                    "tray_price_full": (cls._serialize_price(full_price) if menu_type == "regular" else None),
                     "option_group_count": 1,
                     "section_row_count": 0,
                     "tier_bullet_count": 0,
@@ -384,8 +386,6 @@ class AdminMenuService:
             return None
 
         menu_types = cls._fetch_item_types(row_id)
-        assignments = cls._fetch_item_assignments(row_id)
-        current_assignment = assignments.get(menu_type, {})
 
         response_item = {k: v for k, v in item.items() if not k.startswith("_")}
         response_item["menu_types"] = menu_types
@@ -394,12 +394,12 @@ class AdminMenuService:
             **response_item,
             "option_group_assignments": [
                 {
-                    "id": current_assignment.get("encoded_group_id") or response_item.get("group_id"),
-                    "group_id": current_assignment.get("encoded_group_id") or response_item.get("group_id"),
-                    "option_key": current_assignment.get("group_key") or response_item.get("group_key"),
-                    "group_title": current_assignment.get("group_title") or response_item.get("group_title"),
+                    "id": response_item.get("group_id"),
+                    "group_id": response_item.get("group_id"),
+                    "option_key": response_item.get("group_key"),
+                    "group_title": response_item.get("group_title"),
                     "display_order": 1,
-                    "is_active": current_assignment.get("is_active", True),
+                    "is_active": True,
                 }
             ],
             "section_row_assignments": [],
