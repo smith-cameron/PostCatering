@@ -16,7 +16,6 @@ DROP TABLE IF EXISTS formal_plan_option_details;
 DROP TABLE IF EXISTS formal_plan_options;
 DROP TABLE IF EXISTS menu_option_group_items;
 DROP TABLE IF EXISTS menu_option_groups;
-DROP TABLE IF EXISTS menu_items;
 DROP TABLE IF EXISTS menu_catalogs;
 
 -- Remove legacy cached catalog payload key (keep menu_config table for other config).
