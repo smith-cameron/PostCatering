@@ -1566,6 +1566,7 @@ const AdminDashboard = () => {
         body={confirmState.body}
         confirmLabel={confirmState.confirmLabel}
         confirmVariant={confirmState.confirmVariant}
+        darkMode={isDarkMode}
         busy={confirmBusy}
         onCancel={() =>
           setConfirmState((prev) => ({

@@ -6,11 +6,16 @@ const ConfirmActionModal = ({
   body = "Are you sure you want to apply this change?",
   confirmLabel = "Confirm",
   confirmVariant = "secondary",
+  darkMode = false,
   onCancel,
   onConfirm,
   busy = false,
 }) => (
-  <Modal show={show} onHide={onCancel} centered>
+  <Modal
+    show={show}
+    onHide={onCancel}
+    centered
+    dialogClassName={darkMode ? "admin-confirm-modal admin-confirm-modal-dark" : "admin-confirm-modal"}>
     <Modal.Header closeButton>
       <Modal.Title>{title}</Modal.Title>
     </Modal.Header>

@@ -348,6 +348,16 @@ button:hover {
   margin-top: 0.2rem;
 }
 
+.admin-table-stack-line + .admin-table-stack-line {
+  margin-top: 0.2rem;
+}
+
+.admin-status-line {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .admin-status-dot {
   display: inline-block;
   width: 0.7rem;
@@ -490,6 +500,43 @@ button:hover {
 
 .admin-dashboard.admin-dashboard-dark .admin-assignment-row {
   background: #233044;
+}
+
+.admin-confirm-modal .modal-content {
+  border-width: 1.5px;
+}
+
+.admin-confirm-modal-dark .modal-content {
+  background: #1a2432;
+  color: #e6edf7;
+  border-color: #3d4b61;
+}
+
+.admin-confirm-modal-dark .modal-header,
+.admin-confirm-modal-dark .modal-footer {
+  border-color: #3d4b61;
+}
+
+.admin-confirm-modal-dark .modal-title,
+.admin-confirm-modal-dark .modal-body {
+  color: #e6edf7;
+}
+
+.admin-confirm-modal-dark .btn-outline-secondary {
+  background-color: transparent;
+  color: #dce8f9;
+  border-color: #6e84a3;
+}
+
+.admin-confirm-modal-dark .btn-outline-secondary:hover,
+.admin-confirm-modal-dark .btn-outline-secondary:focus {
+  background-color: #29405e;
+  color: #f3f7ff;
+  border-color: #7f97b8;
+}
+
+.admin-confirm-modal-dark .btn-close {
+  filter: invert(1) grayscale(100%) brightness(180%);
 }
 
 /* =========================
