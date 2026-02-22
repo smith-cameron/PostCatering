@@ -26,14 +26,18 @@ export const normalizeMenuTitle = (value) => {
 };
 
 export const getCommunityPackageBullets = (section) => {
+  if (section?.sectionId === "community_homestyle") {
+    return ["1 Entree/Protein", "2 Sides", "Bread"];
+  }
+
   if (!section?.description) return [];
   const trimmed = section.description.trim();
   const withoutIncludes = trimmed.replace(/^includes\s*/i, "");
   const bullets = [];
 
   const proteinMatch = section.title?.match(/\(([^)]+)\)/);
-  if (section.sectionId === "community_taco_bar" && proteinMatch?.[1]) {
-    bullets.push(`Protein: ${proteinMatch[1]}`);
+  if (section.sectionId === "community_taco_bar") {
+    bullets.push(proteinMatch?.[1] ? `Taco Bar Proteins: ${proteinMatch[1]}` : "Taco Bar Proteins");
   }
 
   if (withoutIncludes.includes("+")) {
