@@ -19,6 +19,35 @@ CREATE TABLE IF NOT EXISTS slides (
   UNIQUE KEY uq_slides_image_url (image_url(191))
 );
 
+CREATE TABLE IF NOT EXISTS admin_users (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  username VARCHAR(120) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  display_name VARCHAR(150) NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  last_login_at TIMESTAMP NULL DEFAULT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_admin_users_username (username)
+);
+
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  admin_user_id BIGINT UNSIGNED NOT NULL,
+  action VARCHAR(64) NOT NULL,
+  entity_type VARCHAR(64) NOT NULL,
+  entity_id VARCHAR(128) NULL,
+  change_summary VARCHAR(255) NULL,
+  before_json JSON NULL,
+  after_json JSON NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_admin_audit_created (created_at),
+  KEY idx_admin_audit_entity (entity_type, entity_id),
+  CONSTRAINT fk_admin_audit_user FOREIGN KEY (admin_user_id) REFERENCES admin_users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS inquiries (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   full_name VARCHAR(150) NOT NULL,
