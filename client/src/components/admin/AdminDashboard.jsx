@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Badge, Button, Card, Col, Form, InputGroup, Nav, Row, Spinner, Table } from "react-bootstrap";
 import { Navigate, useNavigate } from "react-router-dom";
 import ConfirmActionModal from "./ConfirmActionModal";
@@ -7,6 +7,7 @@ import { requestJson, requestWithFormData } from "./adminApi";
 const TAB_MENU = "menu";
 const TAB_MEDIA = "media";
 const TAB_AUDIT = "audit";
+const MOBILE_LAYOUT_MAX_WIDTH = 767;
 const FORMAL_ID_OFFSET = 1000000;
 const FORM_ERROR_CREATE_ITEM = "create_item";
 const FORM_ERROR_EDIT_ITEM = "edit_item";
@@ -408,7 +409,7 @@ const AdminDashboard = () => {
 
   const [activeTab, setActiveTab] = useState(TAB_MENU);
   const [formErrors, setFormErrors] = useState(EMPTY_FORM_ERRORS);
-  const [busy, setBusy] = useState(false);
+  const [, setBusy] = useState(false);
   const [menuTableError, setMenuTableError] = useState("");
   const [mediaTableError, setMediaTableError] = useState("");
 
@@ -418,6 +419,8 @@ const AdminDashboard = () => {
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [itemForm, setItemForm] = useState(null);
   const [itemFormOriginal, setItemFormOriginal] = useState(null);
+  const [editCardPlacement, setEditCardPlacement] = useState("below_table");
+  const [shouldScrollToEditCard, setShouldScrollToEditCard] = useState(false);
   const [showCreatedItemHighlight, setShowCreatedItemHighlight] = useState(false);
   const [newItemForm, setNewItemForm] = useState({
     item_name: "",
@@ -454,6 +457,10 @@ const AdminDashboard = () => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("admin_dashboard_theme") === "dark";
   });
+  const [isMobileLayout, setIsMobileLayout] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth <= MOBILE_LAYOUT_MAX_WIDTH : false
+  );
+  const editCardRef = useRef(null);
 
   const activeGroupOptions = useMemo(
     () =>
@@ -662,26 +669,24 @@ const AdminDashboard = () => {
     window.localStorage.setItem("admin_dashboard_theme", isDarkMode ? "dark" : "light");
   }, [isDarkMode]);
 
-  const refreshActiveTab = useCallback(async () => {
-    try {
-      setBusy(true);
-      if (activeTab === TAB_MENU) {
-        await Promise.all([loadReferenceData(), loadMenuItems()]);
-      } else if (activeTab === TAB_MEDIA) {
-        await loadMedia();
-      } else {
-        await loadAudit();
-      }
-    } catch (error) {
-      if (activeTab === TAB_MENU) {
-        setMenuTableError((prev) => prev || error.message || "Refresh failed.");
-      } else if (activeTab === TAB_MEDIA) {
-        setMediaTableError((prev) => prev || error.message || "Refresh failed.");
-      }
-    } finally {
-      setBusy(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const updateLayoutMode = () => {
+      setIsMobileLayout(window.innerWidth <= MOBILE_LAYOUT_MAX_WIDTH);
+    };
+    updateLayoutMode();
+    window.addEventListener("resize", updateLayoutMode);
+    return () => window.removeEventListener("resize", updateLayoutMode);
+  }, []);
+
+  useEffect(() => {
+    if (!shouldScrollToEditCard || !selectedItemId || !itemForm) return;
+    if (!editCardRef.current) return;
+    if (typeof editCardRef.current.scrollIntoView === "function") {
+      editCardRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [activeTab, loadReferenceData, loadMenuItems, loadMedia, loadAudit]);
+    setShouldScrollToEditCard(false);
+  }, [shouldScrollToEditCard, selectedItemId, itemForm, editCardPlacement, isMobileLayout]);
 
   const queueConfirm = (title, body, confirmLabel, action, errorTarget = null, confirmVariant = "secondary") => {
     if (errorTarget) {
@@ -819,6 +824,8 @@ const AdminDashboard = () => {
       setSelectedItemId(payload.item.id);
       setItemForm(nextForm);
       setItemFormOriginal(nextForm);
+      setEditCardPlacement(isMobileLayout ? "above_list" : "below_table");
+      setShouldScrollToEditCard(false);
       setShowCreatedItemHighlight(true);
     }
   };
@@ -1009,6 +1016,8 @@ const AdminDashboard = () => {
     setSelectedItemId(null);
     setItemForm(null);
     setItemFormOriginal(null);
+    setEditCardPlacement("below_table");
+    setShouldScrollToEditCard(false);
     setShowCreatedItemHighlight(false);
     await Promise.all([loadMenuItems(), loadAudit()]);
   };
@@ -1047,6 +1056,227 @@ const AdminDashboard = () => {
     navigate("/admin/login", { replace: true });
   };
 
+  const shouldRenderEditCardAboveList = Boolean(
+    selectedItemId && itemForm && isMobileLayout && editCardPlacement === "above_list"
+  );
+  const shouldRenderEditCardBelowTable = Boolean(selectedItemId && itemForm && !shouldRenderEditCardAboveList);
+  const editMenuItemCard = selectedItemId && itemForm ? (
+    <div ref={editCardRef}>
+      <Card
+        data-testid="edit-menu-item-card"
+        className={`mb-3 ${showCreatedItemHighlight ? "admin-edit-card-created" : ""}`}>
+        <Card.Body>
+          <div className="d-flex justify-content-between align-items-center mb-2">
+            <h3 className="h6 mb-0">Edit Menu Item</h3>
+            <button
+              type="button"
+              className="btn-close admin-edit-card-close"
+              aria-label="Close edit menu item"
+              onClick={() => {
+                setSelectedItemId(null);
+                setItemForm(null);
+                setItemFormOriginal(null);
+                setEditCardPlacement("below_table");
+                setShouldScrollToEditCard(false);
+                setShowCreatedItemHighlight(false);
+              }}
+            />
+          </div>
+          {formErrors[FORM_ERROR_EDIT_ITEM] ? <Alert variant="danger">{formErrors[FORM_ERROR_EDIT_ITEM]}</Alert> : null}
+          <Form.Check
+            className="mb-3"
+            type="switch"
+            label="Active"
+            checked={itemForm.is_active}
+            onChange={(event) => {
+              setShowCreatedItemHighlight(false);
+              setItemForm((prev) => ({ ...prev, is_active: event.target.checked }));
+            }}
+          />
+          <Row className="g-2 mb-2">
+            <Col md={12}>
+              <Form.Label className="small mb-1" htmlFor="admin-edit-item-name">
+                Item Name
+              </Form.Label>
+              <Form.Control
+                id="admin-edit-item-name"
+                value={itemForm.item_name}
+                onChange={(event) => {
+                  setShowCreatedItemHighlight(false);
+                  setItemForm((prev) => ({ ...prev, item_name: event.target.value }));
+                }}
+              />
+            </Col>
+          </Row>
+
+          <div className="admin-assignment-panel mb-3">
+            <h4 className="h6 mb-2">Menu Type</h4>
+            <div className="d-flex gap-3 flex-wrap">
+              {MENU_TYPE_OPTIONS.map((typeKey) => {
+                const normalizedType = normalizeFilterText(typeKey);
+                const checked = selectedEditMenuTypes.includes(normalizedType);
+                return (
+                  <Form.Check
+                    key={`edit-menu-type-${normalizedType}`}
+                    inline
+                    type="checkbox"
+                    id={`edit-menu-type-${normalizedType}`}
+                    label={formatMenuTypeLabel(normalizedType)}
+                    checked={checked}
+                    onChange={(event) => {
+                      const wantsEnabled = event.target.checked;
+                      setShowCreatedItemHighlight(false);
+                      setItemForm((prev) => {
+                        if (!prev) return prev;
+                        const currentTypes = uniqueMenuTypeList(prev.menu_types || []);
+                        const nextTypes = wantsEnabled
+                          ? uniqueMenuTypeList([...currentTypes, normalizedType])
+                          : currentTypes.filter((value) => value !== normalizedType);
+                        const options = getGroupOptionsForType(normalizedType);
+                        const fallbackGroupId = getAssignmentGroupIdForType(prev.option_group_assignments, normalizedType) || toId(options[0]?.id);
+                        const nextAssignments = wantsEnabled
+                          ? upsertAssignmentForType(prev.option_group_assignments, normalizedType, fallbackGroupId)
+                          : removeAssignmentForType(prev.option_group_assignments, normalizedType);
+                        return {
+                          ...prev,
+                          menu_types: nextTypes,
+                          option_group_assignments: nextAssignments,
+                        };
+                      });
+                    }}
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="admin-assignment-panel">
+            <h4 className="h6 mb-2">Group(s)</h4>
+            {selectedEditMenuTypes.length ? (
+              selectedEditMenuTypes.map((typeKey) => {
+                const options = getGroupOptionsForType(typeKey);
+                const groupSelectId = `admin-edit-group-${typeKey}`;
+                return (
+                  <div key={`edit-group-${typeKey}`} className="mb-2">
+                    <Form.Label className="small mb-1" htmlFor={groupSelectId}>{`${formatMenuTypeLabel(typeKey)} Group`}</Form.Label>
+                    <Form.Select
+                      id={groupSelectId}
+                      value={getAssignmentGroupIdForType(itemForm.option_group_assignments, typeKey)}
+                      onChange={(event) => {
+                        const nextGroupId = toId(event.target.value);
+                        setShowCreatedItemHighlight(false);
+                        setItemForm((prev) => {
+                          if (!prev) return prev;
+                          return {
+                            ...prev,
+                            option_group_assignments: upsertAssignmentForType(prev.option_group_assignments, typeKey, nextGroupId),
+                          };
+                        });
+                      }}>
+                      <option value="">Select group</option>
+                      {options.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.title}
+                        </option>
+                      ))}
+                    </Form.Select>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="small text-secondary">Select at least one menu type to configure group assignments.</div>
+            )}
+          </div>
+
+          {editUsesRegular ? (
+            <Row className="g-2 mt-2">
+              <Col md={6}>
+                <Form.Label className="small mb-1" htmlFor="admin-edit-half-tray-price">
+                  Half Tray Price
+                </Form.Label>
+                <InputGroup>
+                  <InputGroup.Text>$</InputGroup.Text>
+                  <Form.Control
+                    id="admin-edit-half-tray-price"
+                    type="text"
+                    inputMode="decimal"
+                    value={itemForm.tray_price_half}
+                    onChange={(event) => {
+                      setShowCreatedItemHighlight(false);
+                      setItemForm((prev) => ({
+                        ...prev,
+                        tray_price_half: formatCurrencyInputFromDigits(event.target.value),
+                      }));
+                    }}
+                    onBlur={() =>
+                      setItemForm((prev) => ({
+                        ...prev,
+                        tray_price_half: formatCurrencyToCents(prev.tray_price_half),
+                      }))
+                    }
+                  />
+                </InputGroup>
+              </Col>
+              <Col md={6}>
+                <Form.Label className="small mb-1" htmlFor="admin-edit-full-tray-price">
+                  Full Tray Price
+                </Form.Label>
+                <InputGroup>
+                  <InputGroup.Text>$</InputGroup.Text>
+                  <Form.Control
+                    id="admin-edit-full-tray-price"
+                    type="text"
+                    inputMode="decimal"
+                    value={itemForm.tray_price_full}
+                    onChange={(event) => {
+                      setShowCreatedItemHighlight(false);
+                      setItemForm((prev) => ({
+                        ...prev,
+                        tray_price_full: formatCurrencyInputFromDigits(event.target.value),
+                      }));
+                    }}
+                    onBlur={() =>
+                      setItemForm((prev) => ({
+                        ...prev,
+                        tray_price_full: formatCurrencyToCents(prev.tray_price_full),
+                      }))
+                    }
+                  />
+                </InputGroup>
+              </Col>
+            </Row>
+          ) : null}
+
+          <div className="d-flex gap-2 mt-3 align-items-center">
+            <Button
+              className="btn-inquiry-action"
+              variant="secondary"
+              onClick={() =>
+                queueConfirm(buildUpdateConfirmTitle(), buildUpdateConfirmBody(), "Update", saveItem, FORM_ERROR_EDIT_ITEM)
+              }>
+              Update Item
+            </Button>
+            <Button
+              className="ms-auto"
+              variant="danger"
+              onClick={() =>
+                queueConfirm(
+                  "Delete Menu Item?",
+                  <div className="text-center py-1">{itemForm?.item_name || "Item"}</div>,
+                  "Delete",
+                  deleteItem,
+                  FORM_ERROR_EDIT_ITEM,
+                  "danger"
+                )
+              }>
+              Delete Item
+            </Button>
+          </div>
+        </Card.Body>
+      </Card>
+    </div>
+  ) : null;
+
   if (sessionLoading) {
     return (
       <main className="container py-5 d-flex justify-content-center">
@@ -1061,25 +1291,22 @@ const AdminDashboard = () => {
 
   return (
     <main className={`container-fluid py-4 admin-dashboard ${isDarkMode ? "admin-dashboard-dark" : ""}`}>
-      <header className="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
-        <div>
+      <header className="admin-header mb-3">
+        <div className="admin-header-main">
           <h2 className="h4 mb-1">Admin Dashboard</h2>
           <p className="text-secondary mb-0">
             Signed in as <strong>{adminUser?.display_name || adminUser?.username}</strong>
           </p>
-        </div>
-        <div className="d-flex gap-2 align-items-center flex-wrap">
           <Form.Check
-            className="admin-theme-toggle"
+            className="admin-theme-toggle mt-2"
             type="switch"
             id="admin-dark-mode-toggle"
             label="Dark Mode"
             checked={isDarkMode}
             onChange={(event) => setIsDarkMode(event.target.checked)}
           />
-          <Button variant="outline-secondary" onClick={refreshActiveTab} disabled={busy}>
-            Refresh
-          </Button>
+        </div>
+        <div className="admin-header-actions">
           <Button variant="outline-danger" onClick={logout}>
             Sign Out
           </Button>
@@ -1088,18 +1315,21 @@ const AdminDashboard = () => {
 
       <Nav variant="tabs" activeKey={activeTab} onSelect={(key) => setActiveTab(key || TAB_MENU)} className="mb-3" role="tablist">
         <Nav.Item>
-          <Nav.Link eventKey={TAB_MENU} role="tab" aria-selected={activeTab === TAB_MENU}>
-            Menu Operations
+          <Nav.Link eventKey={TAB_MENU} role="tab" aria-label="Menu Operations" aria-selected={activeTab === TAB_MENU}>
+            <span className="admin-tab-label-full">Menu Operations</span>
+            <span className="admin-tab-label-short">Menu</span>
           </Nav.Link>
         </Nav.Item>
         <Nav.Item>
-          <Nav.Link eventKey={TAB_MEDIA} role="tab" aria-selected={activeTab === TAB_MEDIA}>
-            Media Manager
+          <Nav.Link eventKey={TAB_MEDIA} role="tab" aria-label="Media Manager" aria-selected={activeTab === TAB_MEDIA}>
+            <span className="admin-tab-label-full">Media Manager</span>
+            <span className="admin-tab-label-short">Media</span>
           </Nav.Link>
         </Nav.Item>
         <Nav.Item>
-          <Nav.Link eventKey={TAB_AUDIT} role="tab" aria-selected={activeTab === TAB_AUDIT}>
-            Audit History
+          <Nav.Link eventKey={TAB_AUDIT} role="tab" aria-label="Audit History" aria-selected={activeTab === TAB_AUDIT}>
+            <span className="admin-tab-label-full">Audit History</span>
+            <span className="admin-tab-label-short">Logs</span>
           </Nav.Link>
         </Nav.Item>
       </Nav>
@@ -1280,10 +1510,12 @@ const AdminDashboard = () => {
                   Create Item
                 </Button>
               </Card.Body>
-            </Card>
+	            </Card>
 
-            <Card className="mb-3">
-              <Card.Body>
+	            {shouldRenderEditCardAboveList ? editMenuItemCard : null}
+
+	            <Card className="mb-3">
+	              <Card.Body>
                 <h3 className="h6">Find Menu Items</h3>
                 <Form.Label className="small mb-1" htmlFor="admin-item-filter-search">
                   Search
@@ -1385,6 +1617,8 @@ const AdminDashboard = () => {
                           onClick={async () => {
                             if (!item.id) return;
                             setShowCreatedItemHighlight(false);
+                            setEditCardPlacement("below_table");
+                            setShouldScrollToEditCard(true);
                             setSelectedItemId(item.id);
                             await loadItemDetail(item.id);
                           }}>
@@ -1451,218 +1685,7 @@ const AdminDashboard = () => {
               </Card.Body>
             </Card>
 
-            {selectedItemId && itemForm ? (
-              <Card
-                data-testid="edit-menu-item-card"
-                className={`mb-3 ${showCreatedItemHighlight ? "admin-edit-card-created" : ""}`}>
-                <Card.Body>
-                  <div className="d-flex justify-content-between align-items-center mb-2">
-                    <h3 className="h6 mb-0">Edit Menu Item</h3>
-                    <button
-                      type="button"
-                      className="btn-close admin-edit-card-close"
-                      aria-label="Close edit menu item"
-                      onClick={() => {
-                        setSelectedItemId(null);
-                        setItemForm(null);
-                        setItemFormOriginal(null);
-                        setShowCreatedItemHighlight(false);
-                      }}
-                    />
-                  </div>
-                  {formErrors[FORM_ERROR_EDIT_ITEM] ? <Alert variant="danger">{formErrors[FORM_ERROR_EDIT_ITEM]}</Alert> : null}
-                  <Form.Check
-                    className="mb-3"
-                    type="switch"
-                    label="Active"
-                    checked={itemForm.is_active}
-                    onChange={(event) => {
-                      setShowCreatedItemHighlight(false);
-                      setItemForm((prev) => ({ ...prev, is_active: event.target.checked }));
-                    }}
-                  />
-                  <Row className="g-2 mb-2">
-                    <Col md={12}>
-                      <Form.Label className="small mb-1" htmlFor="admin-edit-item-name">
-                        Item Name
-                      </Form.Label>
-                      <Form.Control
-                        id="admin-edit-item-name"
-                        value={itemForm.item_name}
-                        onChange={(event) => {
-                          setShowCreatedItemHighlight(false);
-                          setItemForm((prev) => ({ ...prev, item_name: event.target.value }));
-                        }}
-                      />
-                    </Col>
-                  </Row>
-
-                  <div className="admin-assignment-panel mb-3">
-                    <h4 className="h6 mb-2">Menu Type</h4>
-                    <div className="d-flex gap-3 flex-wrap">
-                      {MENU_TYPE_OPTIONS.map((typeKey) => {
-                        const normalizedType = normalizeFilterText(typeKey);
-                        const checked = selectedEditMenuTypes.includes(normalizedType);
-                        return (
-                          <Form.Check
-                            key={`edit-menu-type-${normalizedType}`}
-                            inline
-                            type="checkbox"
-                            id={`edit-menu-type-${normalizedType}`}
-                            label={formatMenuTypeLabel(normalizedType)}
-                            checked={checked}
-                            onChange={(event) => {
-                              const wantsEnabled = event.target.checked;
-                              setShowCreatedItemHighlight(false);
-                              setItemForm((prev) => {
-                                if (!prev) return prev;
-                                const currentTypes = uniqueMenuTypeList(prev.menu_types || []);
-                                const nextTypes = wantsEnabled
-                                  ? uniqueMenuTypeList([...currentTypes, normalizedType])
-                                  : currentTypes.filter((value) => value !== normalizedType);
-                                const options = getGroupOptionsForType(normalizedType);
-                                const fallbackGroupId = getAssignmentGroupIdForType(prev.option_group_assignments, normalizedType) || toId(options[0]?.id);
-                                const nextAssignments = wantsEnabled
-                                  ? upsertAssignmentForType(prev.option_group_assignments, normalizedType, fallbackGroupId)
-                                  : removeAssignmentForType(prev.option_group_assignments, normalizedType);
-                                return {
-                                  ...prev,
-                                  menu_types: nextTypes,
-                                  option_group_assignments: nextAssignments,
-                                };
-                              });
-                            }}
-                          />
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="admin-assignment-panel">
-                    <h4 className="h6 mb-2">Group(s)</h4>
-                    {selectedEditMenuTypes.length ? (
-                      selectedEditMenuTypes.map((typeKey) => {
-                        const options = getGroupOptionsForType(typeKey);
-                        const groupSelectId = `admin-edit-group-${typeKey}`;
-                        return (
-                          <div key={`edit-group-${typeKey}`} className="mb-2">
-                            <Form.Label className="small mb-1" htmlFor={groupSelectId}>{`${formatMenuTypeLabel(typeKey)} Group`}</Form.Label>
-                            <Form.Select
-                              id={groupSelectId}
-                              value={getAssignmentGroupIdForType(itemForm.option_group_assignments, typeKey)}
-                              onChange={(event) => {
-                                const nextGroupId = toId(event.target.value);
-                                setShowCreatedItemHighlight(false);
-                                setItemForm((prev) => {
-                                  if (!prev) return prev;
-                                  return {
-                                    ...prev,
-                                    option_group_assignments: upsertAssignmentForType(prev.option_group_assignments, typeKey, nextGroupId),
-                                  };
-                                });
-                              }}>
-                              <option value="">Select group</option>
-                              {options.map((option) => (
-                                <option key={option.id} value={option.id}>
-                                  {option.title}
-                                </option>
-                              ))}
-                            </Form.Select>
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <div className="small text-secondary">Select at least one menu type to configure group assignments.</div>
-                    )}
-                  </div>
-
-                  {editUsesRegular ? (
-                    <Row className="g-2 mt-2">
-                      <Col md={6}>
-                        <Form.Label className="small mb-1" htmlFor="admin-edit-half-tray-price">
-                          Half Tray Price
-                        </Form.Label>
-                        <InputGroup>
-                          <InputGroup.Text>$</InputGroup.Text>
-                          <Form.Control
-                            id="admin-edit-half-tray-price"
-                            type="text"
-                            inputMode="decimal"
-                            value={itemForm.tray_price_half}
-                            onChange={(event) => {
-                              setShowCreatedItemHighlight(false);
-                              setItemForm((prev) => ({
-                                ...prev,
-                                tray_price_half: formatCurrencyInputFromDigits(event.target.value),
-                              }));
-                            }}
-                            onBlur={() =>
-                              setItemForm((prev) => ({
-                                ...prev,
-                                tray_price_half: formatCurrencyToCents(prev.tray_price_half),
-                              }))
-                            }
-                          />
-                        </InputGroup>
-                      </Col>
-                      <Col md={6}>
-                        <Form.Label className="small mb-1" htmlFor="admin-edit-full-tray-price">
-                          Full Tray Price
-                        </Form.Label>
-                        <InputGroup>
-                          <InputGroup.Text>$</InputGroup.Text>
-                          <Form.Control
-                            id="admin-edit-full-tray-price"
-                            type="text"
-                            inputMode="decimal"
-                            value={itemForm.tray_price_full}
-                            onChange={(event) => {
-                              setShowCreatedItemHighlight(false);
-                              setItemForm((prev) => ({
-                                ...prev,
-                                tray_price_full: formatCurrencyInputFromDigits(event.target.value),
-                              }));
-                            }}
-                            onBlur={() =>
-                              setItemForm((prev) => ({
-                                ...prev,
-                                tray_price_full: formatCurrencyToCents(prev.tray_price_full),
-                              }))
-                            }
-                          />
-                        </InputGroup>
-                      </Col>
-                    </Row>
-                  ) : null}
-
-                  <div className="d-flex gap-2 mt-3 align-items-center">
-                    <Button
-                      className="btn-inquiry-action"
-                      variant="secondary"
-                      onClick={() =>
-                        queueConfirm(buildUpdateConfirmTitle(), buildUpdateConfirmBody(), "Update", saveItem, FORM_ERROR_EDIT_ITEM)
-                      }>
-                      Update Item
-                    </Button>
-                    <Button
-                      className="ms-auto"
-                      variant="danger"
-                      onClick={() =>
-                        queueConfirm(
-                          "Delete Menu Item?",
-                          <div className="text-center py-1">{itemForm?.item_name || "Item"}</div>,
-                          "Delete",
-                          deleteItem,
-                          FORM_ERROR_EDIT_ITEM,
-                          "danger"
-                        )
-                      }>
-                      Delete Item
-                    </Button>
-                  </div>
-                </Card.Body>
-              </Card>
-            ) : null}
+	            {shouldRenderEditCardBelowTable ? editMenuItemCard : null}
 
           </Col>
         </Row>

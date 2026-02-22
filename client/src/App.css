@@ -327,6 +327,10 @@ button:hover {
   z-index: 5;
 }
 
+.admin-tab-label-short {
+  display: none;
+}
+
 .admin-dashboard .table {
   --bs-table-bg: var(--admin-surface);
   --bs-table-color: var(--admin-text);
@@ -380,6 +384,22 @@ button:hover {
 .admin-theme-toggle .form-check-label {
   font-weight: 700;
   color: var(--admin-text);
+}
+
+.admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.admin-header-main {
+  min-width: 0;
+}
+
+.admin-header-actions {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .admin-scroll-card {
@@ -732,6 +752,16 @@ button:hover {
 
   .showcase-modal-footer-nav {
     display: none;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .admin-tab-label-full {
+    display: none;
+  }
+
+  .admin-tab-label-short {
+    display: inline;
   }
 }
 
