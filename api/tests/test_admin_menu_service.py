@@ -233,6 +233,128 @@ class AdminMenuServiceTests(unittest.TestCase):
         self.assertEqual(detail["option_group_assignments"], [])
         self.assertFalse(detail["is_active"])
 
+    @patch("flask_api.services.admin_menu_service.AdminMenuService._has_global_item_name_conflict")
+    @patch("flask_api.services.admin_menu_service.AdminMenuService._fetch_type_id_map")
+    @patch("flask_api.services.admin_menu_service.AdminMenuService.get_menu_item_detail")
+    @patch("flask_api.services.admin_menu_service.AdminMenuService._set_item_type_assignments")
+    @patch("flask_api.services.admin_menu_service.AdminMenuService._generate_unique_item_key")
+    @patch("flask_api.services.admin_menu_service.query_db")
+    @patch("flask_api.services.admin_menu_service.db_transaction")
+    def test_create_menu_item_allows_empty_menu_type_and_forces_inactive(
+        self,
+        mock_db_transaction,
+        mock_query_db,
+        mock_generate_unique_item_key,
+        mock_set_item_type_assignments,
+        mock_get_menu_item_detail,
+        mock_fetch_type_id_map,
+        mock_has_global_conflict,
+    ):
+        mock_has_global_conflict.return_value = False
+        mock_generate_unique_item_key.return_value = "jerk_chicken"
+        mock_query_db.return_value = 5
+        mock_get_menu_item_detail.return_value = {
+            "id": 5,
+            "item_name": "Jerk Chicken",
+            "menu_types": [],
+            "is_active": False,
+            "option_group_assignments": [],
+        }
+
+        context_manager = MagicMock()
+        context_manager.__enter__.return_value = "connection"
+        context_manager.__exit__.return_value = False
+        mock_db_transaction.return_value = context_manager
+
+        response, status = AdminMenuService.create_menu_item(
+            {
+                "item_name": "Jerk Chicken",
+                "menu_type": [],
+                "is_active": True,
+            }
+        )
+
+        self.assertEqual(status, 201)
+        self.assertEqual(response["item"]["menu_types"], [])
+        self.assertFalse(response["item"]["is_active"])
+        mock_fetch_type_id_map.assert_not_called()
+        mock_set_item_type_assignments.assert_called_once_with(
+            row_id=5,
+            assignments_by_type={},
+            type_id_map={},
+            connection="connection",
+        )
+        _, insert_payload = mock_query_db.call_args[0]
+        self.assertEqual(insert_payload["is_active"], 0)
+
+    @patch("flask_api.services.admin_menu_service.AdminMenuService._has_global_item_name_conflict")
+    @patch("flask_api.services.admin_menu_service.db_transaction")
+    def test_create_menu_item_duplicate_name_returns_specific_error(self, mock_db_transaction, mock_has_global_conflict):
+        mock_has_global_conflict.return_value = True
+
+        context_manager = MagicMock()
+        context_manager.__enter__.return_value = "connection"
+        context_manager.__exit__.return_value = False
+        mock_db_transaction.return_value = context_manager
+
+        response, status = AdminMenuService.create_menu_item(
+            {
+                "item_name": "Jerk Chicken",
+                "menu_type": [],
+            }
+        )
+
+        self.assertEqual(status, 409)
+        self.assertEqual(response.get("error"), "Item name must be unique.")
+
+    @patch("flask_api.services.admin_menu_service.AdminMenuService._has_global_item_name_conflict")
+    @patch("flask_api.services.admin_menu_service.db_transaction")
+    @patch("flask_api.services.admin_menu_service.AdminMenuService._fetch_item_types")
+    @patch("flask_api.services.admin_menu_service.AdminMenuService._fetch_item_row")
+    @patch("flask_api.services.admin_menu_service.AdminMenuService._decode_item_id")
+    def test_update_menu_item_duplicate_name_returns_specific_error(
+        self,
+        mock_decode_item_id,
+        mock_fetch_item_row,
+        mock_fetch_item_types,
+        mock_db_transaction,
+        mock_has_global_conflict,
+    ):
+        mock_decode_item_id.return_value = ("regular", 5)
+        mock_fetch_item_row.return_value = {
+            "id": 5,
+            "menu_type": "regular",
+            "item_key": "jerk_chicken",
+            "item_name": "Jerk Chicken",
+            "item_type": "protein",
+            "item_category": "entree",
+            "is_active": True,
+            "group_id": 10,
+            "group_key": "signature_proteins",
+            "group_title": "Proteins",
+            "tray_price_half": "75.00",
+            "tray_price_full": "140.00",
+            "_raw_row_id": 5,
+        }
+        mock_fetch_item_types.return_value = ["regular"]
+        mock_has_global_conflict.return_value = True
+
+        context_manager = MagicMock()
+        context_manager.__enter__.return_value = "connection"
+        context_manager.__exit__.return_value = False
+        mock_db_transaction.return_value = context_manager
+
+        response, status = AdminMenuService.update_menu_item(
+            5,
+            {
+                "item_name": "Jerk Chicken",
+            },
+        )
+
+        self.assertEqual(status, 409)
+        self.assertEqual(response.get("error"), "Item name must be unique.")
+
+    @patch("flask_api.services.admin_menu_service.AdminMenuService._has_global_item_name_conflict")
     @patch("flask_api.services.admin_menu_service.AdminMenuService._set_item_type_assignments")
     @patch("flask_api.services.admin_menu_service.query_db")
     @patch("flask_api.services.admin_menu_service.AdminMenuService._fetch_raw_item_row")
@@ -251,7 +373,9 @@ class AdminMenuServiceTests(unittest.TestCase):
         mock_fetch_raw_item_row,
         mock_query_db,
         mock_set_item_type_assignments,
+        mock_has_global_conflict,
     ):
+        mock_has_global_conflict.return_value = False
         mock_decode_item_id.return_value = ("regular", 5)
         mock_fetch_item_row.return_value = {
             "id": 5,

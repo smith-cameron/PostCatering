@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Badge, Button, Card, Col, Form, Nav, Row, Spinner, Table } from "react-bootstrap";
+import { Alert, Badge, Button, Card, Col, Form, InputGroup, Nav, Row, Spinner, Table } from "react-bootstrap";
 import { Navigate, useNavigate } from "react-router-dom";
 import ConfirmActionModal from "./ConfirmActionModal";
 import { requestJson, requestWithFormData } from "./adminApi";
@@ -18,6 +18,59 @@ const EMPTY_FORM_ERRORS = {
   [FORM_ERROR_EDIT_ITEM]: "",
   [FORM_ERROR_UPLOAD_MEDIA]: "",
   [FORM_ERROR_EDIT_MEDIA]: "",
+};
+const EMPTY_CREATE_FIELD_ERRORS = {
+  item_name: "",
+  menu_type: "",
+  group_id: "",
+  tray_price_half: "",
+  tray_price_full: "",
+};
+
+const mapCreateValidationErrors = (message) => {
+  const normalized = String(message || "").toLowerCase();
+  const mapped = {};
+  if (!normalized) return mapped;
+
+  if (normalized.includes("item name")) {
+    mapped.item_name = String(message || "Invalid item name.");
+  }
+  if (normalized.includes("menu type")) {
+    mapped.menu_type = String(message || "Invalid menu type.");
+  }
+  if (normalized.includes("group")) {
+    mapped.group_id = String(message || "Invalid group.");
+  }
+  if (normalized.includes("half tray")) {
+    mapped.tray_price_half = String(message || "Invalid half tray price.");
+  }
+  if (normalized.includes("full tray")) {
+    mapped.tray_price_full = String(message || "Invalid full tray price.");
+  }
+  return mapped;
+};
+
+const formatCurrencyInputFromDigits = (value) => {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  if (!digits) return "";
+  const padded = digits.padStart(3, "0");
+  const wholeRaw = padded.slice(0, -2);
+  const whole = String(Number.parseInt(wholeRaw, 10));
+  const fraction = padded.slice(-2);
+  return `${whole}.${fraction}`;
+};
+
+const formatCurrencyToCents = (value) => {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return "";
+  const parsed = Number.parseFloat(normalized);
+  if (!Number.isFinite(parsed) || parsed < 0) return "";
+  return parsed.toFixed(2);
+};
+
+const formatCurrencyDisplay = (value) => {
+  const normalized = formatCurrencyToCents(value);
+  return normalized ? `$${normalized}` : "-";
 };
 
 const toId = (value) => {
@@ -50,8 +103,8 @@ const buildItemForm = (item) => {
     menu_type: String(item?.menu_type || "").toLowerCase(),
     menu_types: menuTypes,
     item_name: item?.item_name ?? "",
-    tray_price_half: item?.tray_price_half ?? "",
-    tray_price_full: item?.tray_price_full ?? "",
+    tray_price_half: formatCurrencyToCents(item?.tray_price_half),
+    tray_price_full: formatCurrencyToCents(item?.tray_price_full),
     is_active: Boolean(item?.is_active),
     option_group_assignments: withDisplayOrder(
       (item?.option_group_assignments || []).map((row) => ({
@@ -346,16 +399,17 @@ const AdminDashboard = () => {
   const [adminUser, setAdminUser] = useState(null);
 
   const [activeTab, setActiveTab] = useState(TAB_MENU);
-  const [statusMessage, setStatusMessage] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
   const [formErrors, setFormErrors] = useState(EMPTY_FORM_ERRORS);
   const [busy, setBusy] = useState(false);
+  const [menuTableError, setMenuTableError] = useState("");
+  const [mediaTableError, setMediaTableError] = useState("");
 
   const [referenceData, setReferenceData] = useState({ catalogs: [], option_groups: [], sections: [], tiers: [] });
   const [itemFilters, setItemFilters] = useState({ search: "", is_active: "all", menu_type: "all", group_name: "all" });
   const [menuItems, setMenuItems] = useState([]);
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [itemForm, setItemForm] = useState(null);
+  const [showCreatedItemHighlight, setShowCreatedItemHighlight] = useState(false);
   const [newItemForm, setNewItemForm] = useState({
     item_name: "",
     is_active: true,
@@ -364,6 +418,8 @@ const AdminDashboard = () => {
     tray_price_half: "",
     tray_price_full: "",
   });
+  const [createFieldErrors, setCreateFieldErrors] = useState(EMPTY_CREATE_FIELD_ERRORS);
+  const [createValidationLocked, setCreateValidationLocked] = useState(false);
 
   const [mediaFilters, setMediaFilters] = useState({ search: "", media_type: "", is_active: "all", is_slide: "all" });
   const [mediaItems, setMediaItems] = useState([]);
@@ -380,6 +436,7 @@ const AdminDashboard = () => {
     body: "",
     confirmLabel: "Confirm",
     confirmVariant: "secondary",
+    validationMessage: "",
     action: null,
     errorTarget: null,
   });
@@ -466,19 +523,31 @@ const AdminDashboard = () => {
   }, []);
 
   const loadMenuItems = useCallback(async () => {
-    const payload = await requestJson("/api/admin/menu/catalog-items?limit=500");
-    setMenuItems(payload.items || []);
+    try {
+      const payload = await requestJson("/api/admin/menu/catalog-items?limit=500");
+      setMenuItems(payload.items || []);
+      setMenuTableError("");
+    } catch (error) {
+      setMenuTableError(error.message || "Failed to load menu items.");
+      throw error;
+    }
   }, []);
 
   const loadMedia = useCallback(async () => {
-    const params = new URLSearchParams();
-    if (mediaFilters.search.trim()) params.set("search", mediaFilters.search.trim());
-    if (mediaFilters.media_type) params.set("media_type", mediaFilters.media_type);
-    if (mediaFilters.is_active !== "all") params.set("is_active", mediaFilters.is_active);
-    if (mediaFilters.is_slide !== "all") params.set("is_slide", mediaFilters.is_slide);
-    params.set("limit", "800");
-    const payload = await requestJson(`/api/admin/media?${params.toString()}`);
-    setMediaItems(payload.media || []);
+    try {
+      const params = new URLSearchParams();
+      if (mediaFilters.search.trim()) params.set("search", mediaFilters.search.trim());
+      if (mediaFilters.media_type) params.set("media_type", mediaFilters.media_type);
+      if (mediaFilters.is_active !== "all") params.set("is_active", mediaFilters.is_active);
+      if (mediaFilters.is_slide !== "all") params.set("is_slide", mediaFilters.is_slide);
+      params.set("limit", "800");
+      const payload = await requestJson(`/api/admin/media?${params.toString()}`);
+      setMediaItems(payload.media || []);
+      setMediaTableError("");
+    } catch (error) {
+      setMediaTableError(error.message || "Failed to load media items.");
+      throw error;
+    }
   }, [mediaFilters]);
 
   const loadAudit = useCallback(async () => {
@@ -490,15 +559,6 @@ const AdminDashboard = () => {
     const payload = await requestJson(`/api/admin/menu/items/${itemId}`);
     setItemForm(buildItemForm(payload.item));
   }, []);
-
-  const validateCreateItemForm = useCallback(() => {
-    const itemName = String(newItemForm.item_name || "").trim();
-    if (!itemName) {
-      setFormErrors((prev) => ({ ...prev, [FORM_ERROR_CREATE_ITEM]: "Item name is required." }));
-      return false;
-    }
-    return true;
-  }, [newItemForm.item_name]);
 
   const hasMenuItemNameConflict = useCallback(
     (itemName, menuTypes, excludeId = null) => {
@@ -544,7 +604,7 @@ const AdminDashboard = () => {
         setBusy(true);
         await Promise.all([loadReferenceData(), loadMenuItems()]);
       } catch (error) {
-        setErrorMessage(error.message || "Failed to load admin data.");
+        setMenuTableError((prev) => prev || error.message || "Failed to load admin data.");
       } finally {
         setBusy(false);
       }
@@ -571,7 +631,9 @@ const AdminDashboard = () => {
         }
       } catch (error) {
         if (mounted) {
-          setErrorMessage(error.message || "Failed to load admin data.");
+          if (needsMediaLoad) {
+            setMediaTableError((prev) => prev || error.message || "Failed to load media data.");
+          }
         }
       } finally {
         if (mounted) setBusy(false);
@@ -600,7 +662,11 @@ const AdminDashboard = () => {
         await loadAudit();
       }
     } catch (error) {
-      setErrorMessage(error.message || "Refresh failed.");
+      if (activeTab === TAB_MENU) {
+        setMenuTableError((prev) => prev || error.message || "Refresh failed.");
+      } else if (activeTab === TAB_MEDIA) {
+        setMediaTableError((prev) => prev || error.message || "Refresh failed.");
+      }
     } finally {
       setBusy(false);
     }
@@ -610,8 +676,7 @@ const AdminDashboard = () => {
     if (errorTarget) {
       setFormErrors((prev) => ({ ...prev, [errorTarget]: "" }));
     }
-    setErrorMessage("");
-    setConfirmState({ show: true, title, body, confirmLabel, confirmVariant, action, errorTarget });
+    setConfirmState({ show: true, title, body, confirmLabel, confirmVariant, validationMessage: "", action, errorTarget });
   };
 
   const runConfirmedAction = async () => {
@@ -625,15 +690,21 @@ const AdminDashboard = () => {
         body: "",
         confirmLabel: "Confirm",
         confirmVariant: "secondary",
+        validationMessage: "",
         action: null,
         errorTarget: null,
       });
     } catch (error) {
       const message = error.message || "Unable to apply change.";
-      if (confirmState.errorTarget) {
+      setConfirmState((prev) => ({ ...prev, validationMessage: message }));
+      if (confirmState.errorTarget === FORM_ERROR_CREATE_ITEM) {
+        const mappedCreateFieldErrors = mapCreateValidationErrors(message);
+        if (Object.keys(mappedCreateFieldErrors).length) {
+          setCreateFieldErrors((prev) => ({ ...prev, ...mappedCreateFieldErrors }));
+        }
+        setCreateValidationLocked(true);
+      } else if (confirmState.errorTarget) {
         setFormErrors((prev) => ({ ...prev, [confirmState.errorTarget]: message }));
-      } else {
-        setErrorMessage(message);
       }
     } finally {
       setConfirmBusy(false);
@@ -641,31 +712,40 @@ const AdminDashboard = () => {
   };
 
   const createItem = async () => {
-    setFormErrors((prev) => ({ ...prev, [FORM_ERROR_CREATE_ITEM]: "" }));
+    setCreateFieldErrors(EMPTY_CREATE_FIELD_ERRORS);
     const itemName = String(newItemForm.item_name || "").trim();
-    if (!itemName) throw new Error("Item name is required.");
     const menuType = String(newItemForm.menu_type || "").toLowerCase();
-    if (!["regular", "formal"].includes(menuType)) throw new Error("Please select a menu type.");
-    if (hasMenuItemNameConflict(itemName, menuType)) {
-      throw new Error("Item name must be unique within this menu type.");
+    const hasMenuType = ["regular", "formal"].includes(menuType);
+    const nextFieldErrors = { ...EMPTY_CREATE_FIELD_ERRORS };
+    if (!itemName) {
+      nextFieldErrors.item_name = "Item name is required.";
+    } else if (hasMenuType && hasMenuItemNameConflict(itemName, menuType)) {
+      nextFieldErrors.item_name = "Item name must be unique within this menu type.";
     }
-
     const groupId = Number(newItemForm.group_id);
-    if (!Number.isFinite(groupId) || groupId <= 0) throw new Error("Please select a group.");
-    if (!applicableGroupOptions.some((group) => Number(group.id) === groupId)) {
-      throw new Error("Please select a group for the chosen menu type.");
+    if (hasMenuType) {
+      if (!Number.isFinite(groupId) || groupId <= 0) nextFieldErrors.group_id = "Please select a group.";
+      if (!applicableGroupOptions.some((group) => Number(group.id) === groupId)) {
+        nextFieldErrors.group_id = "Please select a group for the chosen menu type.";
+      }
     }
 
     const isRegular = menuType === "regular";
-    const trayHalfRaw = String(newItemForm.tray_price_half || "").trim();
-    const trayFullRaw = String(newItemForm.tray_price_full || "").trim();
+    const trayHalfRaw = formatCurrencyToCents(newItemForm.tray_price_half);
+    const trayFullRaw = formatCurrencyToCents(newItemForm.tray_price_full);
     const trayHalf = Number.parseFloat(trayHalfRaw);
     const trayFull = Number.parseFloat(trayFullRaw);
     if (isRegular && (!Number.isFinite(trayHalf) || trayHalf < 0)) {
-      throw new Error("Half tray price is required for regular menu items.");
+      nextFieldErrors.tray_price_half = "Half tray price is required for regular menu items.";
     }
     if (isRegular && (!Number.isFinite(trayFull) || trayFull < 0)) {
-      throw new Error("Full tray price is required for regular menu items.");
+      nextFieldErrors.tray_price_full = "Full tray price is required for regular menu items.";
+    }
+
+    const validationMessages = Object.values(nextFieldErrors).filter(Boolean);
+    if (validationMessages.length) {
+      setCreateFieldErrors(nextFieldErrors);
+      throw new Error(validationMessages.join(" "));
     }
 
     const nonFormalSections = (referenceData.sections || []).filter(
@@ -702,17 +782,16 @@ const AdminDashboard = () => {
       method: "POST",
       body: JSON.stringify({
         item_name: itemName,
-        is_active: Boolean(newItemForm.is_active),
-        menu_type: menuType,
-        group_id: groupId,
+        is_active: hasMenuType ? Boolean(newItemForm.is_active) : false,
+        menu_type: hasMenuType ? menuType : [],
+        group_id: hasMenuType ? groupId : null,
         tray_price_half: isRegular ? trayHalfRaw : null,
         tray_price_full: isRegular ? trayFullRaw : null,
-        option_group_assignments: [{ group_id: groupId, display_order: 1, is_active: true }],
+        option_group_assignments: hasMenuType ? [{ group_id: groupId, display_order: 1, is_active: true }] : [],
         section_row_assignments: sectionRowAssignments,
         tier_bullet_assignments: tierBulletAssignments,
       }),
     });
-    setStatusMessage(`Created menu item: ${payload.item?.item_name || "New Item"}`);
     setNewItemForm({
       item_name: "",
       is_active: true,
@@ -721,12 +800,53 @@ const AdminDashboard = () => {
       tray_price_half: "",
       tray_price_full: "",
     });
+    setCreateFieldErrors(EMPTY_CREATE_FIELD_ERRORS);
+    setCreateValidationLocked(false);
     await Promise.all([loadMenuItems(), loadAudit()]);
     if (payload.item?.id) {
       setSelectedItemId(payload.item.id);
       setItemForm(buildItemForm(payload.item));
+      setShowCreatedItemHighlight(true);
     }
   };
+
+  const buildCreateConfirmBody = useCallback(() => {
+    const itemName = String(newItemForm.item_name || "").trim();
+    const menuType = String(newItemForm.menu_type || "").toLowerCase();
+    const hasMenuType = ["regular", "formal"].includes(menuType);
+    const selectedGroupId = Number(newItemForm.group_id);
+    const groupOptions = hasMenuType ? getGroupOptionsForType(menuType) : [];
+    const selectedGroup = groupOptions.find((group) => Number(group.id) === selectedGroupId);
+    const halfPrice = formatCurrencyDisplay(newItemForm.tray_price_half);
+    const fullPrice = formatCurrencyDisplay(newItemForm.tray_price_full);
+    const isRegular = menuType === "regular";
+
+    return (
+      <div>
+        <p className="mb-2">Create this menu item with the following details?</p>
+        <div className="admin-confirm-review">
+          <div>
+            <strong>Item Name:</strong> {itemName || "-"}
+          </div>
+          <div>
+            <strong>Active:</strong> {hasMenuType ? (newItemForm.is_active ? "Yes" : "No") : "No (auto-inactive until assigned)"}
+          </div>
+          <div>
+            <strong>Menu Type:</strong> {hasMenuType ? formatMenuTypeLabel(menuType) : "None"}
+          </div>
+          <div>
+            <strong>Group:</strong> {hasMenuType ? selectedGroup?.title || "None selected" : "None"}
+          </div>
+          <div>
+            <strong>Half Tray Price:</strong> {isRegular ? halfPrice : "N/A"}
+          </div>
+          <div>
+            <strong>Full Tray Price:</strong> {isRegular ? fullPrice : "N/A"}
+          </div>
+        </div>
+      </div>
+    );
+  }, [newItemForm, getGroupOptionsForType]);
 
   const saveItem = async () => {
     if (!itemForm?.id) return;
@@ -759,8 +879,8 @@ const AdminDashboard = () => {
       : [];
 
     const usesRegular = selectedTypes.includes("regular");
-    const trayHalfRaw = String(itemForm.tray_price_half || "").trim();
-    const trayFullRaw = String(itemForm.tray_price_full || "").trim();
+    const trayHalfRaw = formatCurrencyToCents(itemForm.tray_price_half);
+    const trayFullRaw = formatCurrencyToCents(itemForm.tray_price_full);
     const trayHalf = Number.parseFloat(trayHalfRaw);
     const trayFull = Number.parseFloat(trayFullRaw);
     if (usesRegular && (!Number.isFinite(trayHalf) || trayHalf < 0)) {
@@ -790,7 +910,7 @@ const AdminDashboard = () => {
       body: JSON.stringify(payload),
     });
     setItemForm(buildItemForm(response.item));
-    setStatusMessage(`Saved menu item: ${response.item?.item_name || "Item"}`);
+    setShowCreatedItemHighlight(true);
     await Promise.all([loadMenuItems(), loadAudit()]);
   };
 
@@ -803,7 +923,7 @@ const AdminDashboard = () => {
     });
     setSelectedItemId(null);
     setItemForm(null);
-    setStatusMessage(`Deleted menu item: ${response.item_name || itemForm.item_name || "Item"}`);
+    setShowCreatedItemHighlight(false);
     await Promise.all([loadMenuItems(), loadAudit()]);
   };
 
@@ -821,7 +941,6 @@ const AdminDashboard = () => {
       formData.set("display_order", String(uploadForm.display_order).trim());
     }
     const payload = await requestWithFormData("/api/admin/media/upload", formData);
-    setStatusMessage(`Uploaded media: ${payload.media?.title || "New asset"}`);
     setUploadForm({ title: "", caption: "", alt_text: "", is_slide: false, is_active: true, display_order: "", file: null });
     await Promise.all([loadMedia(), loadAudit()]);
   };
@@ -834,7 +953,6 @@ const AdminDashboard = () => {
       body: JSON.stringify(mediaForm),
     });
     setMediaForm(buildMediaForm(payload.media));
-    setStatusMessage(`Saved media: ${payload.media?.title || "Media item"}`);
     await Promise.all([loadMedia(), loadAudit()]);
   };
 
@@ -882,9 +1000,6 @@ const AdminDashboard = () => {
         </div>
       </header>
 
-      {statusMessage ? <Alert variant="success">{statusMessage}</Alert> : null}
-      {errorMessage ? <Alert variant="danger">{errorMessage}</Alert> : null}
-
       <Nav variant="tabs" activeKey={activeTab} onSelect={(key) => setActiveTab(key || TAB_MENU)} className="mb-3" role="tablist">
         <Nav.Item>
           <Nav.Link eventKey={TAB_MENU} role="tab" aria-selected={activeTab === TAB_MENU}>
@@ -909,7 +1024,6 @@ const AdminDashboard = () => {
             <Card className="mb-3">
               <Card.Body>
                 <h3 className="h6">Create Menu Item</h3>
-                {formErrors[FORM_ERROR_CREATE_ITEM] ? <Alert variant="danger">{formErrors[FORM_ERROR_CREATE_ITEM]}</Alert> : null}
                 <Form.Check
                   className="mb-2"
                   type="switch"
@@ -924,12 +1038,15 @@ const AdminDashboard = () => {
                   id="admin-create-item-name"
                   className="mb-2"
                   placeholder="Item name"
+                  isInvalid={Boolean(createFieldErrors.item_name)}
                   value={newItemForm.item_name}
                   onChange={(event) => {
                     const nextValue = event.target.value;
+                    const hadFieldError = Boolean(createFieldErrors.item_name);
                     setNewItemForm((prev) => ({ ...prev, item_name: nextValue }));
-                    if (String(nextValue || "").trim()) {
-                      setFormErrors((prev) => ({ ...prev, [FORM_ERROR_CREATE_ITEM]: "" }));
+                    setCreateFieldErrors((prev) => ({ ...prev, item_name: "" }));
+                    if (hadFieldError) {
+                      setCreateValidationLocked(false);
                     }
                   }}
                 />
@@ -939,8 +1056,25 @@ const AdminDashboard = () => {
                 <Form.Select
                   id="admin-create-menu-type"
                   className="mb-2"
+                  isInvalid={Boolean(createFieldErrors.menu_type)}
                   value={newItemForm.menu_type}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const hadFieldError = Boolean(
+                      createFieldErrors.menu_type ||
+                        createFieldErrors.group_id ||
+                        createFieldErrors.tray_price_half ||
+                        createFieldErrors.tray_price_full
+                    );
+                    setCreateFieldErrors((prev) => ({
+                      ...prev,
+                      menu_type: "",
+                      group_id: "",
+                      tray_price_half: "",
+                      tray_price_full: "",
+                    }));
+                    if (hadFieldError) {
+                      setCreateValidationLocked(false);
+                    }
                     setNewItemForm((prev) => ({
                       ...prev,
                       menu_type: event.target.value,
@@ -948,7 +1082,7 @@ const AdminDashboard = () => {
                       tray_price_half: "",
                       tray_price_full: "",
                     }))
-                  }>
+                  }}>
                   <option value="">Select menu type</option>
                   <option value="regular">Regular</option>
                   <option value="formal">Formal</option>
@@ -961,8 +1095,16 @@ const AdminDashboard = () => {
                     <Form.Select
                       id="admin-create-group"
                       className="mb-2"
+                      isInvalid={Boolean(createFieldErrors.group_id)}
                       value={newItemForm.group_id}
-                      onChange={(event) => setNewItemForm((prev) => ({ ...prev, group_id: event.target.value }))}>
+                      onChange={(event) => {
+                        const hadFieldError = Boolean(createFieldErrors.group_id);
+                        setCreateFieldErrors((prev) => ({ ...prev, group_id: "" }));
+                        if (hadFieldError) {
+                          setCreateValidationLocked(false);
+                        }
+                        setNewItemForm((prev) => ({ ...prev, group_id: event.target.value }));
+                      }}>
                       <option value="">Select group</option>
                       {applicableGroupOptions.map((group) => (
                         <option key={group.id} value={group.id}>
@@ -975,34 +1117,80 @@ const AdminDashboard = () => {
                 {selectedCreateMenuType === "regular" ? (
                   <Row className="g-2 mb-2">
                     <Col>
-                      <Form.Control
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        placeholder="Half Tray Price"
-                        value={newItemForm.tray_price_half}
-                        onChange={(event) => setNewItemForm((prev) => ({ ...prev, tray_price_half: event.target.value }))}
-                      />
+                      <Form.Label className="small mb-1" htmlFor="admin-create-half-tray-price">
+                        Half Tray Price
+                      </Form.Label>
+                      <InputGroup>
+                        <InputGroup.Text>$</InputGroup.Text>
+                        <Form.Control
+                          id="admin-create-half-tray-price"
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          isInvalid={Boolean(createFieldErrors.tray_price_half)}
+                          value={newItemForm.tray_price_half}
+                          onChange={(event) => {
+                            const hadFieldError = Boolean(createFieldErrors.tray_price_half);
+                            setCreateFieldErrors((prev) => ({ ...prev, tray_price_half: "" }));
+                            if (hadFieldError) {
+                              setCreateValidationLocked(false);
+                            }
+                            setNewItemForm((prev) => ({
+                              ...prev,
+                              tray_price_half: formatCurrencyInputFromDigits(event.target.value),
+                            }));
+                          }}
+                          onBlur={() =>
+                            setNewItemForm((prev) => ({
+                              ...prev,
+                              tray_price_half: formatCurrencyToCents(prev.tray_price_half),
+                            }))
+                          }
+                        />
+                      </InputGroup>
                     </Col>
                     <Col>
-                      <Form.Control
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        placeholder="Full Tray Price"
-                        value={newItemForm.tray_price_full}
-                        onChange={(event) => setNewItemForm((prev) => ({ ...prev, tray_price_full: event.target.value }))}
-                      />
+                      <Form.Label className="small mb-1" htmlFor="admin-create-full-tray-price">
+                        Full Tray Price
+                      </Form.Label>
+                      <InputGroup>
+                        <InputGroup.Text>$</InputGroup.Text>
+                        <Form.Control
+                          id="admin-create-full-tray-price"
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          isInvalid={Boolean(createFieldErrors.tray_price_full)}
+                          value={newItemForm.tray_price_full}
+                          onChange={(event) => {
+                            const hadFieldError = Boolean(createFieldErrors.tray_price_full);
+                            setCreateFieldErrors((prev) => ({ ...prev, tray_price_full: "" }));
+                            if (hadFieldError) {
+                              setCreateValidationLocked(false);
+                            }
+                            setNewItemForm((prev) => ({
+                              ...prev,
+                              tray_price_full: formatCurrencyInputFromDigits(event.target.value),
+                            }));
+                          }}
+                          onBlur={() =>
+                            setNewItemForm((prev) => ({
+                              ...prev,
+                              tray_price_full: formatCurrencyToCents(prev.tray_price_full),
+                            }))
+                          }
+                        />
+                      </InputGroup>
                     </Col>
                   </Row>
                 ) : null}
                 <Button
                   className="btn-inquiry-action"
                   variant="secondary"
-                  onClick={() => {
-                    if (!validateCreateItemForm()) return;
-                    queueConfirm("Create menu item", "Create this menu item?", "Create", createItem, FORM_ERROR_CREATE_ITEM);
-                  }}>
+                  disabled={createValidationLocked}
+                  onClick={() =>
+                    queueConfirm("Create menu item", buildCreateConfirmBody(), "Create", createItem, FORM_ERROR_CREATE_ITEM)
+                  }>
                   Create Item
                 </Button>
               </Card.Body>
@@ -1096,14 +1284,21 @@ const AdminDashboard = () => {
                       <th>Group</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {filteredMenuItemRows.length ? (
-                      filteredMenuItemRows.map((item) => (
-                        <tr
-                          key={item.row_key}
+	                  <tbody>
+	                    {menuTableError ? (
+	                      <tr>
+	                        <td colSpan={4} className="text-center text-danger py-3">
+	                          {menuTableError}
+	                        </td>
+	                      </tr>
+	                    ) : filteredMenuItemRows.length ? (
+	                      filteredMenuItemRows.map((item) => (
+	                        <tr
+	                          key={item.row_key}
                           role={item.id ? "button" : undefined}
                           onClick={async () => {
                             if (!item.id) return;
+                            setShowCreatedItemHighlight(false);
                             setSelectedItemId(item.id);
                             await loadItemDetail(item.id);
                           }}>
@@ -1173,16 +1368,33 @@ const AdminDashboard = () => {
             </Card>
 
             {selectedItemId && itemForm ? (
-              <Card className="mb-3">
+              <Card
+                data-testid="edit-menu-item-card"
+                className={`mb-3 ${showCreatedItemHighlight ? "admin-edit-card-created" : ""}`}>
                 <Card.Body>
-                  <h3 className="h6">Edit Menu Item</h3>
+                  <div className="d-flex justify-content-between align-items-center mb-2">
+                    <h3 className="h6 mb-0">Edit Menu Item</h3>
+                    <button
+                      type="button"
+                      className="btn-close admin-edit-card-close"
+                      aria-label="Close edit menu item"
+                      onClick={() => {
+                        setSelectedItemId(null);
+                        setItemForm(null);
+                        setShowCreatedItemHighlight(false);
+                      }}
+                    />
+                  </div>
                   {formErrors[FORM_ERROR_EDIT_ITEM] ? <Alert variant="danger">{formErrors[FORM_ERROR_EDIT_ITEM]}</Alert> : null}
                   <Form.Check
                     className="mb-3"
                     type="switch"
                     label="Active"
                     checked={itemForm.is_active}
-                    onChange={(event) => setItemForm((prev) => ({ ...prev, is_active: event.target.checked }))}
+                    onChange={(event) => {
+                      setShowCreatedItemHighlight(false);
+                      setItemForm((prev) => ({ ...prev, is_active: event.target.checked }));
+                    }}
                   />
                   <Row className="g-2 mb-2">
                     <Col md={12}>
@@ -1192,13 +1404,16 @@ const AdminDashboard = () => {
                       <Form.Control
                         id="admin-edit-item-name"
                         value={itemForm.item_name}
-                        onChange={(event) => setItemForm((prev) => ({ ...prev, item_name: event.target.value }))}
+                        onChange={(event) => {
+                          setShowCreatedItemHighlight(false);
+                          setItemForm((prev) => ({ ...prev, item_name: event.target.value }));
+                        }}
                       />
                     </Col>
                   </Row>
 
                   <div className="admin-assignment-panel mb-3">
-                    <h4 className="h6 mb-2">Menu Type Associations</h4>
+                    <h4 className="h6 mb-2">Menu Type</h4>
                     <div className="d-flex gap-3 flex-wrap">
                       {MENU_TYPE_OPTIONS.map((typeKey) => {
                         const normalizedType = normalizeFilterText(typeKey);
@@ -1213,6 +1428,7 @@ const AdminDashboard = () => {
                             checked={checked}
                             onChange={(event) => {
                               const wantsEnabled = event.target.checked;
+                              setShowCreatedItemHighlight(false);
                               setItemForm((prev) => {
                                 if (!prev) return prev;
                                 const currentTypes = uniqueMenuTypeList(prev.menu_types || []);
@@ -1238,7 +1454,7 @@ const AdminDashboard = () => {
                   </div>
 
                   <div className="admin-assignment-panel">
-                    <h4 className="h6 mb-2">Group Assignments</h4>
+                    <h4 className="h6 mb-2">Group(s)</h4>
                     {selectedEditMenuTypes.length ? (
                       selectedEditMenuTypes.map((typeKey) => {
                         const options = getGroupOptionsForType(typeKey);
@@ -1251,6 +1467,7 @@ const AdminDashboard = () => {
                               value={getAssignmentGroupIdForType(itemForm.option_group_assignments, typeKey)}
                               onChange={(event) => {
                                 const nextGroupId = toId(event.target.value);
+                                setShowCreatedItemHighlight(false);
                                 setItemForm((prev) => {
                                   if (!prev) return prev;
                                   return {
@@ -1280,27 +1497,55 @@ const AdminDashboard = () => {
                         <Form.Label className="small mb-1" htmlFor="admin-edit-half-tray-price">
                           Half Tray Price
                         </Form.Label>
-                        <Form.Control
-                          id="admin-edit-half-tray-price"
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          value={itemForm.tray_price_half}
-                          onChange={(event) => setItemForm((prev) => ({ ...prev, tray_price_half: event.target.value }))}
-                        />
+                        <InputGroup>
+                          <InputGroup.Text>$</InputGroup.Text>
+                          <Form.Control
+                            id="admin-edit-half-tray-price"
+                            type="text"
+                            inputMode="decimal"
+                            value={itemForm.tray_price_half}
+                            onChange={(event) => {
+                              setShowCreatedItemHighlight(false);
+                              setItemForm((prev) => ({
+                                ...prev,
+                                tray_price_half: formatCurrencyInputFromDigits(event.target.value),
+                              }));
+                            }}
+                            onBlur={() =>
+                              setItemForm((prev) => ({
+                                ...prev,
+                                tray_price_half: formatCurrencyToCents(prev.tray_price_half),
+                              }))
+                            }
+                          />
+                        </InputGroup>
                       </Col>
                       <Col md={6}>
                         <Form.Label className="small mb-1" htmlFor="admin-edit-full-tray-price">
                           Full Tray Price
                         </Form.Label>
-                        <Form.Control
-                          id="admin-edit-full-tray-price"
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          value={itemForm.tray_price_full}
-                          onChange={(event) => setItemForm((prev) => ({ ...prev, tray_price_full: event.target.value }))}
-                        />
+                        <InputGroup>
+                          <InputGroup.Text>$</InputGroup.Text>
+                          <Form.Control
+                            id="admin-edit-full-tray-price"
+                            type="text"
+                            inputMode="decimal"
+                            value={itemForm.tray_price_full}
+                            onChange={(event) => {
+                              setShowCreatedItemHighlight(false);
+                              setItemForm((prev) => ({
+                                ...prev,
+                                tray_price_full: formatCurrencyInputFromDigits(event.target.value),
+                              }));
+                            }}
+                            onBlur={() =>
+                              setItemForm((prev) => ({
+                                ...prev,
+                                tray_price_full: formatCurrencyToCents(prev.tray_price_full),
+                              }))
+                            }
+                          />
+                        </InputGroup>
                       </Col>
                     </Row>
                   ) : null}
@@ -1310,16 +1555,16 @@ const AdminDashboard = () => {
                       className="btn-inquiry-action"
                       variant="secondary"
                       onClick={() =>
-                        queueConfirm("Save menu item", "Apply item changes and assignments?", "Save", saveItem, FORM_ERROR_EDIT_ITEM)
+                        queueConfirm("Update menu item", "Apply item changes and assignments?", "Update", saveItem, FORM_ERROR_EDIT_ITEM)
                       }>
-                      Save Item
+                      Update Item
                     </Button>
                     <Button
                       variant="danger"
                       onClick={() =>
                         queueConfirm(
-                          "Delete menu item",
-                          "Delete this menu item and all menu type/group associations? This action cannot be undone.",
+                          "Delete Menu Item?",
+                          <div className="text-center py-1">{itemForm?.item_name || "Item"}</div>,
                           "Delete",
                           deleteItem,
                           FORM_ERROR_EDIT_ITEM,
@@ -1446,32 +1691,46 @@ const AdminDashboard = () => {
                       <th>Order</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {mediaItems.map((item) => (
-                      <tr
-                        key={item.id}
-                        role="button"
-                        onClick={() => {
-                          setSelectedMediaId(item.id);
-                          setMediaForm(buildMediaForm(item));
-                        }}>
-                        <td>
-                          {item.title || "Untitled"}
-                          <div className="small text-secondary">{item.src}</div>
-                        </td>
-                        <td>{item.media_type}</td>
-                        <td>
-                          {item.is_slide ? (
-                            <Badge bg="info" text="dark" className="me-1">
-                              Homepage Slide
-                            </Badge>
-                          ) : null}
-                          {item.is_active ? <Badge bg="success">Active</Badge> : <Badge bg="secondary">Inactive</Badge>}
-                        </td>
-                        <td>{item.display_order}</td>
-                      </tr>
-                    ))}
-                  </tbody>
+	                  <tbody>
+	                    {mediaTableError ? (
+	                      <tr>
+	                        <td colSpan={4} className="text-center text-danger py-3">
+	                          {mediaTableError}
+	                        </td>
+	                      </tr>
+	                    ) : mediaItems.length ? (
+	                      mediaItems.map((item) => (
+	                        <tr
+	                          key={item.id}
+	                          role="button"
+	                          onClick={() => {
+	                            setSelectedMediaId(item.id);
+	                            setMediaForm(buildMediaForm(item));
+	                          }}>
+	                          <td>
+	                            {item.title || "Untitled"}
+	                            <div className="small text-secondary">{item.src}</div>
+	                          </td>
+	                          <td>{item.media_type}</td>
+	                          <td>
+	                            {item.is_slide ? (
+	                              <Badge bg="info" text="dark" className="me-1">
+	                                Homepage Slide
+	                              </Badge>
+	                            ) : null}
+	                            {item.is_active ? <Badge bg="success">Active</Badge> : <Badge bg="secondary">Inactive</Badge>}
+	                          </td>
+	                          <td>{item.display_order}</td>
+	                        </tr>
+	                      ))
+	                    ) : (
+	                      <tr>
+	                        <td colSpan={4} className="text-center text-secondary py-3">
+	                          No media items match the current filters.
+	                        </td>
+	                      </tr>
+	                    )}
+	                  </tbody>
                 </Table>
               </Card.Body>
             </Card>
@@ -1566,6 +1825,8 @@ const AdminDashboard = () => {
         body={confirmState.body}
         confirmLabel={confirmState.confirmLabel}
         confirmVariant={confirmState.confirmVariant}
+        validationMessage={confirmState.validationMessage}
+        confirmDisabled={confirmState.errorTarget === FORM_ERROR_CREATE_ITEM && createValidationLocked}
         darkMode={isDarkMode}
         busy={confirmBusy}
         onCancel={() =>
@@ -1573,6 +1834,7 @@ const AdminDashboard = () => {
             ...prev,
             show: false,
             confirmVariant: "secondary",
+            validationMessage: "",
             action: null,
             errorTarget: null,
           }))

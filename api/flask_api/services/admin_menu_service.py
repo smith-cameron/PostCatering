@@ -688,6 +688,30 @@ class AdminMenuService:
         return bool(existing)
 
     @classmethod
+    def _has_global_item_name_conflict(cls, item_name, connection, exclude_row_id=None):
+        normalized_name = str(item_name or "").strip()
+        if not normalized_name:
+            return False
+
+        existing = query_db(
+            """
+      SELECT id
+      FROM menu_items
+      WHERE LOWER(TRIM(item_name)) = LOWER(TRIM(%(item_name)s))
+        AND (%(exclude_row_id)s IS NULL OR id <> %(exclude_row_id)s)
+      LIMIT 1;
+      """,
+            {
+                "item_name": normalized_name,
+                "exclude_row_id": exclude_row_id,
+            },
+            fetch="one",
+            connection=connection,
+            auto_commit=False,
+        )
+        return bool(existing)
+
+    @classmethod
     def _generate_unique_item_key(cls, item_name, provided_key, connection, exclude_row_id=None):
         base_key = cls._slugify_item_key(provided_key or item_name) or "item"
         candidate = base_key
@@ -731,7 +755,11 @@ class AdminMenuService:
         if not item_name:
             return {"error": "item_name is required."}, 400
 
-        type_keys = cls._normalize_menu_type_request(body.get("menu_type"))
+        explicit_empty_type_selection = (
+            body.get("menu_type") in (None, "")
+            or (isinstance(body.get("menu_type"), (list, tuple, set)) and len(body.get("menu_type")) == 0)
+        )
+        type_keys = [] if explicit_empty_type_selection else cls._normalize_menu_type_request(body.get("menu_type"))
         requested_group_map = cls._extract_requested_group_map(
             type_keys=type_keys,
             body=body,
@@ -741,26 +769,35 @@ class AdminMenuService:
         )
 
         with db_transaction() as connection:
-            type_id_map = cls._fetch_type_id_map(connection=connection)
-            if any(type_id_map.get(type_key) is None for type_key in type_keys):
-                return {"error": "Invalid menu_type supplied."}, 400
+            if cls._has_global_item_name_conflict(item_name, connection):
+                return {"error": "Item name must be unique."}, 409
 
-            resolved_assignments, assignment_error = cls._resolve_group_assignments(
-                type_keys=type_keys,
-                requested_group_map=requested_group_map,
-                connection=connection,
-            )
-            if assignment_error:
-                return {"error": assignment_error}, 400
+            if type_keys:
+                type_id_map = cls._fetch_type_id_map(connection=connection)
+                if any(type_id_map.get(type_key) is None for type_key in type_keys):
+                    return {"error": "Invalid menu_type supplied."}, 400
 
-            conflict_error = cls._validate_group_conflicts(resolved_assignments, connection=connection)
-            if conflict_error:
-                return {"error": conflict_error}, 400
+                resolved_assignments, assignment_error = cls._resolve_group_assignments(
+                    type_keys=type_keys,
+                    requested_group_map=requested_group_map,
+                    connection=connection,
+                )
+                if assignment_error:
+                    return {"error": assignment_error}, 400
 
-            if cls._has_item_name_conflict(item_name, type_keys, connection):
-                return {"error": "Item name must be unique within this menu type."}, 409
+                conflict_error = cls._validate_group_conflicts(resolved_assignments, connection=connection)
+                if conflict_error:
+                    return {"error": conflict_error}, 400
+
+                if cls._has_item_name_conflict(item_name, type_keys, connection):
+                    return {"error": "Item name must be unique within this menu type."}, 409
+            else:
+                type_id_map = {}
+                resolved_assignments = {}
 
             is_active = cls._to_bool(body.get("is_active"), default=True)
+            if not type_keys:
+                is_active = False
             item_type = str(body.get("item_type") or "").strip() or None
             item_category = str(body.get("item_category") or "").strip() or None
             item_key = cls._generate_unique_item_key(
@@ -855,6 +892,9 @@ class AdminMenuService:
             next_is_active = False
 
         with db_transaction() as connection:
+            if cls._has_global_item_name_conflict(next_name, connection, exclude_row_id=row_id):
+                return {"error": "Item name must be unique."}, 409
+
             if next_type_keys:
                 type_id_map = cls._fetch_type_id_map(connection=connection)
                 if any(type_id_map.get(type_key) is None for type_key in next_type_keys):

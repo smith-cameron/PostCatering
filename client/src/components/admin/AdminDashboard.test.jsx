@@ -155,22 +155,29 @@ describe("AdminDashboard", () => {
 
     await screen.findByText("Create Menu Item");
     expect(screen.queryByLabelText("Group")).not.toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("Half Tray Price")).not.toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("Full Tray Price")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Half Tray Price")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Full Tray Price")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Item Name"), { target: { value: "Jerk Chicken" } });
     fireEvent.change(screen.getByLabelText("Menu Type"), { target: { value: "regular" } });
     expect(screen.getByLabelText("Group")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Half Tray Price")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Full Tray Price")).toBeInTheDocument();
+    expect(screen.getByLabelText("Half Tray Price")).toBeInTheDocument();
+    expect(screen.getByLabelText("Full Tray Price")).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Proteins" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Formal Entrees" })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Group"), { target: { value: "10" } });
-    fireEvent.change(screen.getByPlaceholderText("Half Tray Price"), { target: { value: "75" } });
-    fireEvent.change(screen.getByPlaceholderText("Full Tray Price"), { target: { value: "140" } });
+    fireEvent.change(screen.getByLabelText("Half Tray Price"), { target: { value: "7500" } });
+    fireEvent.change(screen.getByLabelText("Full Tray Price"), { target: { value: "14000" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Create Item" }));
+    const confirmDialog = await screen.findByRole("dialog");
+    expect(within(confirmDialog).getByText("Create this menu item with the following details?")).toBeInTheDocument();
+    expect(within(confirmDialog).getByText("Jerk Chicken")).toBeInTheDocument();
+    expect(within(confirmDialog).getByText("Regular")).toBeInTheDocument();
+    expect(within(confirmDialog).getByText("Proteins")).toBeInTheDocument();
+    expect(within(confirmDialog).getByText("$75.00")).toBeInTheDocument();
+    expect(within(confirmDialog).getByText("$140.00")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Create" }));
 
     await waitFor(() => {
@@ -182,8 +189,8 @@ describe("AdminDashboard", () => {
       expect(payload.item_name).toBe("Jerk Chicken");
       expect(payload.menu_type).toBe("regular");
       expect(payload.group_id).toBe(10);
-      expect(payload.tray_price_half).toBe("75");
-      expect(payload.tray_price_full).toBe("140");
+      expect(payload.tray_price_half).toBe("75.00");
+      expect(payload.tray_price_full).toBe("140.00");
       expect(payload.item_key).toBeUndefined();
       expect(payload.option_group_assignments).toHaveLength(1);
       expect(payload.section_row_assignments).toHaveLength(0);
@@ -196,9 +203,247 @@ describe("AdminDashboard", () => {
       expect(createGroupSelect).toBeInTheDocument();
       expect(within(createGroupSelect).getByRole("option", { name: "Formal Entrees" })).toBeInTheDocument();
       expect(within(createGroupSelect).queryByRole("option", { name: "Proteins" })).not.toBeInTheDocument();
-      expect(screen.queryByPlaceholderText("Half Tray Price")).not.toBeInTheDocument();
-      expect(screen.queryByPlaceholderText("Full Tray Price")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Half Tray Price")).not.toBeInTheDocument();
+      expect(screen.queryByLabelText("Full Tray Price")).not.toBeInTheDocument();
     });
+  });
+
+  it("creates item without menu type as inactive and unassigned", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(
+          buildResponse({
+            groups: [{ id: 10, key: "signature_proteins", name: "Proteins", sort_order: 1, is_active: true }],
+          })
+        );
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(
+          buildResponse({
+            groups: [{ id: 11, key: "entrees", name: "Formal Entrees", sort_order: 1, is_active: true }],
+          })
+        );
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      if (url === "/api/admin/menu/items" && options?.method === "POST") {
+        return Promise.resolve(
+          buildResponse({
+            item: {
+              id: 77,
+              menu_type: "regular",
+              menu_types: [],
+              item_name: "No Type Item",
+              item_key: "no_type_item",
+              tray_price_half: null,
+              tray_price_full: null,
+              is_active: false,
+              option_group_assignments: [],
+              section_row_assignments: [],
+              tier_bullet_assignments: [],
+            },
+          })
+        );
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Create Menu Item");
+    fireEvent.change(screen.getByLabelText("Item Name"), { target: { value: "No Type Item" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Item" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      const createCall = globalThis.fetch.mock.calls.find(
+        (call) => call[0] === "/api/admin/menu/items" && call[1]?.method === "POST"
+      );
+      expect(createCall).toBeTruthy();
+      const payload = JSON.parse(createCall[1].body);
+      expect(payload.menu_type).toEqual([]);
+      expect(payload.group_id).toBeNull();
+      expect(payload.is_active).toBe(false);
+      expect(payload.option_group_assignments).toEqual([]);
+      expect(payload.tray_price_half).toBeNull();
+      expect(payload.tray_price_full).toBeNull();
+    });
+    const editCard = await screen.findByTestId("edit-menu-item-card");
+    expect(editCard).toHaveClass("admin-edit-card-created");
+    fireEvent.change(screen.getByLabelText("Item Name", { selector: "#admin-edit-item-name" }), {
+      target: { value: "No Type Item Updated" },
+    });
+    expect(editCard).not.toHaveClass("admin-edit-card-created");
+  });
+
+  it("shows create validation text in modal and keeps invalid field red until changed", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(
+          buildResponse({
+            groups: [{ id: 10, key: "signature_proteins", name: "Proteins", sort_order: 1, is_active: true }],
+          })
+        );
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(
+          buildResponse({
+            groups: [{ id: 11, key: "entrees", name: "Formal Entrees", sort_order: 1, is_active: true }],
+          })
+        );
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Create Menu Item");
+    fireEvent.change(screen.getByLabelText("Item Name"), { target: { value: "Validation Item" } });
+    fireEvent.change(screen.getByLabelText("Menu Type"), { target: { value: "regular" } });
+
+    const groupSelect = screen.getByLabelText("Group");
+    expect(groupSelect).toBeInTheDocument();
+    expect(groupSelect).not.toHaveClass("is-invalid");
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Item" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      const confirmDialog = screen.getByRole("dialog");
+      expect(within(confirmDialog).getByRole("alert")).toHaveTextContent("Please select a group");
+      expect(groupSelect).toHaveClass("is-invalid");
+      expect(within(confirmDialog).getByRole("button", { name: "Create" })).toBeDisabled();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Fix" }));
+    await waitFor(() => {
+      expect(screen.queryByText("Create this menu item?")).not.toBeInTheDocument();
+    });
+    expect(groupSelect).toHaveClass("is-invalid");
+    expect(screen.getByRole("button", { name: "Create Item" })).toBeDisabled();
+
+    fireEvent.change(groupSelect, { target: { value: "10" } });
+    expect(groupSelect).not.toHaveClass("is-invalid");
+    expect(screen.getByRole("button", { name: "Create Item" })).not.toBeDisabled();
+
+    const postCall = globalThis.fetch.mock.calls.find(
+      (call) => call[0] === "/api/admin/menu/items" && call[1]?.method === "POST"
+    );
+    expect(postCall).toBeFalsy();
+  });
+
+  it("maps create API validation message to item name invalid border until value changes", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(
+          buildResponse({
+            groups: [{ id: 10, key: "signature_proteins", name: "Proteins", sort_order: 1, is_active: true }],
+          })
+        );
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(
+          buildResponse({
+            groups: [{ id: 11, key: "entrees", name: "Formal Entrees", sort_order: 1, is_active: true }],
+          })
+        );
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      if (url === "/api/admin/menu/items" && options?.method === "POST") {
+        return Promise.resolve(buildResponse({ error: "Item name must be unique." }, false));
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Create Menu Item");
+    const itemNameInput = screen.getByLabelText("Item Name");
+    fireEvent.change(itemNameInput, { target: { value: "Dup Name" } });
+    fireEvent.change(screen.getByLabelText("Menu Type"), { target: { value: "regular" } });
+    fireEvent.change(screen.getByLabelText("Group"), { target: { value: "10" } });
+    fireEvent.change(screen.getByLabelText("Half Tray Price"), { target: { value: "7500" } });
+    fireEvent.change(screen.getByLabelText("Full Tray Price"), { target: { value: "14000" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Item" }));
+    const confirmDialog = await screen.findByRole("dialog");
+    expect(within(confirmDialog).getByText("Create this menu item with the following details?")).toBeInTheDocument();
+    expect(within(confirmDialog).getByText("Dup Name")).toBeInTheDocument();
+    expect(within(confirmDialog).getByText("Regular")).toBeInTheDocument();
+    expect(within(confirmDialog).getByText("Proteins")).toBeInTheDocument();
+    expect(within(confirmDialog).getByText("$75.00")).toBeInTheDocument();
+    expect(within(confirmDialog).getByText("$140.00")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      const confirmDialog = screen.getByRole("dialog");
+      expect(within(confirmDialog).getByRole("alert")).toHaveTextContent("Item name must be unique.");
+      expect(itemNameInput).toHaveClass("is-invalid");
+      expect(within(confirmDialog).getByRole("button", { name: "Create" })).toBeDisabled();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Fix" }));
+    await waitFor(() => {
+      expect(screen.queryByText("Create this menu item?")).not.toBeInTheDocument();
+    });
+    expect(itemNameInput).toHaveClass("is-invalid");
+    expect(screen.getByRole("button", { name: "Create Item" })).toBeDisabled();
+
+    fireEvent.change(itemNameInput, { target: { value: "New Unique Name" } });
+    expect(itemNameInput).not.toHaveClass("is-invalid");
+    expect(screen.getByRole("button", { name: "Create Item" })).not.toBeDisabled();
   });
 
   it("edits menu item fields with menu type + group associations from the unified model", async () => {
@@ -312,11 +557,11 @@ describe("AdminDashboard", () => {
     expect(screen.getByLabelText("Regular")).toBeChecked();
     expect(screen.getByLabelText("Formal")).toBeChecked();
 
-    fireEvent.change(screen.getByLabelText("Half Tray Price"), { target: { value: "80" } });
-    fireEvent.change(screen.getByLabelText("Full Tray Price"), { target: { value: "145" } });
+    fireEvent.change(screen.getByLabelText("Half Tray Price"), { target: { value: "8000" } });
+    fireEvent.change(screen.getByLabelText("Full Tray Price"), { target: { value: "14500" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save Item" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update Item" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Update" }));
 
     await waitFor(() => {
       const updateCall = globalThis.fetch.mock.calls.find(
@@ -328,8 +573,8 @@ describe("AdminDashboard", () => {
       expect(payload.item_type).toBeUndefined();
       expect(payload.item_category).toBeUndefined();
       expect(payload.menu_type).toEqual(["regular", "formal"]);
-      expect(payload.tray_price_half).toBe("80");
-      expect(payload.tray_price_full).toBe("145");
+      expect(payload.tray_price_half).toBe("80.00");
+      expect(payload.tray_price_full).toBe("145.00");
       expect(payload.option_group_assignments).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ menu_type: "regular", group_id: 10 }),
@@ -337,6 +582,8 @@ describe("AdminDashboard", () => {
         ])
       );
     });
+    expect(screen.getByTestId("edit-menu-item-card")).toHaveClass("admin-edit-card-created");
+    expect(screen.queryByText("Saved menu item: Jerk Chicken")).not.toBeInTheDocument();
   });
 
   it("allows unselecting all menu types and saves item as inactive", async () => {
@@ -457,8 +704,8 @@ describe("AdminDashboard", () => {
     fireEvent.click(regularCheckbox);
     expect(regularCheckbox).not.toBeChecked();
 
-    fireEvent.click(screen.getByRole("button", { name: "Save Item" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Update Item" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Update" }));
 
     await waitFor(() => {
       const updateCall = globalThis.fetch.mock.calls.find(
@@ -554,7 +801,7 @@ describe("AdminDashboard", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText("Menu Items");
+    await screen.findByText("Jerk Chicken");
     fireEvent.click(screen.getByText("Jerk Chicken"));
     await screen.findByText("Edit Menu Item");
 
@@ -570,7 +817,7 @@ describe("AdminDashboard", () => {
     await waitFor(() => {
       expect(screen.queryByText("Edit Menu Item")).not.toBeInTheDocument();
     });
-    expect(screen.getByText("Deleted menu item: Jerk Chicken")).toBeInTheDocument();
+    expect(screen.queryByText("Deleted menu item: Jerk Chicken")).not.toBeInTheDocument();
   });
 
   it("stacks grouped menu type/group/status rows and applies local menu item filters", async () => {
@@ -630,8 +877,7 @@ describe("AdminDashboard", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText("Menu Items");
-
+    await screen.findByText("jerk_chicken");
     expect(screen.getAllByText("Jerk Chicken")).toHaveLength(1);
 
     const jerkKey = screen.getByText("jerk_chicken");
@@ -659,3 +905,5 @@ describe("AdminDashboard", () => {
     expect(screen.queryByText("Rice")).not.toBeInTheDocument();
   });
 });
+
+

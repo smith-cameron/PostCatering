@@ -1,4 +1,4 @@
-import { Button, Modal } from "react-bootstrap";
+import { Alert, Button, Modal } from "react-bootstrap";
 
 const ConfirmActionModal = ({
   show,
@@ -6,6 +6,8 @@ const ConfirmActionModal = ({
   body = "Are you sure you want to apply this change?",
   confirmLabel = "Confirm",
   confirmVariant = "secondary",
+  validationMessage = "",
+  confirmDisabled = false,
   darkMode = false,
   onCancel,
   onConfirm,
@@ -19,16 +21,23 @@ const ConfirmActionModal = ({
     <Modal.Header closeButton>
       <Modal.Title>{title}</Modal.Title>
     </Modal.Header>
-    <Modal.Body>{body}</Modal.Body>
+    <Modal.Body>
+      <div>{body}</div>
+      {validationMessage ? (
+        <Alert variant="danger" className="mt-2 mb-0 py-2 small">
+          {validationMessage}
+        </Alert>
+      ) : null}
+    </Modal.Body>
     <Modal.Footer>
       <Button variant="outline-secondary" onClick={onCancel} disabled={busy}>
-        Cancel
+        {validationMessage ? "Fix" : "Cancel"}
       </Button>
       <Button
         className={confirmVariant === "secondary" ? "btn-inquiry-action" : undefined}
         variant={confirmVariant}
         onClick={onConfirm}
-        disabled={busy}>
+        disabled={busy || confirmDisabled}>
         {confirmLabel}
       </Button>
     </Modal.Footer>
