@@ -430,7 +430,6 @@ def admin_media_upload(admin_user=None):
     create_payload = {
         "title": request.form.get("title"),
         "caption": request.form.get("caption"),
-        "alt_text": request.form.get("alt_text"),
         "is_slide": request.form.get("is_slide"),
         "is_active": request.form.get("is_active", "true"),
         "display_order": request.form.get("display_order"),
@@ -480,6 +479,28 @@ def admin_media_update(media_id, admin_user=None):
             change_summary=f"Updated media '{after.get('title', '')}'",
             before=before,
             after=after,
+        )
+    return jsonify(response_body), status_code
+
+
+@app.route("/api/admin/media/reorder-slides", methods=["PATCH", "OPTIONS"])
+@_require_admin_auth
+def admin_media_reorder_slides(admin_user=None):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    before = AdminMediaService.list_media(is_slide=True, limit=2000)
+    response_body, status_code = AdminMediaService.reorder_slide_items(request.get_json(silent=True) or {})
+    if status_code < 400:
+        after = response_body.get("slides") or []
+        AdminAuditService.log_change(
+            admin_user_id=admin_user["id"],
+            action="reorder",
+            entity_type="media",
+            entity_id="slides",
+            change_summary="Reordered homepage slides",
+            before=[{"id": row.get("id"), "display_order": row.get("display_order")} for row in before],
+            after=[{"id": row.get("id"), "display_order": row.get("display_order")} for row in after],
         )
     return jsonify(response_body), status_code
 

@@ -109,10 +109,11 @@ class Slide:
             media_type,
             alt_text,
             display_order,
-            is_slide
+            is_slide,
+            created_at
           FROM slides
           WHERE is_active = 1
-          ORDER BY display_order ASC, id ASC;
+          ORDER BY created_at DESC, id DESC;
         """
         try:
             return query_db(query)
@@ -129,6 +130,6 @@ class Slide:
                 display_order
               FROM slides
               WHERE is_active = 1
-              ORDER BY display_order ASC, id ASC;
+              ORDER BY id DESC;
             """
             return query_db(legacy_query)

@@ -462,6 +462,36 @@ button:hover {
   background: #d9e1ef;
 }
 
+.admin-media-order-cell {
+  width: 84px;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.admin-media-order-chip {
+  display: inline-block;
+  min-width: 2rem;
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--admin-border);
+  border-radius: 0.35rem;
+  color: var(--admin-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.admin-media-row-draggable {
+  cursor: grab;
+}
+
+.admin-media-row-dragging {
+  opacity: 0.6;
+}
+
+.admin-media-row-drop-target > td {
+  box-shadow: inset 0 -2px 0 0 #2f9d56;
+}
+
 .admin-price-label {
   display: inline-block;
   min-width: 1.1rem;
@@ -674,6 +704,10 @@ button:hover {
 .admin-dashboard.admin-dashboard-dark .admin-status-toggle:hover,
 .admin-dashboard.admin-dashboard-dark .admin-status-toggle:focus-visible {
   border-color: #8da5c4;
+}
+
+.admin-dashboard.admin-dashboard-dark .admin-media-row-drop-target > td {
+  box-shadow: inset 0 -2px 0 0 #7ecf9c;
 }
 
 .admin-dashboard.admin-dashboard-dark .btn-outline-secondary {

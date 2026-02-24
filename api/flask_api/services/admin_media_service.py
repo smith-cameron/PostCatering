@@ -43,44 +43,69 @@ class AdminMediaService:
         return None
 
     @classmethod
-    def _resequence_slides(cls, connection=None):
-        rows = query_db(
-            """
-      SELECT id, display_order
-      FROM slides
-      ORDER BY display_order ASC, id ASC;
-      """,
-            connection=connection,
-            auto_commit=False,
-        )
-        if not rows:
+    def _apply_display_order_sequence(cls, ordered_ids, connection=None):
+        normalized_ids = [cls._to_int(value, minimum=1) for value in ordered_ids or []]
+        normalized_ids = [value for value in normalized_ids if value]
+        if not normalized_ids:
             return
 
-        for index, row in enumerate(rows, start=1):
+        for index, slide_id in enumerate(normalized_ids, start=1):
             query_db(
                 """
         UPDATE slides
         SET display_order = %(temp_order)s
         WHERE id = %(id)s;
         """,
-                {"temp_order": 1000000 + index, "id": row["id"]},
+                {"temp_order": 1000000 + index, "id": slide_id},
                 fetch="none",
                 connection=connection,
                 auto_commit=False,
             )
 
-        for index, row in enumerate(rows, start=1):
+        for index, slide_id in enumerate(normalized_ids, start=1):
             query_db(
                 """
         UPDATE slides
         SET display_order = %(display_order)s
         WHERE id = %(id)s;
         """,
-                {"display_order": index, "id": row["id"]},
+                {"display_order": index, "id": slide_id},
                 fetch="none",
                 connection=connection,
                 auto_commit=False,
             )
+
+    @classmethod
+    def _resequence_slides(cls, connection=None):
+        rows = query_db(
+            """
+      SELECT id
+      FROM slides
+      WHERE is_slide = 1
+      ORDER BY display_order ASC, id ASC;
+      """,
+            connection=connection,
+            auto_commit=False,
+        )
+        cls._apply_display_order_sequence([row.get("id") for row in rows or []], connection=connection)
+
+    @classmethod
+    def _next_slide_display_order(cls, connection=None):
+        next_display_row = query_db(
+            """
+      SELECT COALESCE(MAX(display_order), 0) + 1 AS next_display_order
+      FROM slides
+      WHERE is_slide = 1;
+      """,
+            fetch="one",
+            connection=connection,
+            auto_commit=False,
+        )
+        return cls._to_int(
+            (next_display_row or {}).get("next_display_order"),
+            default=1,
+            minimum=1,
+        )
 
     @classmethod
     def list_media(cls, search="", media_type="", is_active=None, is_slide=None, limit=400):
@@ -124,7 +149,11 @@ class AdminMediaService:
         updated_at
       FROM slides
       {where_clause}
-      ORDER BY display_order ASC, id ASC
+      ORDER BY
+        CASE WHEN is_slide = 1 THEN 0 ELSE 1 END ASC,
+        CASE WHEN is_slide = 1 THEN display_order ELSE NULL END ASC,
+        CASE WHEN is_slide = 0 THEN created_at ELSE NULL END DESC,
+        id DESC
       LIMIT %(limit)s;
       """,
             payload,
@@ -206,20 +235,14 @@ class AdminMediaService:
             return {"error": "media_type must be image or video."}, 400
 
         with db_transaction() as connection:
-            next_display_row = query_db(
-                """
-        SELECT COALESCE(MAX(display_order), 0) + 1 AS next_display_order
-        FROM slides;
-        """,
-                fetch="one",
-                connection=connection,
-                auto_commit=False,
-            )
+            resolved_is_slide = cls._to_bool((payload or {}).get("is_slide"), default=False)
             next_display_order = cls._to_int(
                 (payload or {}).get("display_order"),
-                default=next_display_row.get("next_display_order", 1) if next_display_row else 1,
+                default=cls._next_slide_display_order(connection=connection) if resolved_is_slide else 1,
                 minimum=1,
             )
+            resolved_title = str((payload or {}).get("title") or "").strip() or "placeholder title"
+            resolved_caption = str((payload or {}).get("caption") or "").strip() or "placeholder text"
 
             slide_id = query_db(
                 """
@@ -255,15 +278,13 @@ class AdminMediaService:
           updated_at = CURRENT_TIMESTAMP;
         """,
                 {
-                    "title": str((payload or {}).get("title") or "").strip() or "placeholder title",
-                    "caption": str((payload or {}).get("caption") or "").strip() or "placeholder text",
+                    "title": resolved_title,
+                    "caption": resolved_caption,
                     "image_url": image_url,
                     "media_type": media_type,
-                    "alt_text": str((payload or {}).get("alt_text") or "").strip()
-                    or str((payload or {}).get("title") or "").strip()
-                    or "placeholder title",
+                    "alt_text": resolved_title,
                     "display_order": next_display_order,
-                    "is_slide": 1 if cls._to_bool((payload or {}).get("is_slide"), default=False) else 0,
+                    "is_slide": 1 if resolved_is_slide else 0,
                     "is_active": 1 if cls._to_bool((payload or {}).get("is_active"), default=True) else 0,
                 },
                 fetch="none",
@@ -285,7 +306,27 @@ class AdminMediaService:
         if not existing:
             return {"error": "Media item not found."}, 404
 
+        resolved_title = (
+            str((payload or {}).get("title") or "").strip()
+            if "title" in (payload or {})
+            else existing["title"]
+        )
+        resolved_caption = (
+            str((payload or {}).get("caption") or "").strip()
+            if "caption" in (payload or {})
+            else existing["caption"]
+        )
+
         with db_transaction() as connection:
+            next_is_slide = cls._to_bool((payload or {}).get("is_slide"), default=existing["is_slide"])
+            next_display_order = cls._to_int(
+                (payload or {}).get("display_order"),
+                default=existing["display_order"],
+                minimum=1,
+            )
+            if next_is_slide and not existing["is_slide"] and "display_order" not in (payload or {}):
+                next_display_order = cls._next_slide_display_order(connection=connection)
+
             query_db(
                 """
         UPDATE slides
@@ -301,27 +342,11 @@ class AdminMediaService:
         """,
                 {
                     "id": normalized_media_id,
-                    "title": (
-                        str((payload or {}).get("title") or "").strip()
-                        if "title" in (payload or {})
-                        else existing["title"]
-                    ),
-                    "caption": (
-                        str((payload or {}).get("caption") or "").strip()
-                        if "caption" in (payload or {})
-                        else existing["caption"]
-                    ),
-                    "alt_text": (
-                        str((payload or {}).get("alt_text") or "").strip()
-                        if "alt_text" in (payload or {})
-                        else existing["alt_text"]
-                    ),
-                    "display_order": cls._to_int(
-                        (payload or {}).get("display_order"),
-                        default=existing["display_order"],
-                        minimum=1,
-                    ),
-                    "is_slide": 1 if cls._to_bool((payload or {}).get("is_slide"), default=existing["is_slide"]) else 0,
+                    "title": resolved_title,
+                    "caption": resolved_caption,
+                    "alt_text": resolved_title,
+                    "display_order": next_display_order,
+                    "is_slide": 1 if next_is_slide else 0,
                     "is_active": (
                         1 if cls._to_bool((payload or {}).get("is_active"), default=existing["is_active"]) else 0
                     ),
@@ -334,3 +359,49 @@ class AdminMediaService:
 
         updated = cls.get_media_by_id(normalized_media_id)
         return {"media": updated}, 200
+
+    @classmethod
+    def reorder_slide_items(cls, payload):
+        requested_ids = (payload or {}).get("ordered_ids")
+        if not isinstance(requested_ids, list):
+            return {"error": "ordered_ids must be a list of slide ids."}, 400
+
+        normalized_ids = []
+        seen = set()
+        for raw_value in requested_ids:
+            slide_id = cls._to_int(raw_value, minimum=1)
+            if not slide_id or slide_id in seen:
+                continue
+            seen.add(slide_id)
+            normalized_ids.append(slide_id)
+
+        if not normalized_ids:
+            return {"error": "At least one valid slide id is required."}, 400
+
+        with db_transaction() as connection:
+            current_rows = query_db(
+                """
+        SELECT id
+        FROM slides
+        WHERE is_slide = 1
+        ORDER BY display_order ASC, id ASC;
+        """,
+                connection=connection,
+                auto_commit=False,
+            )
+            current_ids = [cls._to_int(row.get("id"), minimum=1) for row in current_rows or []]
+            current_ids = [value for value in current_ids if value]
+            if not current_ids:
+                return {"error": "No slide items are available to reorder."}, 400
+
+            current_id_set = set(current_ids)
+            requested_present = [slide_id for slide_id in normalized_ids if slide_id in current_id_set]
+            if not requested_present:
+                return {"error": "None of the provided ids are current slide items."}, 400
+
+            ordered_ids = requested_present + [slide_id for slide_id in current_ids if slide_id not in set(requested_present)]
+            cls._apply_display_order_sequence(ordered_ids, connection=connection)
+
+        slides = [cls.get_media_by_id(slide_id) for slide_id in ordered_ids]
+        slides = [slide for slide in slides if slide]
+        return {"slides": slides}, 200

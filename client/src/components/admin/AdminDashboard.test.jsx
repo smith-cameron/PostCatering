@@ -506,6 +506,122 @@ describe("AdminDashboard", () => {
     expect(within(uploadCard).queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
   });
 
+  it("reorders homepage slides from the media table via drag and drop", async () => {
+    let mediaRows = [
+      {
+        id: 11,
+        title: "Hero 1",
+        caption: "First",
+        src: "/api/assets/slides/hero-1.jpg",
+        media_type: "image",
+        is_active: true,
+        is_slide: true,
+        display_order: 1,
+      },
+      {
+        id: 12,
+        title: "Hero 2",
+        caption: "Second",
+        src: "/api/assets/slides/hero-2.jpg",
+        media_type: "image",
+        is_active: true,
+        is_slide: true,
+        display_order: 2,
+      },
+      {
+        id: 20,
+        title: "Gallery Item",
+        caption: "Gallery",
+        src: "/api/assets/slides/gallery-1.jpg",
+        media_type: "image",
+        is_active: true,
+        is_slide: false,
+        display_order: 1,
+      },
+    ];
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (String(url).startsWith("/api/admin/media?")) {
+        return Promise.resolve(buildResponse({ media: mediaRows }));
+      }
+      if (url === "/api/admin/media/reorder-slides" && options?.method === "PATCH") {
+        const payload = JSON.parse(options.body || "{}");
+        const orderedIds = Array.isArray(payload.ordered_ids) ? payload.ordered_ids.map((value) => Number(value)) : [];
+        const slideMap = new Map(mediaRows.filter((item) => item.is_slide).map((item) => [item.id, { ...item }]));
+        const reorderedSlides = orderedIds.map((id) => slideMap.get(id)).filter(Boolean);
+        const remainingSlides = mediaRows.filter((item) => item.is_slide && !orderedIds.includes(item.id));
+        const finalSlides = [...reorderedSlides, ...remainingSlides].map((item, index) => ({
+          ...item,
+          display_order: index + 1,
+        }));
+        const nonSlides = mediaRows.filter((item) => !item.is_slide);
+        mediaRows = [...finalSlides, ...nonSlides];
+        return Promise.resolve(buildResponse({ slides: finalSlides }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Menu Operations");
+    fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
+    await screen.findByText("Hero 1");
+    await screen.findByText("Hero 2");
+
+    const heroOneRow = screen.getByText("Hero 1").closest("tr");
+    const heroTwoRow = screen.getByText("Hero 2").closest("tr");
+    expect(heroOneRow).toBeTruthy();
+    expect(heroTwoRow).toBeTruthy();
+
+    const dataTransfer = {
+      data: {},
+      setData: vi.fn((key, value) => {
+        dataTransfer.data[key] = value;
+      }),
+      getData: vi.fn((key) => dataTransfer.data[key]),
+      effectAllowed: "",
+      dropEffect: "",
+    };
+
+    fireEvent.dragStart(heroTwoRow, { dataTransfer });
+    fireEvent.dragOver(heroOneRow, { dataTransfer });
+    fireEvent.drop(heroOneRow, { dataTransfer });
+    fireEvent.dragEnd(heroTwoRow, { dataTransfer });
+
+    await waitFor(() => {
+      const reorderCall = globalThis.fetch.mock.calls.find(
+        (call) => call[0] === "/api/admin/media/reorder-slides" && call[1]?.method === "PATCH"
+      );
+      expect(reorderCall).toBeTruthy();
+      const reorderPayload = JSON.parse(reorderCall[1].body);
+      expect(reorderPayload.ordered_ids).toEqual([12, 11]);
+    });
+  });
+
   it("maps create API validation message to item name invalid border until value changes", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
       if (url === "/api/admin/auth/me") {

@@ -509,6 +509,9 @@ const AdminDashboard = () => {
   const [hasLoadedMediaTab, setHasLoadedMediaTab] = useState(false);
   const [hasLoadedAuditTab, setHasLoadedAuditTab] = useState(false);
   const [statusToggleBusy, setStatusToggleBusy] = useState({});
+  const [draggingSlideId, setDraggingSlideId] = useState(null);
+  const [dragOverSlideId, setDragOverSlideId] = useState(null);
+  const [slideOrderSaving, setSlideOrderSaving] = useState(false);
 
   const [auditEntries, setAuditEntries] = useState([]);
   const [confirmState, setConfirmState] = useState({
@@ -1208,6 +1211,47 @@ const AdminDashboard = () => {
         delete next[busyKey];
         return next;
       });
+    }
+  };
+
+  const reorderSlideItemsFromTable = async (draggedId, targetId) => {
+    const sourceId = toId(draggedId);
+    const destinationId = toId(targetId);
+    if (!sourceId || !destinationId || sourceId === destinationId || slideOrderSaving) return;
+
+    const currentSlideIds = (mediaItems || [])
+      .filter((item) => Boolean(item?.is_slide))
+      .map((item) => toId(item?.id))
+      .filter(Boolean);
+    const sourceIndex = currentSlideIds.findIndex((id) => Number(id) === Number(sourceId));
+    const destinationIndex = currentSlideIds.findIndex((id) => Number(id) === Number(destinationId));
+    if (sourceIndex < 0 || destinationIndex < 0) return;
+
+    const reorderedIds = [...currentSlideIds];
+    const [movedId] = reorderedIds.splice(sourceIndex, 1);
+    reorderedIds.splice(destinationIndex, 0, movedId);
+    if (reorderedIds.every((value, index) => Number(value) === Number(currentSlideIds[index]))) return;
+
+    setSlideOrderSaving(true);
+    setMediaTableError("");
+    try {
+      await requestJson("/api/admin/media/reorder-slides", {
+        method: "PATCH",
+        body: JSON.stringify({ ordered_ids: reorderedIds }),
+      });
+      if (selectedMediaId) {
+        const selectedIndex = reorderedIds.findIndex((value) => Number(value) === Number(selectedMediaId));
+        if (selectedIndex >= 0) {
+          setMediaForm((prev) => (prev ? { ...prev, display_order: selectedIndex + 1 } : prev));
+        }
+      }
+      await Promise.all([loadMedia(), loadAudit()]);
+    } catch (error) {
+      setMediaTableError(error.message || "Failed to reorder homepage slides.");
+    } finally {
+      setSlideOrderSaving(false);
+      setDraggingSlideId(null);
+      setDragOverSlideId(null);
     }
   };
 
@@ -1998,20 +2042,62 @@ const AdminDashboard = () => {
 	                          {mediaTableError}
 	                        </td>
 	                      </tr>
-		                    ) : mediaItems.length ? (
-		                      mediaItems.map((item) => {
-		                        const sourceFilename = formatMediaSourceFilename(item.src);
+			                    ) : mediaItems.length ? (
+			                      mediaItems.map((item) => {
+			                        const sourceFilename = formatMediaSourceFilename(item.src);
                             const mediaId = toId(item?.id);
                             const toggleBusyKey = mediaId ? `media:${mediaId}` : "";
                             const isStatusBusy = toggleBusyKey ? Boolean(statusToggleBusy[toggleBusyKey]) : false;
-		                        return (
-		                          <tr
-		                          key={item.id}
-		                          role="button"
-		                          onClick={() => {
-		                            setSelectedMediaId(item.id);
-		                            setMediaForm(buildMediaForm(item));
-		                          }}>
+                            const isSlideRow = Boolean(item?.is_slide);
+                            const canReorderSlide = isSlideRow && !slideOrderSaving;
+                            const isDropTarget =
+                              canReorderSlide &&
+                              draggingSlideId &&
+                              Number(draggingSlideId) !== Number(mediaId) &&
+                              Number(dragOverSlideId) === Number(mediaId);
+                            const isBeingDragged = Number(draggingSlideId) === Number(mediaId);
+			                        return (
+			                          <tr
+			                          key={item.id}
+                                className={`${isSlideRow ? "admin-media-row-draggable" : ""} ${
+                                  isDropTarget ? "admin-media-row-drop-target" : ""
+                                } ${isBeingDragged ? "admin-media-row-dragging" : ""}`}
+                                draggable={canReorderSlide}
+                                onDragStart={(event) => {
+                                  if (!canReorderSlide) return;
+                                  setDraggingSlideId(mediaId);
+                                  event.dataTransfer.effectAllowed = "move";
+                                  try {
+                                    event.dataTransfer.setData("text/plain", String(mediaId));
+                                  } catch {
+                                    // Some browsers restrict dataTransfer in tests.
+                                  }
+                                }}
+                                onDragOver={(event) => {
+                                  if (!canReorderSlide || !draggingSlideId || Number(draggingSlideId) === Number(mediaId)) return;
+                                  event.preventDefault();
+                                  setDragOverSlideId(mediaId);
+                                }}
+                                onDragLeave={() => {
+                                  if (Number(dragOverSlideId) === Number(mediaId)) {
+                                    setDragOverSlideId(null);
+                                  }
+                                }}
+                                onDrop={(event) => {
+                                  if (!canReorderSlide || !draggingSlideId || Number(draggingSlideId) === Number(mediaId)) return;
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  void reorderSlideItemsFromTable(draggingSlideId, mediaId);
+                                }}
+                                onDragEnd={() => {
+                                  setDraggingSlideId(null);
+                                  setDragOverSlideId(null);
+                                }}
+			                          role="button"
+			                          onClick={() => {
+			                            setSelectedMediaId(item.id);
+			                            setMediaForm(buildMediaForm(item));
+			                          }}>
 	                          <td className="admin-media-type-cell">{renderMediaTypeIcon(item.media_type)}</td>
 	                          <td className="admin-media-thumb-cell">
 	                            {normalizeFilterText(item.media_type) === "video" ? (
@@ -2060,17 +2146,23 @@ const AdminDashboard = () => {
                                 </button>
 	                            </div>
 	                          </td>
-	                          <td>
-	                            {item.is_slide ? (
-	                              <Badge bg="info" text="dark">
-	                                Homepage Slide
-	                              </Badge>
-	                            ) : null}
-	                          </td>
-	                          <td>{item.display_order}</td>
-	                        </tr>
-	                        );
-	                      })
+		                          <td>
+		                            {item.is_slide ? (
+		                              <Badge bg="info" text="dark">
+		                                Homepage Slide
+		                              </Badge>
+		                            ) : null}
+		                          </td>
+		                          <td className="admin-media-order-cell">
+                                {item.is_slide ? (
+                                  <span className="admin-media-order-chip" title="Drag slide rows to reorder">
+                                    {item.display_order}
+                                  </span>
+                                ) : null}
+                              </td>
+		                        </tr>
+		                        );
+		                      })
 	                    ) : (
 	                      <tr>
 	                        <td colSpan={6} className="text-center text-secondary py-3">
