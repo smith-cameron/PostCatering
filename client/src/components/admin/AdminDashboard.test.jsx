@@ -558,19 +558,21 @@ describe("AdminDashboard", () => {
       if (String(url).startsWith("/api/admin/media?")) {
         return Promise.resolve(buildResponse({ media: mediaRows }));
       }
-      if (url === "/api/admin/media/reorder-slides" && options?.method === "PATCH") {
+      if (url === "/api/admin/media/reorder" && options?.method === "PATCH") {
         const payload = JSON.parse(options.body || "{}");
+        const isSlideGroup = payload.is_slide === true;
         const orderedIds = Array.isArray(payload.ordered_ids) ? payload.ordered_ids.map((value) => Number(value)) : [];
-        const slideMap = new Map(mediaRows.filter((item) => item.is_slide).map((item) => [item.id, { ...item }]));
-        const reorderedSlides = orderedIds.map((id) => slideMap.get(id)).filter(Boolean);
-        const remainingSlides = mediaRows.filter((item) => item.is_slide && !orderedIds.includes(item.id));
-        const finalSlides = [...reorderedSlides, ...remainingSlides].map((item, index) => ({
+        const groupRows = mediaRows.filter((item) => Boolean(item.is_slide) === isSlideGroup);
+        const groupMap = new Map(groupRows.map((item) => [item.id, { ...item }]));
+        const reorderedGroup = orderedIds.map((id) => groupMap.get(id)).filter(Boolean);
+        const remainingGroup = groupRows.filter((item) => !orderedIds.includes(item.id));
+        const finalGroup = [...reorderedGroup, ...remainingGroup].map((item, index) => ({
           ...item,
           display_order: index + 1,
         }));
-        const nonSlides = mediaRows.filter((item) => !item.is_slide);
-        mediaRows = [...finalSlides, ...nonSlides];
-        return Promise.resolve(buildResponse({ slides: finalSlides }));
+        const otherGroup = mediaRows.filter((item) => Boolean(item.is_slide) !== isSlideGroup);
+        mediaRows = isSlideGroup ? [...finalGroup, ...otherGroup] : [...otherGroup, ...finalGroup];
+        return Promise.resolve(buildResponse({ media: finalGroup, is_slide: isSlideGroup }));
       }
       if (url === "/api/admin/audit?limit=200") {
         return Promise.resolve(buildResponse({ entries: [] }));
@@ -614,11 +616,121 @@ describe("AdminDashboard", () => {
 
     await waitFor(() => {
       const reorderCall = globalThis.fetch.mock.calls.find(
-        (call) => call[0] === "/api/admin/media/reorder-slides" && call[1]?.method === "PATCH"
+        (call) => call[0] === "/api/admin/media/reorder" && call[1]?.method === "PATCH"
       );
       expect(reorderCall).toBeTruthy();
       const reorderPayload = JSON.parse(reorderCall[1].body);
       expect(reorderPayload.ordered_ids).toEqual([12, 11]);
+      expect(reorderPayload.is_slide).toBe(true);
+    });
+  });
+
+  it("reorders gallery rows separately from homepage slides", async () => {
+    let mediaRows = [
+      {
+        id: 11,
+        title: "Hero 1",
+        caption: "First",
+        src: "/api/assets/slides/hero-1.jpg",
+        media_type: "image",
+        is_active: true,
+        is_slide: true,
+        display_order: 1,
+      },
+      {
+        id: 21,
+        title: "Gallery A",
+        caption: "A",
+        src: "/api/assets/slides/gallery-a.jpg",
+        media_type: "image",
+        is_active: true,
+        is_slide: false,
+        display_order: 1,
+      },
+      {
+        id: 22,
+        title: "Gallery B",
+        caption: "B",
+        src: "/api/assets/slides/gallery-b.jpg",
+        media_type: "image",
+        is_active: true,
+        is_slide: false,
+        display_order: 2,
+      },
+    ];
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") return Promise.resolve(buildResponse({ groups: [] }));
+      if (url === "/api/menu/formal/groups") return Promise.resolve(buildResponse({ groups: [] }));
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) return Promise.resolve(buildResponse({ items: [] }));
+      if (String(url).startsWith("/api/admin/media?")) return Promise.resolve(buildResponse({ media: mediaRows }));
+      if (url === "/api/admin/media/reorder" && options?.method === "PATCH") {
+        const payload = JSON.parse(options.body || "{}");
+        const isSlideGroup = payload.is_slide === true;
+        const orderedIds = Array.isArray(payload.ordered_ids) ? payload.ordered_ids.map((value) => Number(value)) : [];
+        const groupRows = mediaRows.filter((item) => Boolean(item.is_slide) === isSlideGroup);
+        const groupMap = new Map(groupRows.map((item) => [item.id, { ...item }]));
+        const reorderedGroup = orderedIds.map((id) => groupMap.get(id)).filter(Boolean);
+        const remainingGroup = groupRows.filter((item) => !orderedIds.includes(item.id));
+        const finalGroup = [...reorderedGroup, ...remainingGroup].map((item, index) => ({
+          ...item,
+          display_order: index + 1,
+        }));
+        const otherGroup = mediaRows.filter((item) => Boolean(item.is_slide) !== isSlideGroup);
+        mediaRows = isSlideGroup ? [...finalGroup, ...otherGroup] : [...otherGroup, ...finalGroup];
+        return Promise.resolve(buildResponse({ media: finalGroup, is_slide: isSlideGroup }));
+      }
+      if (url === "/api/admin/audit?limit=200") return Promise.resolve(buildResponse({ entries: [] }));
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Menu Operations");
+    fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
+    await screen.findByText("Gallery A");
+    await screen.findByText("Gallery B");
+
+    const galleryARow = screen.getByText("Gallery A").closest("tr");
+    const galleryBRow = screen.getByText("Gallery B").closest("tr");
+    expect(galleryARow).toBeTruthy();
+    expect(galleryBRow).toBeTruthy();
+
+    const dataTransfer = {
+      data: {},
+      setData: vi.fn((key, value) => {
+        dataTransfer.data[key] = value;
+      }),
+      getData: vi.fn((key) => dataTransfer.data[key]),
+      effectAllowed: "",
+      dropEffect: "",
+    };
+
+    fireEvent.dragStart(galleryBRow, { dataTransfer });
+    fireEvent.dragOver(galleryARow, { dataTransfer });
+    fireEvent.drop(galleryARow, { dataTransfer });
+    fireEvent.dragEnd(galleryBRow, { dataTransfer });
+
+    await waitFor(() => {
+      const reorderCall = globalThis.fetch.mock.calls.find(
+        (call) => call[0] === "/api/admin/media/reorder" && call[1]?.method === "PATCH"
+      );
+      expect(reorderCall).toBeTruthy();
+      const reorderPayload = JSON.parse(reorderCall[1].body);
+      expect(reorderPayload.ordered_ids).toEqual([22, 21]);
+      expect(reorderPayload.is_slide).toBe(false);
     });
   });
 

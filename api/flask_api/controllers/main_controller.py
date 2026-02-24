@@ -505,6 +505,31 @@ def admin_media_reorder_slides(admin_user=None):
     return jsonify(response_body), status_code
 
 
+@app.route("/api/admin/media/reorder", methods=["PATCH", "OPTIONS"])
+@_require_admin_auth
+def admin_media_reorder(admin_user=None):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    request_body = request.get_json(silent=True) or {}
+    is_slide_group = bool(AdminMediaService._to_bool(request_body.get("is_slide"), default=False))
+    before = AdminMediaService.list_media(is_slide=is_slide_group, limit=2000)
+    response_body, status_code = AdminMediaService.reorder_media_items(request_body)
+    if status_code < 400:
+        after = response_body.get("media") or []
+        group_label = "slides" if bool(response_body.get("is_slide")) else "gallery"
+        AdminAuditService.log_change(
+            admin_user_id=admin_user["id"],
+            action="reorder",
+            entity_type="media",
+            entity_id=group_label,
+            change_summary=f"Reordered {group_label}",
+            before=[{"id": row.get("id"), "display_order": row.get("display_order")} for row in before],
+            after=[{"id": row.get("id"), "display_order": row.get("display_order")} for row in after],
+        )
+    return jsonify(response_body), status_code
+
+
 @app.route("/api/admin/audit", methods=["GET", "OPTIONS"])
 @_require_admin_auth
 def admin_audit_log(admin_user=None):

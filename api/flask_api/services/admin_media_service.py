@@ -76,27 +76,54 @@ class AdminMediaService:
             )
 
     @classmethod
-    def _resequence_slides(cls, connection=None):
+    def _list_group_ids(cls, is_slide, connection=None):
         rows = query_db(
             """
       SELECT id
       FROM slides
-      WHERE is_slide = 1
+      WHERE is_slide = %(is_slide)s
       ORDER BY display_order ASC, id ASC;
       """,
+            {"is_slide": 1 if cls._to_bool(is_slide, default=False) else 0},
             connection=connection,
             auto_commit=False,
         )
-        cls._apply_display_order_sequence([row.get("id") for row in rows or []], connection=connection)
+        return [cls._to_int(row.get("id"), minimum=1) for row in rows or [] if cls._to_int(row.get("id"), minimum=1)]
 
     @classmethod
-    def _next_slide_display_order(cls, connection=None):
+    def _resequence_group(cls, is_slide, connection=None, leading_ids=None):
+        current_ids = cls._list_group_ids(is_slide=is_slide, connection=connection)
+        if not current_ids:
+            return []
+        if leading_ids:
+            normalized_leading = [cls._to_int(value, minimum=1) for value in leading_ids]
+            normalized_leading = [value for value in normalized_leading if value]
+            current_set = set(current_ids)
+            ordered_leading = []
+            seen = set()
+            for media_id in normalized_leading:
+                if media_id in current_set and media_id not in seen:
+                    ordered_leading.append(media_id)
+                    seen.add(media_id)
+            ordered_ids = ordered_leading + [media_id for media_id in current_ids if media_id not in seen]
+        else:
+            ordered_ids = current_ids
+        cls._apply_display_order_sequence(ordered_ids, connection=connection)
+        return ordered_ids
+
+    @classmethod
+    def _resequence_slides(cls, connection=None):
+        return cls._resequence_group(is_slide=True, connection=connection)
+
+    @classmethod
+    def _next_group_display_order(cls, is_slide, connection=None):
         next_display_row = query_db(
             """
       SELECT COALESCE(MAX(display_order), 0) + 1 AS next_display_order
       FROM slides
-      WHERE is_slide = 1;
+      WHERE is_slide = %(is_slide)s;
       """,
+            {"is_slide": 1 if cls._to_bool(is_slide, default=False) else 0},
             fetch="one",
             connection=connection,
             auto_commit=False,
@@ -151,8 +178,7 @@ class AdminMediaService:
       {where_clause}
       ORDER BY
         CASE WHEN is_slide = 1 THEN 0 ELSE 1 END ASC,
-        CASE WHEN is_slide = 1 THEN display_order ELSE NULL END ASC,
-        CASE WHEN is_slide = 0 THEN created_at ELSE NULL END DESC,
+        display_order ASC,
         id DESC
       LIMIT %(limit)s;
       """,
@@ -238,7 +264,7 @@ class AdminMediaService:
             resolved_is_slide = cls._to_bool((payload or {}).get("is_slide"), default=False)
             next_display_order = cls._to_int(
                 (payload or {}).get("display_order"),
-                default=cls._next_slide_display_order(connection=connection) if resolved_is_slide else 1,
+                default=cls._next_group_display_order(is_slide=True, connection=connection) if resolved_is_slide else 1,
                 minimum=1,
             )
             resolved_title = str((payload or {}).get("title") or "").strip() or "placeholder title"
@@ -291,7 +317,10 @@ class AdminMediaService:
                 connection=connection,
                 auto_commit=False,
             )
-            cls._resequence_slides(connection=connection)
+            if resolved_is_slide:
+                cls._resequence_group(is_slide=True, connection=connection)
+            else:
+                cls._resequence_group(is_slide=False, connection=connection, leading_ids=[slide_id])
 
         created = cls.get_media_by_id(slide_id)
         return {"media": created}, 201
@@ -318,14 +347,19 @@ class AdminMediaService:
         )
 
         with db_transaction() as connection:
+            is_slide_explicit = "is_slide" in (payload or {})
+            display_order_explicit = "display_order" in (payload or {})
             next_is_slide = cls._to_bool((payload or {}).get("is_slide"), default=existing["is_slide"])
+            moved_from_slide_to_gallery = existing["is_slide"] and not next_is_slide
             next_display_order = cls._to_int(
                 (payload or {}).get("display_order"),
                 default=existing["display_order"],
                 minimum=1,
             )
-            if next_is_slide and not existing["is_slide"] and "display_order" not in (payload or {}):
-                next_display_order = cls._next_slide_display_order(connection=connection)
+            if next_is_slide and not existing["is_slide"] and not display_order_explicit:
+                next_display_order = cls._next_group_display_order(is_slide=True, connection=connection)
+            if not next_is_slide and existing["is_slide"] and not display_order_explicit:
+                next_display_order = 1
 
             query_db(
                 """
@@ -355,53 +389,77 @@ class AdminMediaService:
                 connection=connection,
                 auto_commit=False,
             )
-            cls._resequence_slides(connection=connection)
+            if moved_from_slide_to_gallery and not display_order_explicit:
+                cls._resequence_group(is_slide=False, connection=connection, leading_ids=[normalized_media_id])
+            else:
+                cls._resequence_group(is_slide=False, connection=connection)
+            cls._resequence_group(is_slide=True, connection=connection)
 
         updated = cls.get_media_by_id(normalized_media_id)
         return {"media": updated}, 200
 
     @classmethod
     def reorder_slide_items(cls, payload):
+        body = dict(payload or {})
+        body["is_slide"] = True
+        response_body, status_code = cls.reorder_media_items(body)
+        if status_code >= 400:
+            return response_body, status_code
+        return {"slides": response_body.get("media") or []}, 200
+
+    @classmethod
+    def reorder_media_items(cls, payload):
         requested_ids = (payload or {}).get("ordered_ids")
         if not isinstance(requested_ids, list):
-            return {"error": "ordered_ids must be a list of slide ids."}, 400
+            return {"error": "ordered_ids must be a list of media ids."}, 400
 
         normalized_ids = []
         seen = set()
         for raw_value in requested_ids:
-            slide_id = cls._to_int(raw_value, minimum=1)
-            if not slide_id or slide_id in seen:
+            media_id = cls._to_int(raw_value, minimum=1)
+            if not media_id or media_id in seen:
                 continue
-            seen.add(slide_id)
-            normalized_ids.append(slide_id)
+            seen.add(media_id)
+            normalized_ids.append(media_id)
 
         if not normalized_ids:
-            return {"error": "At least one valid slide id is required."}, 400
+            return {"error": "At least one valid media id is required."}, 400
 
+        requested_group = cls._to_bool((payload or {}).get("is_slide"), default=None)
         with db_transaction() as connection:
-            current_rows = query_db(
-                """
-        SELECT id
-        FROM slides
-        WHERE is_slide = 1
-        ORDER BY display_order ASC, id ASC;
-        """,
-                connection=connection,
-                auto_commit=False,
-            )
-            current_ids = [cls._to_int(row.get("id"), minimum=1) for row in current_rows or []]
-            current_ids = [value for value in current_ids if value]
+            target_is_slide = requested_group
+            if target_is_slide is None:
+                first_row = query_db(
+                    """
+          SELECT is_slide
+          FROM slides
+          WHERE id = %(id)s
+          LIMIT 1;
+          """,
+                    {"id": normalized_ids[0]},
+                    fetch="one",
+                    connection=connection,
+                    auto_commit=False,
+                )
+                if not first_row:
+                    return {"error": "None of the provided ids exist."}, 400
+                target_is_slide = bool(first_row.get("is_slide", 0))
+
+            current_ids = cls._list_group_ids(is_slide=target_is_slide, connection=connection)
             if not current_ids:
-                return {"error": "No slide items are available to reorder."}, 400
+                group_label = "slide" if target_is_slide else "gallery"
+                return {"error": f"No {group_label} items are available to reorder."}, 400
 
             current_id_set = set(current_ids)
-            requested_present = [slide_id for slide_id in normalized_ids if slide_id in current_id_set]
+            requested_present = [media_id for media_id in normalized_ids if media_id in current_id_set]
             if not requested_present:
-                return {"error": "None of the provided ids are current slide items."}, 400
+                group_label = "slide" if target_is_slide else "gallery"
+                return {"error": f"None of the provided ids are current {group_label} items."}, 400
 
-            ordered_ids = requested_present + [slide_id for slide_id in current_ids if slide_id not in set(requested_present)]
+            requested_set = set(requested_present)
+            ordered_ids = requested_present + [media_id for media_id in current_ids if media_id not in requested_set]
             cls._apply_display_order_sequence(ordered_ids, connection=connection)
 
-        slides = [cls.get_media_by_id(slide_id) for slide_id in ordered_ids]
-        slides = [slide for slide in slides if slide]
-        return {"slides": slides}, 200
+        media_items = [cls.get_media_by_id(media_id) for media_id in ordered_ids]
+        media_items = [row for row in media_items if row]
+        return {"media": media_items, "is_slide": bool(target_is_slide)}, 200
