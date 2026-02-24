@@ -413,13 +413,14 @@ describe("AdminDashboard", () => {
     const itemNameInput = screen.getByLabelText("Item Name");
     const menuTypeSelect = screen.getByLabelText("Menu Type");
     const createButton = screen.getByRole("button", { name: "Create Item" });
-    const clearButton = screen.getByRole("button", { name: "Clear" });
+    expect(within(createCard).queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
 
     fireEvent.click(activeToggle);
     fireEvent.change(itemNameInput, { target: { value: "Validation Item" } });
     fireEvent.change(menuTypeSelect, { target: { value: "regular" } });
     fireEvent.change(screen.getByLabelText("Half Tray Price"), { target: { value: "7500" } });
     fireEvent.change(screen.getByLabelText("Full Tray Price"), { target: { value: "14000" } });
+    const clearButton = within(createCard).getByRole("button", { name: "Clear" });
 
     fireEvent.click(createButton);
     fireEvent.click(await screen.findByRole("button", { name: "Create" }));
@@ -443,6 +444,66 @@ describe("AdminDashboard", () => {
     expect(screen.queryByLabelText("Half Tray Price")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Full Tray Price")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create Item" })).not.toBeDisabled();
+    expect(within(createCard).queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
+  });
+
+  it("shows media upload clear button only when upload form has changes", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (String(url).startsWith("/api/admin/media?")) {
+        return Promise.resolve(buildResponse({ media: [] }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Menu Operations");
+    fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
+    await screen.findByText("Upload Media");
+
+    const uploadCard = screen.getByText("Upload Media").closest(".card");
+    expect(uploadCard).toBeTruthy();
+    expect(within(uploadCard).queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
+
+    const titleInput = within(uploadCard).getByPlaceholderText("Title");
+    const uploadSwitches = within(uploadCard).getAllByRole("checkbox");
+    expect(uploadSwitches).toHaveLength(2);
+    const [slideSwitch, activeSwitch] = uploadSwitches;
+
+    fireEvent.change(titleInput, { target: { value: "New Hero Image" } });
+    const clearButton = within(uploadCard).getByRole("button", { name: "Clear" });
+    expect(clearButton).toBeInTheDocument();
+
+    fireEvent.click(clearButton);
+    expect(within(uploadCard).getByPlaceholderText("Title")).toHaveValue("");
+    expect(within(uploadCard).getByPlaceholderText("Caption")).toHaveValue("");
+    expect(activeSwitch).toBeChecked();
+    expect(slideSwitch).not.toBeChecked();
+    expect(within(uploadCard).queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
   });
 
   it("maps create API validation message to item name invalid border until value changes", async () => {
@@ -970,7 +1031,7 @@ describe("AdminDashboard", () => {
     const rowScope = within(jerkRow);
     expect(rowScope.getByText("Regular")).toBeInTheDocument();
     expect(rowScope.getByText("Formal")).toBeInTheDocument();
-    expect(rowScope.getByRole("img", { name: "Active" })).toBeInTheDocument();
+    expect(rowScope.getByRole("button", { name: "Set active" })).toBeInTheDocument();
     expect(rowScope.getByRole("img", { name: "Inactive" })).toBeInTheDocument();
     expect(rowScope.getByText("Proteins")).toBeInTheDocument();
     expect(rowScope.getByText("Formal Entrees")).toBeInTheDocument();

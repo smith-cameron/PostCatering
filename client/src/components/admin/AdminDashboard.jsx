@@ -35,6 +35,13 @@ const INITIAL_NEW_ITEM_FORM = {
   tray_price_half: "",
   tray_price_full: "",
 };
+const INITIAL_UPLOAD_FORM = {
+  title: "",
+  caption: "",
+  is_slide: false,
+  is_active: true,
+  file: null,
+};
 
 const mapCreateValidationErrors = (message) => {
   const normalized = String(message || "").toLowerCase();
@@ -80,6 +87,46 @@ const formatCurrencyToCents = (value) => {
 const formatCurrencyDisplay = (value) => {
   const normalized = formatCurrencyToCents(value);
   return normalized ? `$${normalized}` : "-";
+};
+
+const formatMediaSourceFilename = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const noQuery = raw.split("?")[0].split("#")[0];
+  const parts = noQuery.split("/").filter(Boolean);
+  const filename = parts.length ? parts[parts.length - 1] : noQuery;
+  try {
+    return decodeURIComponent(filename);
+  } catch {
+    return filename;
+  }
+};
+
+const renderMediaTypeIcon = (value) => {
+  const type = normalizeFilterText(value);
+  if (type === "image") {
+    return (
+      <span className="admin-media-type-icon" role="img" aria-label="Image" title="Image">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          <circle cx="5.2" cy="6.1" r="1.1" fill="currentColor" />
+          <path d="M2.6 11.5 5.5 8.6 7.8 10.9 9.9 8.8 13.4 12.3" fill="none" stroke="currentColor" strokeWidth="1.4" />
+        </svg>
+      </span>
+    );
+  }
+  if (type === "video") {
+    return (
+      <span className="admin-media-type-icon" role="img" aria-label="Video" title="Video">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="1.5" y="3" width="9.8" height="10" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          <path d="M6.1 6.2 8.8 8 6.1 9.8Z" fill="currentColor" />
+          <path d="M11.3 6.2 14.5 4.8v6.4l-3.2-1.4Z" fill="currentColor" />
+        </svg>
+      </span>
+    );
+  }
+  return <span className="text-secondary">-</span>;
 };
 
 const toId = (value) => {
@@ -147,7 +194,7 @@ const buildMediaForm = (item) => ({
   id: item?.id ?? null,
   title: item?.title ?? "",
   caption: item?.caption ?? "",
-  alt_text: item?.alt_text ?? "",
+  src: item?.src ?? item?.image_url ?? "",
   display_order: item?.display_order ?? 1,
   is_slide: Boolean(item?.is_slide),
   is_active: Boolean(item?.is_active),
@@ -329,6 +376,12 @@ const buildMenuItemTableRows = (items) => {
     const menuTypes = resolveMenuTypes(item);
     const groupNames = resolveGroupNames(item);
     const activeStatuses = resolveActiveStatuses(item);
+    const rowIsActive =
+      item?.is_active === true || item?.is_active === false
+        ? item.is_active
+        : activeStatuses.includes(false)
+          ? false
+          : activeStatuses.includes(true);
     const menuType = normalizeFilterText(item?.menu_type);
     const encodedId = toId(item?.id);
     const trayPriceHalf = formatCurrencyToCents(item?.tray_price_half);
@@ -341,6 +394,7 @@ const buildMenuItemTableRows = (items) => {
         id: encodedId || "",
         item_name: String(item?.item_name || "").trim(),
         item_key: String(item?.item_key || "").trim(),
+        is_active: rowIsActive,
         menu_types: menuTypes,
         group_names: groupNames,
         active_statuses: activeStatuses,
@@ -353,6 +407,9 @@ const buildMenuItemTableRows = (items) => {
     existing.menu_types = uniqueMenuTypeList([...existing.menu_types, ...menuTypes]);
     existing.group_names = uniqueTextList([...existing.group_names, ...groupNames]);
     existing.active_statuses = uniqueBooleanList([...existing.active_statuses, ...activeStatuses]);
+    if (item?.is_active === true || item?.is_active === false) {
+      existing.is_active = item.is_active;
+    }
     if (!existing.tray_price_half && trayPriceHalf) {
       existing.tray_price_half = trayPriceHalf;
     }
@@ -448,9 +505,10 @@ const AdminDashboard = () => {
   const [mediaItems, setMediaItems] = useState([]);
   const [selectedMediaId, setSelectedMediaId] = useState(null);
   const [mediaForm, setMediaForm] = useState(null);
-  const [uploadForm, setUploadForm] = useState({ title: "", caption: "", alt_text: "", is_slide: false, is_active: true, display_order: "", file: null });
+  const [uploadForm, setUploadForm] = useState(INITIAL_UPLOAD_FORM);
   const [hasLoadedMediaTab, setHasLoadedMediaTab] = useState(false);
   const [hasLoadedAuditTab, setHasLoadedAuditTab] = useState(false);
+  const [statusToggleBusy, setStatusToggleBusy] = useState({});
 
   const [auditEntries, setAuditEntries] = useState([]);
   const [confirmState, setConfirmState] = useState({
@@ -472,6 +530,7 @@ const AdminDashboard = () => {
     typeof window !== "undefined" ? window.innerWidth <= MOBILE_LAYOUT_MAX_WIDTH : false
   );
   const editCardRef = useRef(null);
+  const uploadFileInputRef = useRef(null);
 
   const activeGroupOptions = useMemo(
     () =>
@@ -527,6 +586,31 @@ const AdminDashboard = () => {
         return rows.filter((row) => filterDefinition.apply(row, filterValue));
       }, menuItemRows),
     [itemFilters, menuItemRows]
+  );
+  const nextMediaDisplayOrder = useMemo(() => {
+    const usedOrders = (mediaItems || [])
+      .map((item) => Number(item?.display_order))
+      .filter((value) => Number.isFinite(value) && value > 0);
+    return usedOrders.length ? Math.max(...usedOrders) + 1 : 1;
+  }, [mediaItems]);
+  const hasCreateFormChanges = useMemo(
+    () =>
+      newItemForm.is_active !== INITIAL_NEW_ITEM_FORM.is_active ||
+      Boolean(String(newItemForm.item_name || "").trim()) ||
+      Boolean(String(newItemForm.menu_type || "").trim()) ||
+      Boolean(String(newItemForm.group_id || "").trim()) ||
+      Boolean(String(newItemForm.tray_price_half || "").trim()) ||
+      Boolean(String(newItemForm.tray_price_full || "").trim()),
+    [newItemForm]
+  );
+  const hasUploadFormChanges = useMemo(
+    () =>
+      uploadForm.is_slide !== INITIAL_UPLOAD_FORM.is_slide ||
+      uploadForm.is_active !== INITIAL_UPLOAD_FORM.is_active ||
+      Boolean(uploadForm.file) ||
+      Boolean(String(uploadForm.title || "").trim()) ||
+      Boolean(String(uploadForm.caption || "").trim()),
+    [uploadForm]
   );
 
   const loadReferenceData = useCallback(async () => {
@@ -711,6 +795,14 @@ const AdminDashboard = () => {
     setCreateFieldErrors(EMPTY_CREATE_FIELD_ERRORS);
     setCreateValidationLocked(false);
     setFormErrors((prev) => ({ ...prev, [FORM_ERROR_CREATE_ITEM]: "" }));
+  }, []);
+
+  const resetUploadMediaForm = useCallback(() => {
+    setUploadForm(INITIAL_UPLOAD_FORM);
+    setFormErrors((prev) => ({ ...prev, [FORM_ERROR_UPLOAD_MEDIA]: "" }));
+    if (uploadFileInputRef.current) {
+      uploadFileInputRef.current.value = "";
+    }
   }, []);
 
   const runConfirmedAction = async () => {
@@ -1038,14 +1130,11 @@ const AdminDashboard = () => {
     formData.set("file", uploadForm.file);
     formData.set("title", uploadForm.title);
     formData.set("caption", uploadForm.caption);
-    formData.set("alt_text", uploadForm.alt_text);
     formData.set("is_slide", String(uploadForm.is_slide));
     formData.set("is_active", String(uploadForm.is_active));
-    if (String(uploadForm.display_order || "").trim()) {
-      formData.set("display_order", String(uploadForm.display_order).trim());
-    }
-    const payload = await requestWithFormData("/api/admin/media/upload", formData);
-    setUploadForm({ title: "", caption: "", alt_text: "", is_slide: false, is_active: true, display_order: "", file: null });
+    formData.set("display_order", String(nextMediaDisplayOrder));
+    await requestWithFormData("/api/admin/media/upload", formData);
+    resetUploadMediaForm();
     await Promise.all([loadMedia(), loadAudit()]);
   };
 
@@ -1058,6 +1147,68 @@ const AdminDashboard = () => {
     });
     setMediaForm(buildMediaForm(payload.media));
     await Promise.all([loadMedia(), loadAudit()]);
+  };
+
+  const toggleMenuItemStatusFromTable = async (item) => {
+    const itemId = toId(item?.id);
+    if (!itemId) return;
+    const busyKey = `menu:${itemId}`;
+    if (statusToggleBusy[busyKey]) return;
+
+    setStatusToggleBusy((prev) => ({ ...prev, [busyKey]: true }));
+    setMenuTableError("");
+    try {
+      const menuTypes = uniqueMenuTypeList(item?.menu_types || []);
+      const response = await requestJson(`/api/admin/menu/items/${itemId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          is_active: !Boolean(item?.is_active),
+          menu_type: menuTypes,
+        }),
+      });
+      if (Number(selectedItemId) === Number(itemId) && response?.item) {
+        const nextForm = buildItemForm(response.item);
+        setItemForm(nextForm);
+        setItemFormOriginal(nextForm);
+      }
+      await Promise.all([loadMenuItems(), loadAudit()]);
+    } catch (error) {
+      setMenuTableError(error.message || "Failed to update menu item status.");
+    } finally {
+      setStatusToggleBusy((prev) => {
+        const next = { ...prev };
+        delete next[busyKey];
+        return next;
+      });
+    }
+  };
+
+  const toggleMediaStatusFromTable = async (item) => {
+    const mediaId = toId(item?.id);
+    if (!mediaId) return;
+    const busyKey = `media:${mediaId}`;
+    if (statusToggleBusy[busyKey]) return;
+
+    setStatusToggleBusy((prev) => ({ ...prev, [busyKey]: true }));
+    setMediaTableError("");
+    try {
+      const payload = await requestJson(`/api/admin/media/${mediaId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_active: !Boolean(item?.is_active) }),
+      });
+      if (Number(selectedMediaId) === Number(mediaId) && payload?.media) {
+        setMediaForm(buildMediaForm(payload.media));
+      }
+      await Promise.all([loadMedia(), loadAudit()]);
+    } catch (error) {
+      setMediaTableError(error.message || "Failed to update media status.");
+    } finally {
+      setStatusToggleBusy((prev) => {
+        const next = { ...prev };
+        delete next[busyKey];
+        return next;
+      });
+    }
   };
 
   const logout = async () => {
@@ -1356,15 +1507,13 @@ const AdminDashboard = () => {
                   checked={newItemForm.is_active}
                   onChange={(event) => setNewItemForm((prev) => ({ ...prev, is_active: event.target.checked }))}
                 />
-                <Form.Label className="small mb-1" htmlFor="admin-create-item-name">
-                  Item Name
-                </Form.Label>
-                <Form.Control
-                  id="admin-create-item-name"
-                  className="mb-2"
-                  placeholder="Item name"
-                  isInvalid={Boolean(createFieldErrors.item_name)}
-                  value={newItemForm.item_name}
+	                <Form.Control
+	                  id="admin-create-item-name"
+	                  className="mb-2"
+	                  aria-label="Item Name"
+	                  placeholder="Item name"
+	                  isInvalid={Boolean(createFieldErrors.item_name)}
+	                  value={newItemForm.item_name}
                   onChange={(event) => {
                     const nextValue = event.target.value;
                     const hadFieldError = Boolean(createFieldErrors.item_name);
@@ -1375,12 +1524,10 @@ const AdminDashboard = () => {
                     }
                   }}
                 />
-                <Form.Label className="small mb-1" htmlFor="admin-create-menu-type">
-                  Menu Type
-                </Form.Label>
 	                <Form.Select
 	                  id="admin-create-menu-type"
 	                  className={`mb-2 ${newItemForm.menu_type ? "" : "admin-select-placeholder"}`.trim()}
+	                  aria-label="Menu Type"
 	                  isInvalid={Boolean(createFieldErrors.menu_type)}
 	                  value={newItemForm.menu_type}
 	                  onChange={(event) => {
@@ -1412,14 +1559,12 @@ const AdminDashboard = () => {
                   <option value="regular">Regular</option>
                   <option value="formal">Formal</option>
                 </Form.Select>
-                {selectedCreateMenuType ? (
-                  <>
-                    <Form.Label className="small mb-1" htmlFor="admin-create-group">
-                      Group
-                    </Form.Label>
+	                {selectedCreateMenuType ? (
+	                  <>
 	                    <Form.Select
 	                      id="admin-create-group"
 	                      className={`mb-2 ${newItemForm.group_id ? "" : "admin-select-placeholder"}`.trim()}
+	                      aria-label="Group"
 	                      isInvalid={Boolean(createFieldErrors.group_id)}
 	                      value={newItemForm.group_id}
 	                      onChange={(event) => {
@@ -1509,20 +1654,22 @@ const AdminDashboard = () => {
                     </Col>
                   </Row>
                 ) : null}
-	                <div className="d-flex justify-content-between align-items-end mt-2">
-	                  <Button
-	                    className="btn-inquiry-action"
-	                    variant="secondary"
-	                    disabled={createValidationLocked}
-	                    onClick={() =>
-	                      queueConfirm("Create menu item", buildCreateConfirmBody(), "Create", createItem, FORM_ERROR_CREATE_ITEM)
-	                    }>
-	                    Create Item
-	                  </Button>
-	                  <Button variant="outline-secondary" onClick={resetCreateItemForm}>
-	                    Clear
-	                  </Button>
-	                </div>
+		                <div className="d-flex align-items-end mt-2">
+		                  <Button
+		                    className="btn-inquiry-action"
+		                    variant="secondary"
+		                    disabled={createValidationLocked}
+		                    onClick={() =>
+		                      queueConfirm("Create menu item", buildCreateConfirmBody(), "Create", createItem, FORM_ERROR_CREATE_ITEM)
+		                    }>
+		                    Create Item
+		                  </Button>
+		                  {hasCreateFormChanges ? (
+		                    <Button className="ms-auto" variant="outline-secondary" onClick={resetCreateItemForm}>
+		                      Clear
+		                    </Button>
+		                  ) : null}
+		                </div>
               </Card.Body>
 	            </Card>
 
@@ -1605,17 +1752,16 @@ const AdminDashboard = () => {
 	            </Accordion>
 
           </Col>
-          <Col lg={8}>
-            <Card className="mb-3">
-              <Card.Header className="admin-card-header">Menu Items</Card.Header>
-              <Card.Body className="admin-scroll-card p-0">
-                <Table hover size="sm" className="admin-sticky-table mb-0">
+	          <Col lg={8}>
+	            <Card className="mb-3">
+	              <Card.Body className="admin-scroll-card p-0">
+	                <Table hover size="sm" className="admin-sticky-table mb-0">
 	                  <thead>
 	                    <tr>
 	                      <th>Item</th>
 	                      <th>Active</th>
-	                      <th>Menu Type</th>
-	                      <th>Group</th>
+	                      <th>Menu(s)</th>
+	                      <th>Group(s)</th>
 	                      <th className="admin-tray-prices-col">Tray Prices</th>
 	                    </tr>
 	                  </thead>
@@ -1627,13 +1773,17 @@ const AdminDashboard = () => {
 	                        </td>
 	                      </tr>
 	                    ) : filteredMenuItemRows.length ? (
-	                      filteredMenuItemRows.map((item) => (
-	                        <tr
+	                      filteredMenuItemRows.map((item) => {
+                          const itemId = toId(item?.id);
+                          const toggleBusyKey = itemId ? `menu:${itemId}` : "";
+                          const isStatusBusy = toggleBusyKey ? Boolean(statusToggleBusy[toggleBusyKey]) : false;
+                          return (
+                          <tr
 	                          key={item.row_key}
                           role={item.id ? "button" : undefined}
                           onClick={async () => {
-                            if (!item.id) return;
-                            setShowCreatedItemHighlight(false);
+	                            if (!item.id) return;
+	                            setShowCreatedItemHighlight(false);
                             setEditCardPlacement("below_table");
                             setShouldScrollToEditCard(true);
                             setSelectedItemId(item.id);
@@ -1643,17 +1793,24 @@ const AdminDashboard = () => {
 	                            {item.item_name || "Untitled Item"}
 	                          </td>
 	                          <td className="text-center align-middle">
-	                            {item.active_statuses.length ? (
-	                              item.active_statuses.map((status, statusIndex) => (
-	                                <div key={`${item.row_key}-active-status-${statusIndex}`} className="admin-table-stack-line admin-status-line">
-	                                  <span
-	                                    className={`admin-status-dot ${status ? "admin-status-dot-active" : "admin-status-dot-inactive"}`}
-	                                    role="img"
-	                                    aria-label={status ? "Active" : "Inactive"}
-	                                    title={status ? "Active" : "Inactive"}
-	                                  />
-	                                </div>
-	                              ))
+	                            {itemId ? (
+                                <button
+                                  type="button"
+                                  className="admin-status-toggle"
+                                  disabled={isStatusBusy}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void toggleMenuItemStatusFromTable(item);
+                                  }}
+                                  aria-label={item.is_active ? "Set inactive" : "Set active"}
+                                  title={item.is_active ? "Set inactive" : "Set active"}
+                                >
+                                  <span
+                                    className={`admin-status-dot ${item.is_active ? "admin-status-dot-active" : "admin-status-dot-inactive"}`}
+                                    role="img"
+                                    aria-label={item.is_active ? "Active" : "Inactive"}
+                                  />
+                                </button>
 	                            ) : (
 	                              <span>-</span>
 	                            )}
@@ -1701,7 +1858,8 @@ const AdminDashboard = () => {
 	                            ) : null}
 	                          </td>
 	                        </tr>
-	                      ))
+	                        );
+                        })
 	                    ) : (
 	                      <tr>
 	                        <td colSpan={5} className="text-center text-secondary py-3">
@@ -1727,12 +1885,13 @@ const AdminDashboard = () => {
               <Card.Body>
                 <h3 className="h6">Upload Media</h3>
                 {formErrors[FORM_ERROR_UPLOAD_MEDIA] ? <Alert variant="danger">{formErrors[FORM_ERROR_UPLOAD_MEDIA]}</Alert> : null}
-                <Form.Control
-                  className="mb-2"
-                  type="file"
-                  accept="image/*,video/*"
-                  onChange={(event) => setUploadForm((prev) => ({ ...prev, file: event.target.files?.[0] || null }))}
-                />
+	                <Form.Control
+	                  className="mb-2"
+	                  type="file"
+	                  accept="image/*,video/*"
+	                  ref={uploadFileInputRef}
+	                  onChange={(event) => setUploadForm((prev) => ({ ...prev, file: event.target.files?.[0] || null }))}
+	                />
                 <Form.Control
                   className="mb-2"
                   placeholder="Title"
@@ -1745,25 +1904,13 @@ const AdminDashboard = () => {
                   value={uploadForm.caption}
                   onChange={(event) => setUploadForm((prev) => ({ ...prev, caption: event.target.value }))}
                 />
-                <Form.Control
-                  className="mb-2"
-                  placeholder="Alt text"
-                  value={uploadForm.alt_text}
-                  onChange={(event) => setUploadForm((prev) => ({ ...prev, alt_text: event.target.value }))}
-                />
-                <Form.Control
-                  className="mb-2"
-                  placeholder="Display order (optional)"
-                  value={uploadForm.display_order}
-                  onChange={(event) => setUploadForm((prev) => ({ ...prev, display_order: event.target.value }))}
-                />
-                <Form.Check
-                  className="mb-2"
-                  type="switch"
-                  label="Homepage Slide"
-                  checked={uploadForm.is_slide}
-                  onChange={(event) => setUploadForm((prev) => ({ ...prev, is_slide: event.target.checked }))}
-                />
+	                <Form.Check
+	                  className="mb-2"
+	                  type="switch"
+	                  label="Homepage Slide"
+	                  checked={uploadForm.is_slide}
+	                  onChange={(event) => setUploadForm((prev) => ({ ...prev, is_slide: event.target.checked }))}
+	                />
                 <Form.Check
                   className="mb-2"
                   type="switch"
@@ -1771,99 +1918,162 @@ const AdminDashboard = () => {
                   checked={uploadForm.is_active}
                   onChange={(event) => setUploadForm((prev) => ({ ...prev, is_active: event.target.checked }))}
                 />
-                <Button
-                  className="btn-inquiry-action"
-                  variant="secondary"
-                  onClick={() => queueConfirm("Upload media", "Upload this file?", "Upload", uploadMedia, FORM_ERROR_UPLOAD_MEDIA)}>
-                  Upload
-                </Button>
+	                <div className="d-flex align-items-end mt-2">
+	                  <Button
+	                    className="btn-inquiry-action"
+	                    variant="secondary"
+	                    onClick={() => queueConfirm("Upload media", "Upload this file?", "Upload", uploadMedia, FORM_ERROR_UPLOAD_MEDIA)}>
+	                    Upload
+	                  </Button>
+	                  {hasUploadFormChanges ? (
+	                    <Button className="ms-auto" variant="outline-secondary" onClick={resetUploadMediaForm}>
+	                      Clear
+	                    </Button>
+	                  ) : null}
+	                </div>
               </Card.Body>
             </Card>
-            <Card>
-              <Card.Body>
-                <h3 className="h6">Find Media</h3>
-                <Form.Control
-                  className="mb-2"
-                  placeholder="Search media"
-                  value={mediaFilters.search}
-                  onChange={(event) => setMediaFilters((prev) => ({ ...prev, search: event.target.value }))}
-                />
-                <Form.Select
-                  className="mb-2"
-                  value={mediaFilters.media_type}
-                  onChange={(event) => setMediaFilters((prev) => ({ ...prev, media_type: event.target.value }))}>
-                  <option value="">All media types</option>
-                  <option value="image">Image</option>
-                  <option value="video">Video</option>
-                </Form.Select>
-                <Form.Select
-                  className="mb-2"
-                  value={mediaFilters.is_active}
-                  onChange={(event) => setMediaFilters((prev) => ({ ...prev, is_active: event.target.value }))}>
-                  <option value="all">All status</option>
-                  <option value="true">Active</option>
-                  <option value="false">Inactive</option>
-                </Form.Select>
-                <Form.Select
-                  value={mediaFilters.is_slide}
-                  onChange={(event) => setMediaFilters((prev) => ({ ...prev, is_slide: event.target.value }))}>
-                  <option value="all">All slide flags</option>
-                  <option value="true">Homepage Slide</option>
-                  <option value="false">Gallery Only</option>
-                </Form.Select>
-                <Button className="mt-2" variant="outline-secondary" onClick={loadMedia}>
-                  Apply
-                </Button>
-              </Card.Body>
-            </Card>
+	            <Accordion className="mb-3 admin-filter-accordion">
+	              <Accordion.Item eventKey="0">
+	                <Accordion.Header>Find Media</Accordion.Header>
+	                <Accordion.Body>
+	                  <Form.Control
+	                    className="mb-2"
+	                    placeholder="Search media"
+	                    value={mediaFilters.search}
+	                    onChange={(event) => setMediaFilters((prev) => ({ ...prev, search: event.target.value }))}
+	                  />
+	                  <Form.Select
+	                    className="mb-2"
+	                    value={mediaFilters.media_type}
+	                    onChange={(event) => setMediaFilters((prev) => ({ ...prev, media_type: event.target.value }))}>
+	                    <option value="">All media types</option>
+	                    <option value="image">Image</option>
+	                    <option value="video">Video</option>
+	                  </Form.Select>
+	                  <Form.Select
+	                    className="mb-2"
+	                    value={mediaFilters.is_active}
+	                    onChange={(event) => setMediaFilters((prev) => ({ ...prev, is_active: event.target.value }))}>
+	                    <option value="all">All status</option>
+	                    <option value="true">Active</option>
+	                    <option value="false">Inactive</option>
+	                  </Form.Select>
+	                  <Form.Select
+	                    value={mediaFilters.is_slide}
+	                    onChange={(event) => setMediaFilters((prev) => ({ ...prev, is_slide: event.target.value }))}>
+	                    <option value="all">All slide flags</option>
+	                    <option value="true">Homepage Slide</option>
+	                    <option value="false">Gallery Only</option>
+	                  </Form.Select>
+	                  <Button className="mt-2" variant="outline-secondary" onClick={loadMedia}>
+	                    Apply
+	                  </Button>
+	                </Accordion.Body>
+	              </Accordion.Item>
+	            </Accordion>
           </Col>
-          <Col lg={8}>
-            <Card className="mb-3">
-              <Card.Body className="admin-scroll-card">
-                <Table hover responsive size="sm">
-                  <thead>
-                    <tr>
-                      <th>Title</th>
-                      <th>Type</th>
-                      <th>Flags</th>
-                      <th>Order</th>
-                    </tr>
-                  </thead>
+	          <Col lg={8}>
+	            <Card className="mb-3">
+	              <Card.Body className="admin-scroll-card p-0">
+	                <Table hover size="sm" className="admin-sticky-table mb-0">
+	                  <thead>
+	                    <tr>
+	                      <th className="admin-media-type-col">
+	                        <span className="visually-hidden">Type</span>
+	                      </th>
+	                      <th className="admin-media-thumb-col">
+	                        <span className="visually-hidden">Preview</span>
+	                      </th>
+	                      <th>Title</th>
+	                      <th className="text-center">Active</th>
+	                      <th>Slide</th>
+	                      <th>Order</th>
+	                    </tr>
+	                  </thead>
 	                  <tbody>
 	                    {mediaTableError ? (
 	                      <tr>
-	                        <td colSpan={4} className="text-center text-danger py-3">
+	                        <td colSpan={6} className="text-center text-danger py-3">
 	                          {mediaTableError}
 	                        </td>
 	                      </tr>
-	                    ) : mediaItems.length ? (
-	                      mediaItems.map((item) => (
-	                        <tr
-	                          key={item.id}
-	                          role="button"
-	                          onClick={() => {
-	                            setSelectedMediaId(item.id);
-	                            setMediaForm(buildMediaForm(item));
-	                          }}>
+		                    ) : mediaItems.length ? (
+		                      mediaItems.map((item) => {
+		                        const sourceFilename = formatMediaSourceFilename(item.src);
+                            const mediaId = toId(item?.id);
+                            const toggleBusyKey = mediaId ? `media:${mediaId}` : "";
+                            const isStatusBusy = toggleBusyKey ? Boolean(statusToggleBusy[toggleBusyKey]) : false;
+		                        return (
+		                          <tr
+		                          key={item.id}
+		                          role="button"
+		                          onClick={() => {
+		                            setSelectedMediaId(item.id);
+		                            setMediaForm(buildMediaForm(item));
+		                          }}>
+	                          <td className="admin-media-type-cell">{renderMediaTypeIcon(item.media_type)}</td>
+	                          <td className="admin-media-thumb-cell">
+	                            {normalizeFilterText(item.media_type) === "video" ? (
+	                              <video
+	                                className="admin-media-thumb"
+	                                muted
+	                                playsInline
+	                                preload="metadata"
+	                                aria-label={String(item.title || "Video preview")}
+	                              >
+	                                <source src={item.src} />
+	                              </video>
+	                            ) : (
+	                              <img
+	                                className="admin-media-thumb"
+	                                src={item.thumbnail_src || item.src}
+	                                alt={String(item.alt_text || item.alt || item.title || "Image preview")}
+	                                loading="lazy"
+	                              />
+	                            )}
+	                          </td>
 	                          <td>
 	                            {item.title || "Untitled"}
-	                            <div className="small text-secondary">{item.src}</div>
+	                            {sourceFilename ? (
+	                              <div className="small text-secondary">{sourceFilename}</div>
+	                            ) : null}
 	                          </td>
-	                          <td>{item.media_type}</td>
+	                          <td className="text-center align-middle">
+	                            <div className="admin-status-line">
+                                <button
+                                  type="button"
+                                  className="admin-status-toggle"
+                                  disabled={isStatusBusy}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void toggleMediaStatusFromTable(item);
+                                  }}
+                                  aria-label={item.is_active ? "Set inactive" : "Set active"}
+                                  title={item.is_active ? "Set inactive" : "Set active"}
+                                >
+                                  <span
+                                    className={`admin-status-dot ${item.is_active ? "admin-status-dot-active" : "admin-status-dot-inactive"}`}
+                                    role="img"
+                                    aria-label={item.is_active ? "Active" : "Inactive"}
+                                  />
+                                </button>
+	                            </div>
+	                          </td>
 	                          <td>
 	                            {item.is_slide ? (
-	                              <Badge bg="info" text="dark" className="me-1">
+	                              <Badge bg="info" text="dark">
 	                                Homepage Slide
 	                              </Badge>
 	                            ) : null}
-	                            {item.is_active ? <Badge bg="success">Active</Badge> : <Badge bg="secondary">Inactive</Badge>}
 	                          </td>
 	                          <td>{item.display_order}</td>
 	                        </tr>
-	                      ))
+	                        );
+	                      })
 	                    ) : (
 	                      <tr>
-	                        <td colSpan={4} className="text-center text-secondary py-3">
+	                        <td colSpan={6} className="text-center text-secondary py-3">
 	                          No media items match the current filters.
 	                        </td>
 	                      </tr>
@@ -1872,36 +2082,49 @@ const AdminDashboard = () => {
                 </Table>
               </Card.Body>
             </Card>
-            {selectedMediaId && mediaForm ? (
-              <Card>
-                <Card.Body>
-                  <h3 className="h6">Edit Media</h3>
-                  {formErrors[FORM_ERROR_EDIT_MEDIA] ? <Alert variant="danger">{formErrors[FORM_ERROR_EDIT_MEDIA]}</Alert> : null}
-                  <Form.Control
-                    className="mb-2"
-                    value={mediaForm.title}
-                    onChange={(event) => setMediaForm((prev) => ({ ...prev, title: event.target.value }))}
-                  />
-                  <Form.Control
-                    className="mb-2"
-                    value={mediaForm.caption}
-                    onChange={(event) => setMediaForm((prev) => ({ ...prev, caption: event.target.value }))}
-                  />
-                  <Form.Control
-                    className="mb-2"
-                    value={mediaForm.alt_text}
-                    onChange={(event) => setMediaForm((prev) => ({ ...prev, alt_text: event.target.value }))}
-                  />
-                  <Form.Control
-                    className="mb-2"
-                    type="number"
-                    min={1}
-                    value={mediaForm.display_order}
-                    onChange={(event) => setMediaForm((prev) => ({ ...prev, display_order: Number(event.target.value) || 1 }))}
-                  />
-                  <Form.Check
-                    className="mb-2"
-                    type="switch"
+	            {selectedMediaId && mediaForm ? (
+	              <Card>
+	                <Card.Body>
+	                  <div className="d-flex justify-content-between align-items-center mb-2">
+	                    <div className="d-flex align-items-center gap-2 min-w-0">
+	                      <h3 className="h6 mb-0">Edit Media</h3>
+	                      {formatMediaSourceFilename(mediaForm.src) ? (
+	                        <div className="small text-secondary text-truncate">{formatMediaSourceFilename(mediaForm.src)}</div>
+	                      ) : null}
+	                    </div>
+	                    <button
+	                      type="button"
+	                      className="btn-close admin-edit-card-close"
+	                      aria-label="Close edit media"
+	                      onClick={() => {
+	                        setSelectedMediaId(null);
+	                        setMediaForm(null);
+	                        setFormErrors((prev) => ({ ...prev, [FORM_ERROR_EDIT_MEDIA]: "" }));
+	                      }}
+	                    />
+	                  </div>
+	                  {formErrors[FORM_ERROR_EDIT_MEDIA] ? <Alert variant="danger">{formErrors[FORM_ERROR_EDIT_MEDIA]}</Alert> : null}
+	                  <Form.Label className="small mb-1" htmlFor="admin-edit-media-title">
+	                    Title
+	                  </Form.Label>
+	                  <Form.Control
+	                    id="admin-edit-media-title"
+	                    className="mb-2"
+	                    value={mediaForm.title}
+	                    onChange={(event) => setMediaForm((prev) => ({ ...prev, title: event.target.value }))}
+	                  />
+	                  <Form.Label className="small mb-1" htmlFor="admin-edit-media-caption">
+	                    Caption
+	                  </Form.Label>
+	                  <Form.Control
+	                    id="admin-edit-media-caption"
+	                    className="mb-2"
+	                    value={mediaForm.caption}
+	                    onChange={(event) => setMediaForm((prev) => ({ ...prev, caption: event.target.value }))}
+	                  />
+	                  <Form.Check
+	                    className="mb-2"
+	                    type="switch"
                     label="Homepage Slide"
                     checked={mediaForm.is_slide}
                     onChange={(event) => setMediaForm((prev) => ({ ...prev, is_slide: event.target.checked }))}
@@ -1913,12 +2136,12 @@ const AdminDashboard = () => {
                     checked={mediaForm.is_active}
                     onChange={(event) => setMediaForm((prev) => ({ ...prev, is_active: event.target.checked }))}
                   />
-                  <Button
-                    className="btn-inquiry-action mt-2"
-                    variant="secondary"
-                    onClick={() => queueConfirm("Save media", "Apply media metadata and order changes?", "Save", saveMedia, FORM_ERROR_EDIT_MEDIA)}>
-                    Save Media
-                  </Button>
+	                  <Button
+	                    className="btn-inquiry-action mt-2"
+	                    variant="secondary"
+	                    onClick={() => queueConfirm("Save media", "Apply media metadata changes?", "Save", saveMedia, FORM_ERROR_EDIT_MEDIA)}>
+	                    Save Media
+	                  </Button>
                 </Card.Body>
               </Card>
             ) : null}

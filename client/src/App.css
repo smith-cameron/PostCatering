@@ -256,6 +256,7 @@ button:hover {
   --admin-border: #bcc8d8;
   --admin-text: #1a2433;
   --admin-muted: #5f6e81;
+  --admin-row-hover-text: #113c66;
   min-height: 100vh;
   background: var(--admin-bg);
   color: var(--admin-text);
@@ -267,6 +268,7 @@ button:hover {
   --admin-border: #3d4b61;
   --admin-text: #e6edf7;
   --admin-muted: #b5c0d4;
+  --admin-row-hover-text: #f5f9ff;
 }
 
 .admin-dashboard .text-secondary {
@@ -346,6 +348,14 @@ button:hover {
   border-width: 1.5px;
 }
 
+.admin-dashboard .form-control[type="file"]::file-selector-button {
+  color: var(--admin-text);
+  background-color: #e8edf5;
+  border: 0;
+  border-right: 1.5px solid var(--admin-border);
+  margin-right: 0.65rem;
+}
+
 .admin-dashboard .nav-tabs {
   border-bottom: 1.5px solid var(--admin-border);
 }
@@ -374,6 +384,7 @@ button:hover {
   --bs-table-bg: var(--admin-surface);
   --bs-table-color: var(--admin-text);
   --bs-table-border-color: var(--admin-border);
+  --bs-table-hover-color: var(--admin-row-hover-text);
 }
 
 .admin-dashboard .table > :not(caption) > * > * {
@@ -411,6 +422,46 @@ button:hover {
   line-height: 1.25;
 }
 
+.admin-media-type-col,
+.admin-media-type-cell {
+  width: 56px;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.admin-media-type-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--admin-muted);
+  vertical-align: middle;
+  line-height: 1;
+}
+
+.admin-media-type-icon svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.admin-media-thumb-col,
+.admin-media-thumb-cell {
+  width: 68px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.admin-media-thumb {
+  display: block;
+  width: 56px;
+  height: 36px;
+  margin: 0 auto;
+  object-fit: cover;
+  border-radius: 0.35rem;
+  border: 1px solid var(--admin-border);
+  background: #d9e1ef;
+}
+
 .admin-price-label {
   display: inline-block;
   min-width: 1.1rem;
@@ -423,6 +474,30 @@ button:hover {
   align-items: center;
   justify-content: center;
   gap: 0.35rem;
+}
+
+.admin-status-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+.admin-status-toggle:hover,
+.admin-status-toggle:focus-visible {
+  border-color: var(--admin-border);
+  outline: none;
+}
+
+.admin-status-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .admin-status-dot {
@@ -502,12 +577,22 @@ button:hover {
 }
 
 .admin-dashboard .admin-edit-card-close {
-  opacity: 0.75;
+  opacity: 0.9;
+  border-radius: 0.35rem;
+  border: 1px solid transparent;
+  transition: opacity 0.15s ease, border-color 0.15s ease;
 }
 
 .admin-dashboard .admin-edit-card-close:hover,
 .admin-dashboard .admin-edit-card-close:focus {
-  opacity: 1;
+  opacity: 0.9;
+  background-color: transparent;
+  border-color: var(--admin-border);
+}
+
+.admin-dashboard .admin-edit-card-close:focus-visible {
+  border-color: var(--admin-border);
+  box-shadow: none;
 }
 
 .admin-dashboard.admin-dashboard-dark .form-control,
@@ -547,6 +632,12 @@ button:hover {
   border-color: var(--admin-border);
 }
 
+.admin-dashboard.admin-dashboard-dark .form-control[type="file"]::file-selector-button {
+  color: var(--admin-text);
+  background-color: #1a2432;
+  border-right: 1.5px solid var(--admin-border);
+}
+
 .admin-dashboard.admin-dashboard-dark .admin-filter-accordion .accordion-button::after {
   filter: invert(0.9);
 }
@@ -578,6 +669,11 @@ button:hover {
 
 .admin-dashboard.admin-dashboard-dark .admin-status-dot {
   border-color: rgba(255, 255, 255, 0.28);
+}
+
+.admin-dashboard.admin-dashboard-dark .admin-status-toggle:hover,
+.admin-dashboard.admin-dashboard-dark .admin-status-toggle:focus-visible {
+  border-color: #8da5c4;
 }
 
 .admin-dashboard.admin-dashboard-dark .btn-outline-secondary {
@@ -629,6 +725,14 @@ button:hover {
 
 .admin-dashboard.admin-dashboard-dark .admin-edit-card-close {
   filter: invert(1) grayscale(100%) brightness(180%);
+  opacity: 0.95;
+}
+
+.admin-dashboard.admin-dashboard-dark .admin-edit-card-close:hover,
+.admin-dashboard.admin-dashboard-dark .admin-edit-card-close:focus {
+  background-color: transparent;
+  border-color: var(--admin-border);
+  opacity: 0.95;
 }
 
 .admin-confirm-modal .modal-content {
