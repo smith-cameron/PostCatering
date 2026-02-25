@@ -19,6 +19,35 @@ CREATE TABLE IF NOT EXISTS slides (
   UNIQUE KEY uq_slides_image_url (image_url(191))
 );
 
+CREATE TABLE IF NOT EXISTS admin_users (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  username VARCHAR(120) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  display_name VARCHAR(150) NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  last_login_at TIMESTAMP NULL DEFAULT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_admin_users_username (username)
+);
+
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  admin_user_id BIGINT UNSIGNED NOT NULL,
+  action VARCHAR(64) NOT NULL,
+  entity_type VARCHAR(64) NOT NULL,
+  entity_id VARCHAR(128) NULL,
+  change_summary VARCHAR(255) NULL,
+  before_json JSON NULL,
+  after_json JSON NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_admin_audit_created (created_at),
+  KEY idx_admin_audit_entity (entity_type, entity_id),
+  CONSTRAINT fk_admin_audit_user FOREIGN KEY (admin_user_id) REFERENCES admin_users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS inquiries (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   full_name VARCHAR(150) NOT NULL,
@@ -60,6 +89,34 @@ CREATE TABLE IF NOT EXISTS menu_config (
   UNIQUE KEY uq_menu_config_key (config_key)
 );
 
+CREATE TABLE IF NOT EXISTS menu_types (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  type_key VARCHAR(64) NOT NULL,
+  type_name VARCHAR(120) NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_menu_types_key (type_key),
+  UNIQUE KEY uq_menu_types_name (type_name),
+  KEY idx_menu_types_active_order (is_active, sort_order)
+);
+
+CREATE TABLE IF NOT EXISTS menu_groups (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  group_key VARCHAR(120) NOT NULL,
+  group_name VARCHAR(120) NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_menu_groups_key (group_key),
+  UNIQUE KEY uq_menu_groups_name (group_name),
+  KEY idx_menu_groups_active_order (is_active, sort_order)
+);
+
 CREATE TABLE IF NOT EXISTS menu_items (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   item_key VARCHAR(128) NULL,
@@ -72,431 +129,68 @@ CREATE TABLE IF NOT EXISTS menu_items (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  KEY idx_menu_items_active_category (is_active, item_category),
-  KEY idx_menu_items_active_type (is_active, item_type),
   UNIQUE KEY uq_menu_items_name (item_name),
-  UNIQUE KEY uq_menu_items_key (item_key)
+  UNIQUE KEY uq_menu_items_key (item_key),
+  KEY idx_menu_items_active_category (is_active, item_category),
+  KEY idx_menu_items_active_type (is_active, item_type)
 );
 
-CREATE TABLE IF NOT EXISTS menu_option_groups (
+CREATE TABLE IF NOT EXISTS menu_type_groups (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  option_key VARCHAR(100) NOT NULL,
-  option_id VARCHAR(128) NOT NULL,
-  category VARCHAR(100) NOT NULL,
-  title VARCHAR(255) NOT NULL,
+  menu_type_id BIGINT UNSIGNED NOT NULL,
+  menu_group_id BIGINT UNSIGNED NOT NULL,
   display_order INT NOT NULL DEFAULT 0,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_menu_option_groups_key (option_key),
-  UNIQUE KEY uq_menu_option_groups_option_id (option_id),
-  KEY idx_menu_option_groups_active_order (is_active, display_order)
+  UNIQUE KEY uq_menu_type_group_pair (menu_type_id, menu_group_id),
+  UNIQUE KEY uq_menu_type_group_order (menu_type_id, display_order),
+  KEY idx_menu_type_groups_active (is_active),
+  CONSTRAINT fk_menu_type_groups_type FOREIGN KEY (menu_type_id) REFERENCES menu_types(id) ON DELETE CASCADE,
+  CONSTRAINT fk_menu_type_groups_group FOREIGN KEY (menu_group_id) REFERENCES menu_groups(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS menu_option_group_items (
+CREATE TABLE IF NOT EXISTS menu_item_type_groups (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  group_id BIGINT UNSIGNED NOT NULL,
-  item_id BIGINT UNSIGNED NOT NULL,
-  display_order INT NOT NULL DEFAULT 0,
+  menu_item_id BIGINT UNSIGNED NOT NULL,
+  menu_type_id BIGINT UNSIGNED NOT NULL,
+  menu_group_id BIGINT UNSIGNED NOT NULL,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_menu_option_group_item (group_id, item_id),
-  UNIQUE KEY uq_menu_option_group_order (group_id, display_order),
-  KEY idx_menu_option_group_items_active (is_active),
-  CONSTRAINT fk_menu_option_group_items_group FOREIGN KEY (group_id) REFERENCES menu_option_groups(id) ON DELETE CASCADE,
-  CONSTRAINT fk_menu_option_group_items_item FOREIGN KEY (item_id) REFERENCES menu_items(id) ON DELETE CASCADE
+  UNIQUE KEY uq_menu_item_type_group_item_type (menu_item_id, menu_type_id),
+  KEY idx_menu_item_type_groups_active (is_active),
+  KEY idx_menu_item_type_groups_group_id (menu_group_id),
+  CONSTRAINT fk_menu_item_type_groups_item FOREIGN KEY (menu_item_id) REFERENCES menu_items(id) ON DELETE CASCADE,
+  CONSTRAINT fk_menu_item_type_groups_type FOREIGN KEY (menu_type_id) REFERENCES menu_types(id) ON DELETE CASCADE,
+  CONSTRAINT fk_menu_item_type_groups_group FOREIGN KEY (menu_group_id) REFERENCES menu_groups(id) ON DELETE RESTRICT,
+  CONSTRAINT fk_menu_item_type_groups_type_group FOREIGN KEY (menu_type_id, menu_group_id)
+    REFERENCES menu_type_groups(menu_type_id, menu_group_id) ON DELETE RESTRICT
 );
 
-CREATE TABLE IF NOT EXISTS formal_plan_options (
+CREATE TABLE IF NOT EXISTS menu_group_conflicts (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  plan_key VARCHAR(100) NOT NULL,
-  option_level VARCHAR(50) NOT NULL,
-  title VARCHAR(255) NOT NULL,
-  price VARCHAR(100) NOT NULL,
-  price_amount_min DECIMAL(10,2) NULL,
-  price_amount_max DECIMAL(10,2) NULL,
-  price_currency CHAR(3) NULL,
-  price_unit VARCHAR(32) NULL,
-  display_order INT NOT NULL DEFAULT 0,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  group_a_id BIGINT UNSIGNED NOT NULL,
+  group_b_id BIGINT UNSIGNED NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY uq_formal_plan_options_plan_key (plan_key),
-  KEY idx_formal_plan_options_active_order (is_active, display_order)
+  UNIQUE KEY uq_menu_group_conflicts_pair (group_a_id, group_b_id),
+  CONSTRAINT chk_menu_group_conflicts_order CHECK (group_a_id < group_b_id),
+  CONSTRAINT fk_menu_group_conflicts_a FOREIGN KEY (group_a_id) REFERENCES menu_groups(id) ON DELETE CASCADE,
+  CONSTRAINT fk_menu_group_conflicts_b FOREIGN KEY (group_b_id) REFERENCES menu_groups(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS formal_plan_option_details (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  plan_option_id BIGINT UNSIGNED NOT NULL,
-  detail_text VARCHAR(255) NOT NULL,
-  display_order INT NOT NULL DEFAULT 0,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_formal_plan_detail_order (plan_option_id, display_order),
-  KEY idx_formal_plan_option_details_active (is_active),
-  CONSTRAINT fk_formal_plan_option_details_option FOREIGN KEY (plan_option_id) REFERENCES formal_plan_options(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS formal_plan_option_constraints (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  plan_option_id BIGINT UNSIGNED NOT NULL,
-  constraint_key VARCHAR(100) NOT NULL,
-  min_select INT NOT NULL,
-  max_select INT NOT NULL,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_formal_plan_constraint (plan_option_id, constraint_key),
-  KEY idx_formal_plan_option_constraints_active (is_active),
-  CONSTRAINT fk_formal_plan_option_constraints_option FOREIGN KEY (plan_option_id) REFERENCES formal_plan_options(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS menu_catalogs (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  catalog_key VARCHAR(50) NOT NULL,
-  page_title VARCHAR(255) NOT NULL,
-  subtitle VARCHAR(255) NULL,
-  display_order INT NOT NULL DEFAULT 0,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_menu_catalogs_key (catalog_key),
-  KEY idx_menu_catalogs_active_order (is_active, display_order)
-);
-
-CREATE TABLE IF NOT EXISTS menu_intro_blocks (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  catalog_id BIGINT UNSIGNED NOT NULL,
-  title VARCHAR(255) NOT NULL,
-  display_order INT NOT NULL DEFAULT 0,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_menu_intro_blocks_order (catalog_id, display_order),
-  KEY idx_menu_intro_blocks_active (is_active),
-  CONSTRAINT fk_menu_intro_blocks_catalog FOREIGN KEY (catalog_id) REFERENCES menu_catalogs(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS menu_intro_bullets (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  intro_block_id BIGINT UNSIGNED NOT NULL,
-  bullet_text VARCHAR(255) NOT NULL,
-  display_order INT NOT NULL DEFAULT 0,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_menu_intro_bullets_order (intro_block_id, display_order),
-  KEY idx_menu_intro_bullets_active (is_active),
-  CONSTRAINT fk_menu_intro_bullets_block FOREIGN KEY (intro_block_id) REFERENCES menu_intro_blocks(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS menu_sections (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  catalog_id BIGINT UNSIGNED NOT NULL,
-  section_key VARCHAR(100) NOT NULL,
-  section_type VARCHAR(50) NULL,
-  title VARCHAR(255) NOT NULL,
-  description VARCHAR(255) NULL,
-  price VARCHAR(100) NULL,
-  price_amount_min DECIMAL(10,2) NULL,
-  price_amount_max DECIMAL(10,2) NULL,
-  price_currency CHAR(3) NULL,
-  price_unit VARCHAR(32) NULL,
-  category VARCHAR(100) NULL,
-  course_type VARCHAR(50) NULL,
-  display_order INT NOT NULL DEFAULT 0,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_menu_sections_key (section_key),
-  UNIQUE KEY uq_menu_sections_catalog_order (catalog_id, display_order),
-  KEY idx_menu_sections_active_order (is_active, display_order),
-  CONSTRAINT fk_menu_sections_catalog FOREIGN KEY (catalog_id) REFERENCES menu_catalogs(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS menu_section_constraints (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  section_id BIGINT UNSIGNED NOT NULL,
-  constraint_key VARCHAR(100) NOT NULL,
-  min_select INT NOT NULL DEFAULT 0,
-  max_select INT NOT NULL DEFAULT 0,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_menu_section_constraints_key (section_id, constraint_key),
-  KEY idx_menu_section_constraints_active (is_active),
-  CONSTRAINT fk_menu_section_constraints_section FOREIGN KEY (section_id) REFERENCES menu_sections(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS menu_section_columns (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  section_id BIGINT UNSIGNED NOT NULL,
-  column_label VARCHAR(255) NOT NULL,
-  display_order INT NOT NULL DEFAULT 0,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_menu_section_columns_order (section_id, display_order),
-  KEY idx_menu_section_columns_active (is_active),
-  CONSTRAINT fk_menu_section_columns_section FOREIGN KEY (section_id) REFERENCES menu_sections(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS menu_section_rows (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  section_id BIGINT UNSIGNED NOT NULL,
-  item_id BIGINT UNSIGNED NOT NULL,
-  value_1 VARCHAR(100) NULL,
-  value_2 VARCHAR(100) NULL,
-  display_order INT NOT NULL DEFAULT 0,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_menu_section_rows_item (section_id, item_id),
-  UNIQUE KEY uq_menu_section_rows_order (section_id, display_order),
-  KEY idx_menu_section_rows_active (is_active),
-  CONSTRAINT fk_menu_section_rows_section FOREIGN KEY (section_id) REFERENCES menu_sections(id) ON DELETE CASCADE,
-  CONSTRAINT fk_menu_section_rows_item FOREIGN KEY (item_id) REFERENCES menu_items(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS menu_section_include_groups (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  section_id BIGINT UNSIGNED NOT NULL,
-  group_id BIGINT UNSIGNED NOT NULL,
-  display_order INT NOT NULL DEFAULT 0,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_menu_section_include_group (section_id, group_id),
-  UNIQUE KEY uq_menu_section_include_order (section_id, display_order),
-  KEY idx_menu_section_include_groups_active (is_active),
-  CONSTRAINT fk_menu_section_include_groups_section FOREIGN KEY (section_id) REFERENCES menu_sections(id) ON DELETE CASCADE,
-  CONSTRAINT fk_menu_section_include_groups_group FOREIGN KEY (group_id) REFERENCES menu_option_groups(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS menu_section_tiers (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  section_id BIGINT UNSIGNED NOT NULL,
-  tier_title VARCHAR(255) NOT NULL,
-  price VARCHAR(100) NULL,
-  price_amount_min DECIMAL(10,2) NULL,
-  price_amount_max DECIMAL(10,2) NULL,
-  price_currency CHAR(3) NULL,
-  price_unit VARCHAR(32) NULL,
-  display_order INT NOT NULL DEFAULT 0,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_menu_section_tiers_order (section_id, display_order),
-  KEY idx_menu_section_tiers_active (is_active),
-  CONSTRAINT fk_menu_section_tiers_section FOREIGN KEY (section_id) REFERENCES menu_sections(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS menu_section_tier_constraints (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  tier_id BIGINT UNSIGNED NOT NULL,
-  constraint_key VARCHAR(100) NOT NULL,
-  min_select INT NOT NULL DEFAULT 0,
-  max_select INT NOT NULL DEFAULT 0,
-  constraint_value INT NULL,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_menu_section_tier_constraint (tier_id, constraint_key),
-  KEY idx_menu_section_tier_constraints_active (is_active),
-  CONSTRAINT fk_menu_section_tier_constraints_tier FOREIGN KEY (tier_id) REFERENCES menu_section_tiers(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS menu_section_tier_bullets (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  tier_id BIGINT UNSIGNED NOT NULL,
-  item_id BIGINT UNSIGNED NULL,
-  bullet_text VARCHAR(255) NULL,
-  display_order INT NOT NULL DEFAULT 0,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_menu_section_tier_bullets_order (tier_id, display_order),
-  KEY idx_menu_section_tier_bullets_active (is_active),
-  CONSTRAINT fk_menu_section_tier_bullets_tier FOREIGN KEY (tier_id) REFERENCES menu_section_tiers(id) ON DELETE CASCADE,
-  CONSTRAINT fk_menu_section_tier_bullets_item FOREIGN KEY (item_id) REFERENCES menu_items(id) ON DELETE SET NULL
-);
-
-ALTER TABLE formal_plan_options
-  ADD COLUMN price_amount_min DECIMAL(10,2) NULL AFTER price;
-ALTER TABLE formal_plan_options
-  ADD COLUMN price_amount_max DECIMAL(10,2) NULL AFTER price_amount_min;
-ALTER TABLE formal_plan_options
-  ADD COLUMN price_currency CHAR(3) NULL AFTER price_amount_max;
-ALTER TABLE formal_plan_options
-  ADD COLUMN price_unit VARCHAR(32) NULL AFTER price_currency;
-
-ALTER TABLE menu_items
-  ADD COLUMN item_type VARCHAR(64) NULL AFTER item_name;
-ALTER TABLE menu_items
-  ADD COLUMN item_category VARCHAR(100) NULL AFTER item_type;
-ALTER TABLE menu_items
-  ADD COLUMN tray_price_half VARCHAR(100) NULL AFTER item_category;
-ALTER TABLE menu_items
-  ADD COLUMN tray_price_full VARCHAR(100) NULL AFTER tray_price_half;
-ALTER TABLE menu_items
-  ADD KEY idx_menu_items_active_category (is_active, item_category);
-ALTER TABLE menu_items
-  ADD KEY idx_menu_items_active_type (is_active, item_type);
-
-ALTER TABLE menu_sections
-  ADD COLUMN price_amount_min DECIMAL(10,2) NULL AFTER price;
-ALTER TABLE menu_sections
-  ADD COLUMN price_amount_max DECIMAL(10,2) NULL AFTER price_amount_min;
-ALTER TABLE menu_sections
-  ADD COLUMN price_currency CHAR(3) NULL AFTER price_amount_max;
-ALTER TABLE menu_sections
-  ADD COLUMN price_unit VARCHAR(32) NULL AFTER price_currency;
-
-ALTER TABLE menu_section_tiers
-  ADD COLUMN price_amount_min DECIMAL(10,2) NULL AFTER price;
-ALTER TABLE menu_section_tiers
-  ADD COLUMN price_amount_max DECIMAL(10,2) NULL AFTER price_amount_min;
-ALTER TABLE menu_section_tiers
-  ADD COLUMN price_currency CHAR(3) NULL AFTER price_amount_max;
-ALTER TABLE menu_section_tiers
-  ADD COLUMN price_unit VARCHAR(32) NULL AFTER price_currency;
-
-ALTER TABLE menu_section_tier_constraints
-  ADD COLUMN min_select INT NOT NULL DEFAULT 0 AFTER constraint_key;
-ALTER TABLE menu_section_tier_constraints
-  ADD COLUMN max_select INT NOT NULL DEFAULT 0 AFTER min_select;
-ALTER TABLE menu_section_tier_constraints
-  MODIFY COLUMN constraint_value INT NULL;
-
-UPDATE menu_items i
-SET
-  i.item_type = COALESCE(
-    NULLIF(TRIM(i.item_type), ''),
-    (
-      SELECT g.option_key
-      FROM menu_option_group_items gi
-      JOIN menu_option_groups g ON g.id = gi.group_id
-      WHERE gi.item_id = i.id
-        AND gi.is_active = 1
-        AND g.is_active = 1
-      ORDER BY g.display_order ASC, g.id ASC, gi.display_order ASC, gi.id ASC
-      LIMIT 1
-    ),
-    (
-      SELECT s.section_key
-      FROM menu_section_rows r
-      JOIN menu_sections s ON s.id = r.section_id AND s.is_active = 1
-      JOIN menu_catalogs c ON c.id = s.catalog_id AND c.is_active = 1
-      WHERE r.item_id = i.id
-        AND r.is_active = 1
-        AND c.catalog_key IN ('togo', 'community')
-      ORDER BY s.display_order ASC, s.id ASC, r.display_order ASC, r.id ASC
-      LIMIT 1
-    ),
-    'general'
-  ),
-  i.item_category = COALESCE(
-    NULLIF(TRIM(i.item_category), ''),
-    (
-      SELECT g.category
-      FROM menu_option_group_items gi
-      JOIN menu_option_groups g ON g.id = gi.group_id
-      WHERE gi.item_id = i.id
-        AND gi.is_active = 1
-        AND g.is_active = 1
-      ORDER BY g.display_order ASC, g.id ASC, gi.display_order ASC, gi.id ASC
-      LIMIT 1
-    ),
-    (
-      SELECT s.category
-      FROM menu_section_rows r
-      JOIN menu_sections s ON s.id = r.section_id AND s.is_active = 1
-      JOIN menu_catalogs c ON c.id = s.catalog_id AND c.is_active = 1
-      WHERE r.item_id = i.id
-        AND r.is_active = 1
-        AND c.catalog_key IN ('togo', 'community')
-      ORDER BY s.display_order ASC, s.id ASC, r.display_order ASC, r.id ASC
-      LIMIT 1
-    ),
-    'other'
-  ),
-  i.tray_price_half = COALESCE(
-    NULLIF(TRIM(i.tray_price_half), ''),
-    (
-      SELECT NULLIF(TRIM(r.value_1), '')
-      FROM menu_section_rows r
-      JOIN menu_sections s ON s.id = r.section_id AND s.is_active = 1
-      JOIN menu_catalogs c ON c.id = s.catalog_id AND c.is_active = 1
-      WHERE r.item_id = i.id
-        AND r.is_active = 1
-        AND c.catalog_key = 'togo'
-      ORDER BY s.display_order ASC, s.id ASC, r.display_order ASC, r.id ASC
-      LIMIT 1
-    )
-  ),
-  i.tray_price_full = COALESCE(
-    NULLIF(TRIM(i.tray_price_full), ''),
-    (
-      SELECT NULLIF(TRIM(r.value_2), '')
-      FROM menu_section_rows r
-      JOIN menu_sections s ON s.id = r.section_id AND s.is_active = 1
-      JOIN menu_catalogs c ON c.id = s.catalog_id AND c.is_active = 1
-      WHERE r.item_id = i.id
-        AND r.is_active = 1
-        AND c.catalog_key = 'togo'
-      ORDER BY s.display_order ASC, s.id ASC, r.display_order ASC, r.id ASC
-      LIMIT 1
-    )
-  ),
-  i.updated_at = CURRENT_TIMESTAMP
-WHERE i.is_active = 1
-  AND (
-    i.item_type IS NULL OR TRIM(i.item_type) = ''
-    OR i.item_category IS NULL OR TRIM(i.item_category) = ''
-    OR i.tray_price_half IS NULL OR TRIM(i.tray_price_half) = ''
-    OR i.tray_price_full IS NULL OR TRIM(i.tray_price_full) = ''
-  );
+-- Remove duplicate slide rows, keeping the earliest id per image_url.
+DELETE s_dup
+FROM slides s_dup
+JOIN slides s_keep
+  ON s_dup.image_url = s_keep.image_url
+ AND s_dup.id > s_keep.id;
 
 ALTER TABLE slides
-  ADD COLUMN media_type ENUM('image', 'video') NOT NULL DEFAULT 'image' AFTER image_url;
-ALTER TABLE slides
-  ADD COLUMN is_slide TINYINT(1) NOT NULL DEFAULT 0 AFTER display_order;
-
-UPDATE slides
-SET media_type = 'image'
-WHERE media_type IS NULL OR media_type = '';
-
-UPDATE slides
-SET is_slide = 1
-WHERE is_active = 1
-  AND is_slide = 0
-  AND NOT EXISTS (
-    SELECT 1
-    FROM (
-      SELECT id
-      FROM slides
-      WHERE is_slide = 1
-      LIMIT 1
-    ) seeded_slides
-  );
+  ADD UNIQUE KEY uq_slides_image_url (image_url(191));
 
 UPDATE slides
 SET title = 'placeholder title'
@@ -516,69 +210,66 @@ WHERE alt_text IS NULL
    OR TRIM(alt_text) = ''
    OR LOWER(TRIM(alt_text)) REGEXP '(^|/)[^/]+\\.(jpg|jpeg|png|webp|gif|avif|mp4|webm|mov|m4v|ogv)$';
 
-INSERT INTO menu_section_tier_constraints (
-  tier_id,
-  constraint_key,
-  min_select,
-  max_select,
-  constraint_value,
-  is_active
-)
+INSERT INTO slides (title, caption, image_url, media_type, alt_text, display_order, is_slide, is_active)
 SELECT
-  legacy.tier_id,
-  legacy.constraint_key,
-  legacy.min_select,
-  legacy.max_select,
-  NULL,
-  1
+  src.title,
+  src.caption,
+  src.image_url,
+  src.media_type,
+  src.alt_text,
+  src.display_order,
+  src.is_slide,
+  src.is_active
 FROM (
   SELECT
-    c.tier_id,
-    CASE
-      WHEN c.constraint_key LIKE '%\\_min' ESCAPE '\\' THEN LEFT(c.constraint_key, LENGTH(c.constraint_key) - 4)
-      WHEN c.constraint_key LIKE '%\\_max' ESCAPE '\\' THEN LEFT(c.constraint_key, LENGTH(c.constraint_key) - 4)
-      ELSE c.constraint_key
-    END AS constraint_key,
-    MAX(
-      CASE
-        WHEN c.constraint_key LIKE '%\\_min' ESCAPE '\\' THEN c.constraint_value
-        WHEN c.constraint_key LIKE '%\\_max' ESCAPE '\\' THEN 0
-        ELSE COALESCE(NULLIF(c.min_select, 0), c.constraint_value, 0)
-      END
-    ) AS min_select,
-    MAX(
-      CASE
-        WHEN c.constraint_key LIKE '%\\_max' ESCAPE '\\' THEN c.constraint_value
-        WHEN c.constraint_key LIKE '%\\_min' ESCAPE '\\' THEN 0
-        ELSE COALESCE(NULLIF(c.max_select, 0), c.constraint_value, 0)
-      END
-    ) AS max_select
-  FROM menu_section_tier_constraints c
-  WHERE c.is_active = 1
-  GROUP BY
-    c.tier_id,
-    CASE
-      WHEN c.constraint_key LIKE '%\\_min' ESCAPE '\\' THEN LEFT(c.constraint_key, LENGTH(c.constraint_key) - 4)
-      WHEN c.constraint_key LIKE '%\\_max' ESCAPE '\\' THEN LEFT(c.constraint_key, LENGTH(c.constraint_key) - 4)
-      ELSE c.constraint_key
-    END
-) AS legacy
-ON DUPLICATE KEY UPDATE
-  min_select = VALUES(min_select),
-  max_select = VALUES(max_select),
-  constraint_value = NULL,
-  is_active = VALUES(is_active),
-  updated_at = CURRENT_TIMESTAMP;
-
-UPDATE menu_section_tier_constraints
-SET is_active = 0
-WHERE constraint_key LIKE '%\\_min' ESCAPE '\\'
-   OR constraint_key LIKE '%\\_max' ESCAPE '\\';
-
-INSERT INTO slides (title, caption, image_url, media_type, alt_text, display_order, is_slide, is_active)
-VALUES
-  ('First slide label', 'Nulla vitae elit libero, a pharetra augue mollis interdum.', '/api/assets/slides/20231114_152614.jpg', 'image', 'First slide', 1, 1, 1),
-  ('Second slide label', 'Lorem ipsum dolor sit amet, consectetur adipiscing elit.', '/api/assets/slides/123_1 (1).jpg', 'image', 'Second slide', 2, 1, 1),
-  ('Third slide label', 'Praesent commodo cursus magna, vel scelerisque nisl consectetur.', '/api/assets/slides/20241128_171936.jpg', 'image', 'Third slide', 3, 1, 1),
-  ('Fourth slide label', 'Suscipit architecto veritatis quae sit distinctio corporis beatae?.', '/api/assets/slides/20250106_173518.jpg', 'image', 'Fourth slide', 4, 1, 1),
-  ('Fifth slide label', 'Eos, nisi sit, possimus maiores autem minima error eligendi repudiandae praesentium veritatis nam tempore modi vero maxime dolores perferendis aperiam? Necessitatibus, quas.', '/api/assets/slides/20250313_145844.jpg', 'image', 'Fifth slide', 5, 1, 1);
+    'First slide label' AS title,
+    'Nulla vitae elit libero, a pharetra augue mollis interdum.' AS caption,
+    '/api/assets/slides/20231114_152614.jpg' AS image_url,
+    'image' AS media_type,
+    'First slide' AS alt_text,
+    1 AS display_order,
+    1 AS is_slide,
+    1 AS is_active
+  UNION ALL
+  SELECT
+    'Second slide label',
+    'Lorem ipsum dolor sit amet, consectetur adipiscing elit.',
+    '/api/assets/slides/123_1 (1).jpg',
+    'image',
+    'Second slide',
+    2,
+    1,
+    1
+  UNION ALL
+  SELECT
+    'Third slide label',
+    'Praesent commodo cursus magna, vel scelerisque nisl consectetur.',
+    '/api/assets/slides/20241128_171936.jpg',
+    'image',
+    'Third slide',
+    3,
+    1,
+    1
+  UNION ALL
+  SELECT
+    'Fourth slide label',
+    'Suscipit architecto veritatis quae sit distinctio corporis beatae?.',
+    '/api/assets/slides/20250106_173518.jpg',
+    'image',
+    'Fourth slide',
+    4,
+    1,
+    1
+  UNION ALL
+  SELECT
+    'Fifth slide label',
+    'Eos, nisi sit, possimus maiores autem minima error eligendi repudiandae praesentium veritatis nam tempore modi vero maxime dolores perferendis aperiam? Necessitatibus, quas.',
+    '/api/assets/slides/20250313_145844.jpg',
+    'image',
+    'Fifth slide',
+    5,
+    1,
+    1
+) src
+LEFT JOIN slides existing ON existing.image_url = src.image_url
+WHERE existing.id IS NULL;

@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Context from "./context";
-import { Wrapper, Landing, NotFound, ServiceMenu, ShowcaseGallery } from "./imports";
+import { AdminDashboard, AdminLogin, Wrapper, Landing, NotFound, ServiceMenu, ShowcaseGallery } from "./imports";
 import "./App.css";
 
 function App() {
@@ -24,6 +24,12 @@ function App() {
     }));
   };
 
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.setAttribute("data-bs-theme", "light");
+    document.documentElement.style.colorScheme = "light";
+  }, []);
+
   return (
     <div className="app">
       <Context.Provider
@@ -35,6 +41,8 @@ function App() {
         }}>
         <BrowserRouter>
           <Routes>
+            <Route path="/admin/login" element={<AdminLogin />} />
+            <Route path="/admin/*" element={<AdminDashboard />} />
             <Route path="/" element={<Wrapper />}>
               <Route index element={<Landing />} />
               <Route path="services/:menuKey" element={<ServiceMenu />} />
