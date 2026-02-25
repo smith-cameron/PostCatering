@@ -99,6 +99,99 @@ describe("AdminDashboard", () => {
     expect(requests.some((requestUrl) => requestUrl.startsWith("/api/admin/menu/sections?"))).toBe(false);
   });
 
+  it("highlights selected rows in menu and media tables while editing", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(
+          buildResponse({
+            items: [
+              {
+                id: 5,
+                item_name: "Jerk Chicken",
+                item_key: "jerk_chicken",
+                menu_type: "regular",
+                is_active: true,
+                group_title: "Proteins",
+              },
+            ],
+          })
+        );
+      }
+      if (url === "/api/admin/menu/items/5" && (!options?.method || options.method === "GET")) {
+        return Promise.resolve(
+          buildResponse({
+            item: {
+              id: 5,
+              menu_type: "regular",
+              menu_types: ["regular"],
+              item_name: "Jerk Chicken",
+              item_key: "jerk_chicken",
+              tray_price_half: "75",
+              tray_price_full: "140",
+              is_active: true,
+              option_group_assignments: [{ menu_type: "regular", group_id: 10, display_order: 1, is_active: true }],
+              section_row_assignments: [],
+              tier_bullet_assignments: [],
+            },
+          })
+        );
+      }
+      if (String(url).startsWith("/api/admin/media?")) {
+        return Promise.resolve(
+          buildResponse({
+            media: [
+              {
+                id: 44,
+                title: "Hero One",
+                caption: "Original caption",
+                src: "/api/assets/slides/hero-one.jpg",
+                media_type: "image",
+                is_active: true,
+                is_slide: true,
+                display_order: 1,
+              },
+            ],
+          })
+        );
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Jerk Chicken");
+    fireEvent.click(screen.getByText("Jerk Chicken"));
+    await screen.findByText("Edit Menu Item");
+    expect(screen.getByText("Jerk Chicken").closest("tr")).toHaveClass("admin-table-row-selected");
+
+    fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
+    await screen.findByText("Hero One");
+    fireEvent.click(screen.getByText("Hero One"));
+    await screen.findByText("Edit Media");
+    expect(screen.getByText("Hero One").closest("tr")).toHaveClass("admin-table-row-selected");
+  });
+
   it("creates regular items from one form with group + tray prices and auto-assignments", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
       if (url === "/api/admin/auth/me") {
@@ -293,6 +386,75 @@ describe("AdminDashboard", () => {
     expect(editCard).not.toHaveClass("admin-edit-card-created");
   });
 
+  it("submits confirmation modal with Enter key", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      if (url === "/api/admin/menu/items" && options?.method === "POST") {
+        return Promise.resolve(
+          buildResponse({
+            item: {
+              id: 91,
+              menu_type: "regular",
+              menu_types: [],
+              item_name: "Enter Submit Item",
+              item_key: "enter_submit_item",
+              tray_price_half: null,
+              tray_price_full: null,
+              is_active: false,
+              option_group_assignments: [],
+              section_row_assignments: [],
+              tier_bullet_assignments: [],
+            },
+          })
+        );
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Create Menu Item");
+    fireEvent.change(screen.getByLabelText("Item Name"), { target: { value: "Enter Submit Item" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Item" }));
+
+    const confirmDialog = await screen.findByRole("dialog");
+    fireEvent.keyDown(within(confirmDialog).getByRole("button", { name: "Create" }), {
+      key: "Enter",
+      code: "Enter",
+      charCode: 13,
+    });
+
+    await waitFor(() => {
+      const createCall = globalThis.fetch.mock.calls.find(
+        (call) => call[0] === "/api/admin/menu/items" && call[1]?.method === "POST"
+      );
+      expect(createCall).toBeTruthy();
+    });
+  });
+
   it("shows create validation text in modal and keeps invalid field red until changed", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
       if (url === "/api/admin/auth/me") {
@@ -348,9 +510,11 @@ describe("AdminDashboard", () => {
       expect(within(confirmDialog).getByRole("alert")).toHaveTextContent("Please select a group");
       expect(groupSelect).toHaveClass("is-invalid");
       expect(within(confirmDialog).getByRole("button", { name: "Create" })).toBeDisabled();
+      expect(within(confirmDialog).getByRole("button", { name: "Fix" })).toHaveClass("btn-inquiry-action");
+      expect(within(confirmDialog).getByRole("button", { name: "Create" })).not.toHaveClass("btn-inquiry-action");
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Fix" }));
+    fireEvent.keyDown(document, { key: "Enter", code: "Enter", charCode: 13 });
     await waitFor(() => {
       expect(screen.queryByText("Create this menu item?")).not.toBeInTheDocument();
     });
@@ -365,6 +529,64 @@ describe("AdminDashboard", () => {
       (call) => call[0] === "/api/admin/menu/items" && call[1]?.method === "POST"
     );
     expect(postCall).toBeFalsy();
+  });
+
+  it("marks all invalid menu create fields when multiple validations fail", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(
+          buildResponse({
+            groups: [{ id: 10, key: "signature_proteins", name: "Proteins", sort_order: 1, is_active: true }],
+          })
+        );
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(
+          buildResponse({
+            groups: [{ id: 11, key: "entrees", name: "Formal Entrees", sort_order: 1, is_active: true }],
+          })
+        );
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Create Menu Item");
+    fireEvent.change(screen.getByLabelText("Menu Type"), { target: { value: "regular" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Item" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      const confirmDialog = screen.getByRole("dialog");
+      expect(within(confirmDialog).getByRole("alert")).toHaveTextContent("Item name is required.");
+      expect(within(confirmDialog).getByRole("alert")).toHaveTextContent("Please select a group");
+      expect(within(confirmDialog).getByRole("alert")).toHaveTextContent("Half tray price is required");
+      expect(within(confirmDialog).getByRole("alert")).toHaveTextContent("Full tray price is required");
+      expect(screen.getByLabelText("Item Name")).toHaveClass("is-invalid");
+      expect(screen.getByLabelText("Group")).toHaveClass("is-invalid");
+      expect(screen.getByLabelText("Half Tray Price")).toHaveClass("is-invalid");
+      expect(screen.getByLabelText("Full Tray Price")).toHaveClass("is-invalid");
+    });
   });
 
   it("clears create form values and resets create validation state", async () => {
@@ -504,6 +726,398 @@ describe("AdminDashboard", () => {
     expect(activeSwitch).toBeChecked();
     expect(slideSwitch).not.toBeChecked();
     expect(within(uploadCard).queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
+  });
+
+  it("opens uploaded media in highlighted edit card below table on desktop", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (String(url).startsWith("/api/admin/media?")) {
+        return Promise.resolve(buildResponse({ media: [] }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      if (url === "/api/admin/media/upload" && options?.method === "POST") {
+        return Promise.resolve(
+          buildResponse({
+            media: {
+              id: 81,
+              title: "New Hero",
+              caption: "Fresh caption",
+              src: "/api/assets/slides/new-hero.jpg",
+              media_type: "image",
+              is_active: true,
+              is_slide: true,
+              display_order: 1,
+            },
+          })
+        );
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Menu Operations");
+    fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
+    await screen.findByText("Upload Media");
+
+    const uploadCard = screen.getByText("Upload Media").closest(".card");
+    expect(uploadCard).toBeTruthy();
+    const fileInput = uploadCard.querySelector('input[type="file"]');
+    expect(fileInput).toBeTruthy();
+
+    const mediaFile = new File(["binary"], "new-hero.jpg", { type: "image/jpeg" });
+    fireEvent.change(fileInput, { target: { files: [mediaFile] } });
+    fireEvent.change(within(uploadCard).getByPlaceholderText("Title"), { target: { value: "New Hero" } });
+    fireEvent.change(within(uploadCard).getByPlaceholderText("Caption"), { target: { value: "Fresh caption" } });
+
+    fireEvent.click(within(uploadCard).getByRole("button", { name: "Upload" }));
+    const confirmDialog = await screen.findByRole("dialog");
+    fireEvent.click(within(confirmDialog).getByRole("button", { name: "Upload" }));
+
+    const editCard = await screen.findByTestId("edit-media-card");
+    expect(editCard).toHaveClass("admin-edit-card-created");
+
+    const mediaTable = screen.getByRole("table");
+    expect(mediaTable.compareDocumentPosition(editCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("validates whitespace-only title and caption on media upload", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (String(url).startsWith("/api/admin/media?")) {
+        return Promise.resolve(buildResponse({ media: [] }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Menu Operations");
+    fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
+    await screen.findByText("Upload Media");
+
+    const uploadCard = screen.getByText("Upload Media").closest(".card");
+    expect(uploadCard).toBeTruthy();
+    const fileInput = uploadCard.querySelector('input[type="file"]');
+    expect(fileInput).toBeTruthy();
+
+    const validFile = new File(["binary"], "hero.jpg", { type: "image/jpeg" });
+    fireEvent.change(fileInput, { target: { files: [validFile] } });
+    fireEvent.change(within(uploadCard).getByPlaceholderText("Title"), { target: { value: "   " } });
+    fireEvent.change(within(uploadCard).getByPlaceholderText("Caption"), { target: { value: "   " } });
+
+    fireEvent.click(within(uploadCard).getByRole("button", { name: "Upload" }));
+    const confirmDialog = await screen.findByRole("dialog");
+    fireEvent.click(within(confirmDialog).getByRole("button", { name: "Upload" }));
+
+    await waitFor(() => {
+      expect(within(screen.getByRole("dialog")).getByRole("alert")).toHaveTextContent("Title is required.");
+      expect(within(screen.getByRole("dialog")).getByRole("alert")).toHaveTextContent("Caption is required.");
+      expect(within(uploadCard).getByPlaceholderText("Title")).toHaveClass("is-invalid");
+      expect(within(uploadCard).getByPlaceholderText("Caption")).toHaveClass("is-invalid");
+      expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Upload" })).toBeDisabled();
+    });
+
+    const uploadCall = globalThis.fetch.mock.calls.find(
+      (call) => call[0] === "/api/admin/media/upload" && call[1]?.method === "POST"
+    );
+    expect(uploadCall).toBeFalsy();
+  });
+
+  it("uses modal-only validation for media upload and keeps file invalid until changed", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (String(url).startsWith("/api/admin/media?")) {
+        return Promise.resolve(buildResponse({ media: [] }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Menu Operations");
+    fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
+    await screen.findByText("Upload Media");
+
+    const uploadCard = screen.getByText("Upload Media").closest(".card");
+    expect(uploadCard).toBeTruthy();
+    const fileInput = uploadCard.querySelector('input[type="file"]');
+    expect(fileInput).toBeTruthy();
+
+    fireEvent.click(within(uploadCard).getByRole("button", { name: "Upload" }));
+    const confirmDialog = await screen.findByRole("dialog");
+    fireEvent.click(within(confirmDialog).getByRole("button", { name: "Upload" }));
+
+    await waitFor(() => {
+      expect(within(screen.getByRole("dialog")).getByRole("alert")).toHaveTextContent("Choose a file before uploading.");
+      expect(fileInput).toHaveClass("is-invalid");
+      expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Upload" })).toBeDisabled();
+      expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Fix" })).toHaveClass("btn-inquiry-action");
+      expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Upload" })).not.toHaveClass(
+        "btn-inquiry-action"
+      );
+      expect(within(uploadCard).queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    fireEvent.keyDown(document, { key: "Enter", code: "Enter", charCode: 13 });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(within(uploadCard).getByRole("button", { name: "Upload" })).toBeDisabled();
+
+    const validFile = new File(["binary"], "hero.jpg", { type: "image/jpeg" });
+    fireEvent.change(fileInput, { target: { files: [validFile] } });
+
+    expect(fileInput).not.toHaveClass("is-invalid");
+    expect(within(uploadCard).getByRole("button", { name: "Upload" })).not.toBeDisabled();
+  });
+
+  it("shows changed media fields in the update confirmation modal", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (String(url).startsWith("/api/admin/media?")) {
+        return Promise.resolve(
+          buildResponse({
+            media: [
+              {
+                id: 44,
+                title: "Hero One",
+                caption: "Original caption",
+                src: "/api/assets/slides/hero-one.jpg",
+                media_type: "image",
+                is_active: true,
+                is_slide: true,
+                display_order: 1,
+              },
+            ],
+          })
+        );
+      }
+      if (url === "/api/admin/media/44" && options?.method === "PATCH") {
+        return Promise.resolve(
+          buildResponse({
+            media: {
+              id: 44,
+              title: "Hero Updated",
+              caption: "Original caption",
+              src: "/api/assets/slides/hero-one.jpg",
+              media_type: "image",
+              is_active: false,
+              is_slide: true,
+              display_order: 1,
+            },
+          })
+        );
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Menu Operations");
+    fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
+    await screen.findByText("Hero One");
+    fireEvent.click(screen.getByText("Hero One"));
+    await screen.findByText("Edit Media");
+
+    const editMediaCard = screen.getByText("Edit Media").closest(".card");
+    expect(editMediaCard).toBeTruthy();
+
+    fireEvent.change(within(editMediaCard).getByLabelText("Title"), { target: { value: "Hero Updated" } });
+    const editMediaSwitches = within(editMediaCard).getAllByRole("checkbox");
+    expect(editMediaSwitches).toHaveLength(2);
+    fireEvent.click(editMediaSwitches[1]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save Media" }));
+    const confirmDialog = await screen.findByRole("dialog");
+    expect(within(confirmDialog).getByText("Update Hero Updated?")).toBeInTheDocument();
+    expect(within(confirmDialog).queryByText("Apply media metadata changes?")).not.toBeInTheDocument();
+    expect(within(confirmDialog).getByText(/Title:/i)).toBeInTheDocument();
+    expect(within(confirmDialog).getByText("Hero Updated")).toBeInTheDocument();
+    expect(within(confirmDialog).getByText(/Active:/i)).toBeInTheDocument();
+    expect(within(confirmDialog).getByText("No")).toBeInTheDocument();
+    expect(within(confirmDialog).queryByText(/Caption:/i)).not.toBeInTheDocument();
+
+    fireEvent.click(within(confirmDialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      const patchCall = globalThis.fetch.mock.calls.find(
+        (call) => call[0] === "/api/admin/media/44" && call[1]?.method === "PATCH"
+      );
+      expect(patchCall).toBeTruthy();
+      const payload = JSON.parse(patchCall[1].body);
+      expect(payload.title).toBe("Hero Updated");
+      expect(payload.is_active).toBe(false);
+      expect(payload.caption).toBe("Original caption");
+      expect(payload.is_slide).toBe(true);
+    });
+  });
+
+  it("deletes media item from the edit form after confirmation", async () => {
+    let mediaDeleted = false;
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (String(url).startsWith("/api/admin/media?")) {
+        return Promise.resolve(
+          buildResponse({
+            media: mediaDeleted
+              ? []
+              : [
+                  {
+                    id: 44,
+                    title: "Hero One",
+                    caption: "Original caption",
+                    src: "/api/assets/slides/hero-one.jpg",
+                    media_type: "image",
+                    is_active: true,
+                    is_slide: true,
+                    display_order: 1,
+                  },
+                ],
+          })
+        );
+      }
+      if (url === "/api/admin/media/44" && options?.method === "DELETE") {
+        mediaDeleted = true;
+        return Promise.resolve(buildResponse({ ok: true, deleted_media_id: 44, title: "Hero One" }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Menu Operations");
+    fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
+    await screen.findByText("Hero One");
+    fireEvent.click(screen.getByText("Hero One"));
+    await screen.findByText("Edit Media");
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Media" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      const deleteCall = globalThis.fetch.mock.calls.find(
+        (call) => call[0] === "/api/admin/media/44" && call[1]?.method === "DELETE"
+      );
+      expect(deleteCall).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Edit Media")).not.toBeInTheDocument();
+    });
   });
 
   it("reorders homepage slides from the media table via drag and drop", async () => {

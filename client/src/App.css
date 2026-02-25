@@ -348,6 +348,17 @@ button:hover {
   border-width: 1.5px;
 }
 
+.admin-dashboard .form-control.is-invalid,
+.admin-dashboard .form-select.is-invalid {
+  border-color: #dc3545;
+}
+
+.admin-dashboard .form-control.is-invalid:focus,
+.admin-dashboard .form-select.is-invalid:focus {
+  border-color: #dc3545;
+  box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
+}
+
 .admin-dashboard .form-control[type="file"]::file-selector-button {
   color: var(--admin-text);
   background-color: #e8edf5;
@@ -394,6 +405,10 @@ button:hover {
 
 .admin-dashboard .table.table-sm > :not(caption) > * > * {
   padding: 0.45rem 0.6rem;
+}
+
+.admin-menu-items-table tbody > tr > td {
+  vertical-align: middle;
 }
 
 .admin-group-count-col,
@@ -530,6 +545,14 @@ button:hover {
 
 .admin-media-row-drop-target > td {
   box-shadow: inset 0 -2px 0 0 #2f9d56;
+}
+
+.admin-sticky-table tbody tr.admin-table-row-selected > td {
+  background-color: rgba(47, 157, 86, 0.12);
+}
+
+.admin-sticky-table tbody tr.admin-table-row-selected > td:first-child {
+  box-shadow: inset 3px 0 0 #2f9d56;
 }
 
 .admin-price-label {
@@ -675,6 +698,18 @@ button:hover {
   border-color: var(--admin-border);
 }
 
+.admin-dashboard.admin-dashboard-dark .form-control.is-invalid,
+.admin-dashboard.admin-dashboard-dark .form-select.is-invalid {
+  border-color: #e18992;
+  background-color: #2a1f2a;
+}
+
+.admin-dashboard.admin-dashboard-dark .form-control.is-invalid:focus,
+.admin-dashboard.admin-dashboard-dark .form-select.is-invalid:focus {
+  border-color: #e18992;
+  box-shadow: 0 0 0 0.2rem rgba(225, 137, 146, 0.28);
+}
+
 .admin-dashboard.admin-dashboard-dark .form-control::placeholder {
   color: #95a4bc;
   opacity: 0.9;
@@ -748,6 +783,14 @@ button:hover {
 
 .admin-dashboard.admin-dashboard-dark .admin-media-row-drop-target > td {
   box-shadow: inset 0 -2px 0 0 #7ecf9c;
+}
+
+.admin-dashboard.admin-dashboard-dark .admin-sticky-table tbody tr.admin-table-row-selected > td {
+  background-color: rgba(126, 207, 156, 0.2);
+}
+
+.admin-dashboard.admin-dashboard-dark .admin-sticky-table tbody tr.admin-table-row-selected > td:first-child {
+  box-shadow: inset 3px 0 0 #7ecf9c;
 }
 
 .admin-dashboard.admin-dashboard-dark .admin-media-kind-slide {

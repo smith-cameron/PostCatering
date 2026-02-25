@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { Accordion, Alert, Badge, Button, Card, Col, Form, InputGroup, Nav, Row, Spinner, Table } from "react-bootstrap";
 import { Navigate, useNavigate } from "react-router-dom";
 import ConfirmActionModal from "./ConfirmActionModal";
+import ConfirmReviewList from "./ConfirmReviewList";
 import { requestJson, requestWithFormData } from "./adminApi";
 
 const TAB_MENU = "menu";
@@ -26,6 +27,11 @@ const EMPTY_CREATE_FIELD_ERRORS = {
   group_id: "",
   tray_price_half: "",
   tray_price_full: "",
+};
+const EMPTY_UPLOAD_FIELD_ERRORS = {
+  file: "",
+  title: "",
+  caption: "",
 };
 const INITIAL_NEW_ITEM_FORM = {
   item_name: "",
@@ -66,6 +72,23 @@ const mapCreateValidationErrors = (message) => {
   return mapped;
 };
 
+const mapUploadValidationErrors = (message) => {
+  const normalized = String(message || "").toLowerCase();
+  const mapped = {};
+  if (!normalized) return mapped;
+
+  if (normalized.includes("file") || normalized.includes("unsupported file type") || normalized.includes("media file")) {
+    mapped.file = String(message || "Invalid media file.");
+  }
+  if (normalized.includes("title")) {
+    mapped.title = String(message || "Invalid title.");
+  }
+  if (normalized.includes("caption")) {
+    mapped.caption = String(message || "Invalid caption.");
+  }
+  return mapped;
+};
+
 const formatCurrencyInputFromDigits = (value) => {
   const digits = String(value ?? "").replace(/\D/g, "");
   if (!digits) return "";
@@ -88,6 +111,8 @@ const formatCurrencyDisplay = (value) => {
   const normalized = formatCurrencyToCents(value);
   return normalized ? `$${normalized}` : "-";
 };
+
+const formatBooleanLabel = (value) => (value ? "Yes" : "No");
 
 const formatMediaSourceFilename = (value) => {
   const raw = String(value || "").trim();
@@ -505,7 +530,13 @@ const AdminDashboard = () => {
   const [mediaItems, setMediaItems] = useState([]);
   const [selectedMediaId, setSelectedMediaId] = useState(null);
   const [mediaForm, setMediaForm] = useState(null);
+  const [mediaFormOriginal, setMediaFormOriginal] = useState(null);
+  const [mediaEditCardPlacement, setMediaEditCardPlacement] = useState("below_table");
+  const [shouldScrollToMediaEditCard, setShouldScrollToMediaEditCard] = useState(false);
+  const [showCreatedMediaHighlight, setShowCreatedMediaHighlight] = useState(false);
   const [uploadForm, setUploadForm] = useState(INITIAL_UPLOAD_FORM);
+  const [uploadFieldErrors, setUploadFieldErrors] = useState(EMPTY_UPLOAD_FIELD_ERRORS);
+  const [uploadValidationLocked, setUploadValidationLocked] = useState(false);
   const [hasLoadedMediaTab, setHasLoadedMediaTab] = useState(false);
   const [hasLoadedAuditTab, setHasLoadedAuditTab] = useState(false);
   const [statusToggleBusy, setStatusToggleBusy] = useState({});
@@ -534,6 +565,7 @@ const AdminDashboard = () => {
     typeof window !== "undefined" ? window.innerWidth <= MOBILE_LAYOUT_MAX_WIDTH : false
   );
   const editCardRef = useRef(null);
+  const mediaEditCardRef = useRef(null);
   const uploadFileInputRef = useRef(null);
 
   const activeGroupOptions = useMemo(
@@ -781,6 +813,15 @@ const AdminDashboard = () => {
     setShouldScrollToEditCard(false);
   }, [shouldScrollToEditCard, selectedItemId, itemForm, editCardPlacement, isMobileLayout]);
 
+  useEffect(() => {
+    if (!shouldScrollToMediaEditCard || !selectedMediaId || !mediaForm) return;
+    if (!mediaEditCardRef.current) return;
+    if (typeof mediaEditCardRef.current.scrollIntoView === "function") {
+      mediaEditCardRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    setShouldScrollToMediaEditCard(false);
+  }, [shouldScrollToMediaEditCard, selectedMediaId, mediaForm, mediaEditCardPlacement, isMobileLayout]);
+
   const queueConfirm = (title, body, confirmLabel, action, errorTarget = null, confirmVariant = "secondary") => {
     if (errorTarget) {
       setFormErrors((prev) => ({ ...prev, [errorTarget]: "" }));
@@ -797,6 +838,8 @@ const AdminDashboard = () => {
 
   const resetUploadMediaForm = useCallback(() => {
     setUploadForm(INITIAL_UPLOAD_FORM);
+    setUploadFieldErrors(EMPTY_UPLOAD_FIELD_ERRORS);
+    setUploadValidationLocked(false);
     setFormErrors((prev) => ({ ...prev, [FORM_ERROR_UPLOAD_MEDIA]: "" }));
     if (uploadFileInputRef.current) {
       uploadFileInputRef.current.value = "";
@@ -827,6 +870,14 @@ const AdminDashboard = () => {
           setCreateFieldErrors((prev) => ({ ...prev, ...mappedCreateFieldErrors }));
         }
         setCreateValidationLocked(true);
+      } else if (confirmState.errorTarget === FORM_ERROR_UPLOAD_MEDIA) {
+        const mappedUploadFieldErrors = mapUploadValidationErrors(message);
+        if (Object.keys(mappedUploadFieldErrors).length) {
+          setUploadFieldErrors((prev) => ({ ...prev, ...mappedUploadFieldErrors }));
+          setUploadValidationLocked(true);
+        } else if (confirmState.errorTarget) {
+          setFormErrors((prev) => ({ ...prev, [confirmState.errorTarget]: message }));
+        }
       } else if (confirmState.errorTarget) {
         setFormErrors((prev) => ({ ...prev, [confirmState.errorTarget]: message }));
       }
@@ -939,30 +990,22 @@ const AdminDashboard = () => {
     const halfPrice = formatCurrencyDisplay(newItemForm.tray_price_half);
     const fullPrice = formatCurrencyDisplay(newItemForm.tray_price_full);
     const isRegular = menuType === "regular";
+    const rows = [
+      { label: "Item Name", value: itemName || "-" },
+      {
+        label: "Active",
+        value: hasMenuType ? formatBooleanLabel(newItemForm.is_active) : "No (auto-inactive until assigned)",
+      },
+      { label: "Menu Type", value: hasMenuType ? formatMenuTypeLabel(menuType) : "None" },
+      { label: "Group", value: hasMenuType ? selectedGroup?.title || "None selected" : "None" },
+      { label: "Half Tray Price", value: isRegular ? halfPrice : "N/A" },
+      { label: "Full Tray Price", value: isRegular ? fullPrice : "N/A" },
+    ];
 
     return (
       <div>
         <p className="mb-2">Create this menu item with the following details?</p>
-        <div className="admin-confirm-review">
-          <div>
-            <strong>Item Name:</strong> {itemName || "-"}
-          </div>
-          <div>
-            <strong>Active:</strong> {hasMenuType ? (newItemForm.is_active ? "Yes" : "No") : "No (auto-inactive until assigned)"}
-          </div>
-          <div>
-            <strong>Menu Type:</strong> {hasMenuType ? formatMenuTypeLabel(menuType) : "None"}
-          </div>
-          <div>
-            <strong>Group:</strong> {hasMenuType ? selectedGroup?.title || "None selected" : "None"}
-          </div>
-          <div>
-            <strong>Half Tray Price:</strong> {isRegular ? halfPrice : "N/A"}
-          </div>
-          <div>
-            <strong>Full Tray Price:</strong> {isRegular ? fullPrice : "N/A"}
-          </div>
-        </div>
+        <ConfirmReviewList rows={rows} />
       </div>
     );
   }, [newItemForm, getGroupOptionsForType]);
@@ -990,8 +1033,8 @@ const AdminDashboard = () => {
     const originalMenuTypeSummary = originalTypes.length ? originalTypes.map((typeKey) => formatMenuTypeLabel(typeKey)).join(", ") : "None";
     const currentGroupSummary = summarizeGroups(itemForm, currentTypes);
     const originalGroupSummary = summarizeGroups(itemFormOriginal, originalTypes);
-    const currentActive = currentTypes.length ? (itemForm.is_active ? "Yes" : "No") : "No";
-    const originalActive = originalTypes.length ? (itemFormOriginal.is_active ? "Yes" : "No") : "No";
+    const currentActive = currentTypes.length ? formatBooleanLabel(itemForm.is_active) : "No";
+    const originalActive = originalTypes.length ? formatBooleanLabel(itemFormOriginal.is_active) : "No";
     const currentHalf = currentUsesRegular ? formatCurrencyDisplay(itemForm.tray_price_half) : "N/A";
     const originalHalf = originalUsesRegular ? formatCurrencyDisplay(itemFormOriginal.tray_price_half) : "N/A";
     const currentFull = currentUsesRegular ? formatCurrencyDisplay(itemForm.tray_price_full) : "N/A";
@@ -1017,25 +1060,61 @@ const AdminDashboard = () => {
       changes.push({ label: "Full Tray Price", value: currentFull });
     }
 
-    return (
-      <div className="admin-confirm-review">
-        {changes.length ? (
-          changes.map((change) => (
-            <div key={change.label}>
-              <strong>{change.label}:</strong> {change.value}
-            </div>
-          ))
-        ) : (
-          <div>No field changes detected.</div>
-        )}
-      </div>
-    );
+    return <ConfirmReviewList rows={changes} emptyMessage="No field changes detected." />;
   }, [itemForm, itemFormOriginal, getGroupOptionsForType]);
 
   const buildUpdateConfirmTitle = useCallback(() => {
     const itemName = String(itemForm?.item_name || "").trim();
     return itemName ? `Update ${itemName}?` : "Update item?";
   }, [itemForm?.item_name]);
+
+  const buildUploadMediaConfirmBody = useCallback(() => {
+    const rows = [
+      { label: "File", value: uploadForm.file?.name || "No file selected" },
+      { label: "Title", value: String(uploadForm.title || "").trim() || "-" },
+      { label: "Caption", value: String(uploadForm.caption || "").trim() || "-" },
+      { label: "Landing Slide", value: formatBooleanLabel(uploadForm.is_slide) },
+      { label: "Active", value: formatBooleanLabel(uploadForm.is_active) },
+    ];
+    return (
+      <div>
+        <p className="mb-2">Upload this media item with the following details?</p>
+        <ConfirmReviewList rows={rows} />
+      </div>
+    );
+  }, [uploadForm]);
+
+  const buildMediaUpdateConfirmBody = useCallback(() => {
+    if (!mediaForm || !mediaFormOriginal) return "Save media changes?";
+
+    const nextTitle = String(mediaForm.title || "").trim();
+    const originalTitle = String(mediaFormOriginal.title || "").trim();
+    const nextCaption = String(mediaForm.caption || "").trim();
+    const originalCaption = String(mediaFormOriginal.caption || "").trim();
+    const changes = [];
+
+    if (nextTitle !== originalTitle) {
+      changes.push({ label: "Title", value: nextTitle || "-" });
+    }
+    if (nextCaption !== originalCaption) {
+      changes.push({ label: "Caption", value: nextCaption || "-" });
+    }
+    if (Boolean(mediaForm.is_slide) !== Boolean(mediaFormOriginal.is_slide)) {
+      changes.push({ label: "Landing Slide", value: formatBooleanLabel(Boolean(mediaForm.is_slide)) });
+    }
+    if (Boolean(mediaForm.is_active) !== Boolean(mediaFormOriginal.is_active)) {
+      changes.push({ label: "Active", value: formatBooleanLabel(Boolean(mediaForm.is_active)) });
+    }
+
+    return <ConfirmReviewList rows={changes} emptyMessage="No field changes detected." />;
+  }, [mediaForm, mediaFormOriginal]);
+
+  const buildMediaUpdateConfirmTitle = useCallback(() => {
+    const title = String(mediaForm?.title || "").trim();
+    if (title) return `Update ${title}?`;
+    const sourceFilename = formatMediaSourceFilename(mediaForm?.src);
+    return sourceFilename ? `Update ${sourceFilename}?` : "Update media?";
+  }, [mediaForm]);
 
   const saveItem = async () => {
     if (!itemForm?.id) return;
@@ -1122,15 +1201,44 @@ const AdminDashboard = () => {
   };
 
   const uploadMedia = async () => {
+    const nextUploadFieldErrors = { ...EMPTY_UPLOAD_FIELD_ERRORS };
     setFormErrors((prev) => ({ ...prev, [FORM_ERROR_UPLOAD_MEDIA]: "" }));
-    if (!uploadForm.file) throw new Error("Choose a file before uploading.");
+    const normalizedTitle = String(uploadForm.title || "").trim();
+    const normalizedCaption = String(uploadForm.caption || "").trim();
+
+    if (!uploadForm.file) {
+      nextUploadFieldErrors.file = "Choose a file before uploading.";
+    }
+    if (!normalizedTitle) {
+      nextUploadFieldErrors.title = "Title is required.";
+    }
+    if (!normalizedCaption) {
+      nextUploadFieldErrors.caption = "Caption is required.";
+    }
+
+    const validationMessages = Object.values(nextUploadFieldErrors).filter(Boolean);
+    if (validationMessages.length) {
+      setUploadFieldErrors(nextUploadFieldErrors);
+      throw new Error(validationMessages.join(" "));
+    }
+
+    setUploadFieldErrors(EMPTY_UPLOAD_FIELD_ERRORS);
     const formData = new FormData();
     formData.set("file", uploadForm.file);
-    formData.set("title", uploadForm.title);
-    formData.set("caption", uploadForm.caption);
+    formData.set("title", normalizedTitle);
+    formData.set("caption", normalizedCaption);
     formData.set("is_slide", String(uploadForm.is_slide));
     formData.set("is_active", String(uploadForm.is_active));
-    await requestWithFormData("/api/admin/media/upload", formData);
+    const payload = await requestWithFormData("/api/admin/media/upload", formData);
+    if (payload?.media?.id) {
+      const nextForm = buildMediaForm(payload.media);
+      setSelectedMediaId(payload.media.id);
+      setMediaForm(nextForm);
+      setMediaFormOriginal(nextForm);
+      setMediaEditCardPlacement(isMobileLayout ? "above_list" : "below_table");
+      setShouldScrollToMediaEditCard(false);
+      setShowCreatedMediaHighlight(true);
+    }
     resetUploadMediaForm();
     await Promise.all([loadMedia(), loadAudit()]);
   };
@@ -1142,9 +1250,66 @@ const AdminDashboard = () => {
       method: "PATCH",
       body: JSON.stringify(mediaForm),
     });
-    setMediaForm(buildMediaForm(payload.media));
+    const nextForm = buildMediaForm(payload.media);
+    setMediaForm(nextForm);
+    setMediaFormOriginal(nextForm);
     await Promise.all([loadMedia(), loadAudit()]);
   };
+
+  const deleteMedia = async () => {
+    if (!mediaForm?.id) return;
+    setFormErrors((prev) => ({ ...prev, [FORM_ERROR_EDIT_MEDIA]: "" }));
+    await requestJson(`/api/admin/media/${mediaForm.id}`, {
+      method: "DELETE",
+    });
+    setSelectedMediaId(null);
+    setMediaForm(null);
+    setMediaFormOriginal(null);
+    setMediaEditCardPlacement("below_table");
+    setShouldScrollToMediaEditCard(false);
+    setShowCreatedMediaHighlight(false);
+    await Promise.all([loadMedia(), loadAudit()]);
+  };
+
+  const handleMenuCreateSubmit = useCallback(
+    (event) => {
+      event.preventDefault();
+      if (createValidationLocked) return;
+      queueConfirm("Create menu item", buildCreateConfirmBody(), "Create", createItem, FORM_ERROR_CREATE_ITEM);
+    },
+    [createValidationLocked, buildCreateConfirmBody, createItem]
+  );
+
+  const handleMenuEditSubmit = useCallback(
+    (event) => {
+      event.preventDefault();
+      queueConfirm(buildUpdateConfirmTitle(), buildUpdateConfirmBody(), "Update", saveItem, FORM_ERROR_EDIT_ITEM);
+    },
+    [buildUpdateConfirmTitle, buildUpdateConfirmBody, saveItem]
+  );
+
+  const handleMediaUploadSubmit = useCallback(
+    (event) => {
+      event.preventDefault();
+      if (uploadValidationLocked) return;
+      queueConfirm("Upload media", buildUploadMediaConfirmBody(), "Upload", uploadMedia, FORM_ERROR_UPLOAD_MEDIA);
+    },
+    [uploadValidationLocked, buildUploadMediaConfirmBody, uploadMedia]
+  );
+
+  const handleMediaEditSubmit = useCallback(
+    (event) => {
+      event.preventDefault();
+      queueConfirm(
+        buildMediaUpdateConfirmTitle(),
+        buildMediaUpdateConfirmBody(),
+        "Save",
+        saveMedia,
+        FORM_ERROR_EDIT_MEDIA
+      );
+    },
+    [buildMediaUpdateConfirmTitle, buildMediaUpdateConfirmBody, saveMedia]
+  );
 
   const toggleMenuItemStatusFromTable = async (item) => {
     const itemId = toId(item?.id);
@@ -1194,7 +1359,9 @@ const AdminDashboard = () => {
         body: JSON.stringify({ is_active: !Boolean(item?.is_active) }),
       });
       if (Number(selectedMediaId) === Number(mediaId) && payload?.media) {
-        setMediaForm(buildMediaForm(payload.media));
+        const nextForm = buildMediaForm(payload.media);
+        setMediaForm(nextForm);
+        setMediaFormOriginal(nextForm);
       }
       await Promise.all([loadMedia(), loadAudit()]);
     } catch (error) {
@@ -1240,6 +1407,7 @@ const AdminDashboard = () => {
         const selectedIndex = reorderedIds.findIndex((value) => Number(value) === Number(selectedMediaId));
         if (selectedIndex >= 0) {
           setMediaForm((prev) => (prev ? { ...prev, display_order: selectedIndex + 1 } : prev));
+          setMediaFormOriginal((prev) => (prev ? { ...prev, display_order: selectedIndex + 1 } : prev));
         }
       }
       await Promise.all([loadMedia(), loadAudit()]);
@@ -1262,16 +1430,21 @@ const AdminDashboard = () => {
     selectedItemId && itemForm && isMobileLayout && editCardPlacement === "above_list"
   );
   const shouldRenderEditCardBelowTable = Boolean(selectedItemId && itemForm && !shouldRenderEditCardAboveList);
+  const shouldRenderMediaEditCardAboveList = Boolean(
+    selectedMediaId && mediaForm && isMobileLayout && mediaEditCardPlacement === "above_list"
+  );
+  const shouldRenderMediaEditCardBelowTable = Boolean(selectedMediaId && mediaForm && !shouldRenderMediaEditCardAboveList);
   const editMenuItemCard = selectedItemId && itemForm ? (
-    <div ref={editCardRef}>
-      <Card
-        data-testid="edit-menu-item-card"
-        className={`mb-3 ${showCreatedItemHighlight ? "admin-edit-card-created" : ""}`}>
-        <Card.Body>
-          <div className="d-flex justify-content-between align-items-center mb-2">
-            <h3 className="h6 mb-0">Edit Menu Item</h3>
-            <button
-              type="button"
+	    <div ref={editCardRef}>
+	      <Card
+	        data-testid="edit-menu-item-card"
+	        className={`mb-3 ${showCreatedItemHighlight ? "admin-edit-card-created" : ""}`}>
+	        <Card.Body>
+            <Form onSubmit={handleMenuEditSubmit}>
+	          <div className="d-flex justify-content-between align-items-center mb-2">
+	            <h3 className="h6 mb-0">Edit Menu Item</h3>
+	            <button
+	              type="button"
               className="btn-close admin-edit-card-close"
               aria-label="Close edit menu item"
               onClick={() => {
@@ -1396,9 +1569,9 @@ const AdminDashboard = () => {
                 <Form.Label className="small mb-1" htmlFor="admin-edit-half-tray-price">
                   Half Tray Price
                 </Form.Label>
-                <InputGroup>
-                  <InputGroup.Text>$</InputGroup.Text>
-                  <Form.Control
+	                <InputGroup hasValidation>
+	                  <InputGroup.Text>$</InputGroup.Text>
+	                  <Form.Control
                     id="admin-edit-half-tray-price"
                     type="text"
                     inputMode="decimal"
@@ -1423,9 +1596,9 @@ const AdminDashboard = () => {
                 <Form.Label className="small mb-1" htmlFor="admin-edit-full-tray-price">
                   Full Tray Price
                 </Form.Label>
-                <InputGroup>
-                  <InputGroup.Text>$</InputGroup.Text>
-                  <Form.Control
+	                <InputGroup hasValidation>
+	                  <InputGroup.Text>$</InputGroup.Text>
+	                  <Form.Control
                     id="admin-edit-full-tray-price"
                     type="text"
                     inputMode="decimal"
@@ -1449,31 +1622,129 @@ const AdminDashboard = () => {
             </Row>
           ) : null}
 
-          <div className="d-flex gap-2 mt-3 align-items-center">
-            <Button
-              className="btn-inquiry-action"
-              variant="secondary"
-              onClick={() =>
-                queueConfirm(buildUpdateConfirmTitle(), buildUpdateConfirmBody(), "Update", saveItem, FORM_ERROR_EDIT_ITEM)
-              }>
-              Update Item
-            </Button>
-            <Button
-              className="ms-auto"
-              variant="danger"
-              onClick={() =>
-                queueConfirm(
-                  "Delete Menu Item?",
-                  <div className="text-center py-1">{itemForm?.item_name || "Item"}</div>,
+	          <div className="d-flex gap-2 mt-3 align-items-center">
+	            <Button
+	              className="btn-inquiry-action"
+	              variant="secondary"
+                type="submit">
+	              Update Item
+	            </Button>
+	            <Button
+	              className="ms-auto"
+	              variant="danger"
+                type="button"
+	              onClick={() =>
+	                queueConfirm(
+	                  "Delete Menu Item?",
+	                  <div className="text-center py-1">{itemForm?.item_name || "Item"}</div>,
                   "Delete",
                   deleteItem,
                   FORM_ERROR_EDIT_ITEM,
                   "danger"
                 )
               }>
-              Delete Item
-            </Button>
-          </div>
+	              Delete Item
+	            </Button>
+	          </div>
+            </Form>
+	        </Card.Body>
+	      </Card>
+	    </div>
+	  ) : null;
+  const editMediaCard = selectedMediaId && mediaForm ? (
+    <div ref={mediaEditCardRef}>
+      <Card className={`mb-3 ${showCreatedMediaHighlight ? "admin-edit-card-created" : ""}`} data-testid="edit-media-card">
+        <Card.Body>
+          <Form onSubmit={handleMediaEditSubmit}>
+            <div className="d-flex justify-content-between align-items-center mb-2">
+              <div className="d-flex align-items-center gap-2 min-w-0">
+                <h3 className="h6 mb-0">Edit Media</h3>
+                {formatMediaSourceFilename(mediaForm.src) ? (
+                  <div className="small text-secondary text-truncate">{formatMediaSourceFilename(mediaForm.src)}</div>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                className="btn-close admin-edit-card-close"
+                aria-label="Close edit media"
+                onClick={() => {
+                  setSelectedMediaId(null);
+                  setMediaForm(null);
+                  setMediaFormOriginal(null);
+                  setMediaEditCardPlacement("below_table");
+                  setShouldScrollToMediaEditCard(false);
+                  setShowCreatedMediaHighlight(false);
+                  setFormErrors((prev) => ({ ...prev, [FORM_ERROR_EDIT_MEDIA]: "" }));
+                }}
+              />
+            </div>
+            {formErrors[FORM_ERROR_EDIT_MEDIA] ? <Alert variant="danger">{formErrors[FORM_ERROR_EDIT_MEDIA]}</Alert> : null}
+            <Form.Label className="small mb-1" htmlFor="admin-edit-media-title">
+              Title
+            </Form.Label>
+            <Form.Control
+              id="admin-edit-media-title"
+              className="mb-2"
+              value={mediaForm.title}
+              onChange={(event) => {
+                setShowCreatedMediaHighlight(false);
+                setMediaForm((prev) => ({ ...prev, title: event.target.value }));
+              }}
+            />
+            <Form.Label className="small mb-1" htmlFor="admin-edit-media-caption">
+              Caption
+            </Form.Label>
+            <Form.Control
+              id="admin-edit-media-caption"
+              className="mb-2"
+              value={mediaForm.caption}
+              onChange={(event) => {
+                setShowCreatedMediaHighlight(false);
+                setMediaForm((prev) => ({ ...prev, caption: event.target.value }));
+              }}
+            />
+            <Form.Check
+              className="mb-2"
+              type="switch"
+              label="Homepage Slide"
+              checked={mediaForm.is_slide}
+              onChange={(event) => {
+                setShowCreatedMediaHighlight(false);
+                setMediaForm((prev) => ({ ...prev, is_slide: event.target.checked }));
+              }}
+            />
+            <Form.Check
+              className="mb-2"
+              type="switch"
+              label="Active"
+              checked={mediaForm.is_active}
+              onChange={(event) => {
+                setShowCreatedMediaHighlight(false);
+                setMediaForm((prev) => ({ ...prev, is_active: event.target.checked }));
+              }}
+            />
+            <div className="d-flex gap-2 mt-2 align-items-center">
+              <Button className="btn-inquiry-action" variant="secondary" type="submit">
+                Save Media
+              </Button>
+              <Button
+                className="ms-auto"
+                variant="danger"
+                type="button"
+                onClick={() =>
+                  queueConfirm(
+                    "Delete Media Item?",
+                    <div className="text-center py-1">{mediaForm?.title?.trim() || "Media Item"}</div>,
+                    "Delete",
+                    deleteMedia,
+                    FORM_ERROR_EDIT_MEDIA,
+                    "danger"
+                  )
+                }>
+                Delete Media
+              </Button>
+            </div>
+          </Form>
         </Card.Body>
       </Card>
     </div>
@@ -1537,13 +1808,14 @@ const AdminDashboard = () => {
       </Nav>
 
       {activeTab === TAB_MENU ? (
-        <Row className="g-3">
-          <Col lg={4}>
-            <Card className="mb-3">
-              <Card.Body>
-                <h3 className="h6">Create Menu Item</h3>
-                <Form.Check
-                  className="mb-2"
+	        <Row className="g-3">
+	          <Col lg={4}>
+	            <Card className="mb-3">
+	              <Card.Body>
+                  <Form onSubmit={handleMenuCreateSubmit}>
+	                <h3 className="h6">Create Menu Item</h3>
+	                <Form.Check
+	                  className="mb-2"
                   type="switch"
                   label="Active"
                   checked={newItemForm.is_active}
@@ -1632,9 +1904,9 @@ const AdminDashboard = () => {
                       <Form.Label className="small mb-1" htmlFor="admin-create-half-tray-price">
                         Half Tray Price
                       </Form.Label>
-                      <InputGroup>
-                        <InputGroup.Text>$</InputGroup.Text>
-                        <Form.Control
+	                      <InputGroup hasValidation>
+	                        <InputGroup.Text>$</InputGroup.Text>
+	                        <Form.Control
                           id="admin-create-half-tray-price"
                           type="text"
                           inputMode="decimal"
@@ -1665,9 +1937,9 @@ const AdminDashboard = () => {
                       <Form.Label className="small mb-1" htmlFor="admin-create-full-tray-price">
                         Full Tray Price
                       </Form.Label>
-                      <InputGroup>
-                        <InputGroup.Text>$</InputGroup.Text>
-                        <Form.Control
+	                      <InputGroup hasValidation>
+	                        <InputGroup.Text>$</InputGroup.Text>
+	                        <Form.Control
                           id="admin-create-full-tray-price"
                           type="text"
                           inputMode="decimal"
@@ -1696,24 +1968,23 @@ const AdminDashboard = () => {
                     </Col>
                   </Row>
                 ) : null}
-		                <div className="d-flex align-items-end mt-2">
-		                  <Button
-		                    className="btn-inquiry-action"
-		                    variant="secondary"
-		                    disabled={createValidationLocked}
-		                    onClick={() =>
-		                      queueConfirm("Create menu item", buildCreateConfirmBody(), "Create", createItem, FORM_ERROR_CREATE_ITEM)
-		                    }>
-		                    Create Item
-		                  </Button>
-		                  {hasCreateFormChanges ? (
-		                    <Button className="ms-auto" variant="outline-secondary" onClick={resetCreateItemForm}>
-		                      Clear
-		                    </Button>
-		                  ) : null}
-		                </div>
-              </Card.Body>
-	            </Card>
+			                <div className="d-flex align-items-end mt-2">
+			                  <Button
+			                    className="btn-inquiry-action"
+			                    variant="secondary"
+			                    disabled={createValidationLocked}
+			                    type="submit">
+			                    Create Item
+			                  </Button>
+			                  {hasCreateFormChanges ? (
+			                    <Button className="ms-auto" variant="outline-secondary" type="button" onClick={resetCreateItemForm}>
+			                      Clear
+			                    </Button>
+			                  ) : null}
+			                </div>
+                  </Form>
+	              </Card.Body>
+		            </Card>
 
 	            {shouldRenderEditCardAboveList ? editMenuItemCard : null}
 
@@ -1797,7 +2068,7 @@ const AdminDashboard = () => {
 	          <Col lg={8}>
 	            <Card className="mb-3">
 	              <Card.Body className="admin-scroll-card p-0">
-	                <Table hover size="sm" className="admin-sticky-table mb-0">
+		                <Table hover size="sm" className="admin-sticky-table admin-menu-items-table mb-0">
 	                  <thead>
 	                    <tr>
 	                      <th>Item</th>
@@ -1815,16 +2086,18 @@ const AdminDashboard = () => {
 	                        </td>
 	                      </tr>
 	                    ) : filteredMenuItemRows.length ? (
-	                      filteredMenuItemRows.map((item) => {
+		                      filteredMenuItemRows.map((item) => {
                           const itemId = toId(item?.id);
+                          const isSelectedMenuRow = itemId ? Number(selectedItemId) === Number(itemId) : false;
                           const toggleBusyKey = itemId ? `menu:${itemId}` : "";
                           const isStatusBusy = toggleBusyKey ? Boolean(statusToggleBusy[toggleBusyKey]) : false;
                           return (
                           <tr
-	                          key={item.row_key}
-                          role={item.id ? "button" : undefined}
-                          onClick={async () => {
-	                            if (!item.id) return;
+		                          key={item.row_key}
+                              className={isSelectedMenuRow ? "admin-table-row-selected" : ""}
+	                          role={item.id ? "button" : undefined}
+	                          onClick={async () => {
+		                            if (!item.id) return;
 	                            setShowCreatedItemHighlight(false);
                             setEditCardPlacement("below_table");
                             setShouldScrollToEditCard(true);
@@ -1920,31 +2193,55 @@ const AdminDashboard = () => {
         </Row>
       ) : null}
 
-      {activeTab === TAB_MEDIA ? (
-        <Row className="g-3">
-          <Col lg={4}>
-            <Card className="mb-3">
-              <Card.Body>
-                <h3 className="h6">Upload Media</h3>
-                {formErrors[FORM_ERROR_UPLOAD_MEDIA] ? <Alert variant="danger">{formErrors[FORM_ERROR_UPLOAD_MEDIA]}</Alert> : null}
-	                <Form.Control
+	      {activeTab === TAB_MEDIA ? (
+	        <Row className="g-3">
+	          <Col lg={4}>
+	            <Card className="mb-3">
+	              <Card.Body>
+                  <Form onSubmit={handleMediaUploadSubmit}>
+	                <h3 className="h6">Upload Media</h3>
+		                <Form.Control
 	                  className="mb-2"
 	                  type="file"
 	                  accept="image/*,video/*"
+                    isInvalid={Boolean(uploadFieldErrors.file)}
 	                  ref={uploadFileInputRef}
-	                  onChange={(event) => setUploadForm((prev) => ({ ...prev, file: event.target.files?.[0] || null }))}
+	                  onChange={(event) => {
+                      const hadFieldError = Boolean(uploadFieldErrors.file);
+                      setUploadForm((prev) => ({ ...prev, file: event.target.files?.[0] || null }));
+                      if (hadFieldError) {
+                        setUploadFieldErrors((prev) => ({ ...prev, file: "" }));
+                        setUploadValidationLocked(false);
+                      }
+                    }}
 	                />
                 <Form.Control
                   className="mb-2"
                   placeholder="Title"
+                  isInvalid={Boolean(uploadFieldErrors.title)}
                   value={uploadForm.title}
-                  onChange={(event) => setUploadForm((prev) => ({ ...prev, title: event.target.value }))}
+                  onChange={(event) => {
+                    const hadFieldError = Boolean(uploadFieldErrors.title);
+                    setUploadForm((prev) => ({ ...prev, title: event.target.value }));
+                    if (hadFieldError) {
+                      setUploadFieldErrors((prev) => ({ ...prev, title: "" }));
+                      setUploadValidationLocked(false);
+                    }
+                  }}
                 />
                 <Form.Control
                   className="mb-2"
                   placeholder="Caption"
+                  isInvalid={Boolean(uploadFieldErrors.caption)}
                   value={uploadForm.caption}
-                  onChange={(event) => setUploadForm((prev) => ({ ...prev, caption: event.target.value }))}
+                  onChange={(event) => {
+                    const hadFieldError = Boolean(uploadFieldErrors.caption);
+                    setUploadForm((prev) => ({ ...prev, caption: event.target.value }));
+                    if (hadFieldError) {
+                      setUploadFieldErrors((prev) => ({ ...prev, caption: "" }));
+                      setUploadValidationLocked(false);
+                    }
+                  }}
                 />
 	                <Form.Check
 	                  className="mb-2"
@@ -1960,21 +2257,25 @@ const AdminDashboard = () => {
                   checked={uploadForm.is_active}
                   onChange={(event) => setUploadForm((prev) => ({ ...prev, is_active: event.target.checked }))}
                 />
-	                <div className="d-flex align-items-end mt-2">
-	                  <Button
-	                    className="btn-inquiry-action"
-	                    variant="secondary"
-	                    onClick={() => queueConfirm("Upload media", "Upload this file?", "Upload", uploadMedia, FORM_ERROR_UPLOAD_MEDIA)}>
-	                    Upload
-	                  </Button>
-	                  {hasUploadFormChanges ? (
-	                    <Button className="ms-auto" variant="outline-secondary" onClick={resetUploadMediaForm}>
-	                      Clear
-	                    </Button>
-	                  ) : null}
-	                </div>
-              </Card.Body>
-            </Card>
+		                <div className="d-flex align-items-end mt-2">
+		                  <Button
+		                    className="btn-inquiry-action"
+		                    variant="secondary"
+                      disabled={uploadValidationLocked}
+                        type="submit">
+		                    Upload
+		                  </Button>
+		                  {hasUploadFormChanges ? (
+		                    <Button className="ms-auto" variant="outline-secondary" type="button" onClick={resetUploadMediaForm}>
+		                      Clear
+		                    </Button>
+		                  ) : null}
+		                </div>
+                  </Form>
+	              </Card.Body>
+	            </Card>
+
+              {shouldRenderMediaEditCardAboveList ? editMediaCard : null}
 	            <Accordion className="mb-3 admin-filter-accordion">
 	              <Accordion.Item eventKey="0">
 	                <Accordion.Header>Find Media</Accordion.Header>
@@ -2057,6 +2358,7 @@ const AdminDashboard = () => {
                               Number(draggingMediaId) !== Number(mediaId) &&
                               Number(dragOverMediaId) === Number(mediaId);
                             const isBeingDragged = Number(draggingMediaId) === Number(mediaId);
+                            const isSelectedMediaRow = mediaId ? Number(selectedMediaId) === Number(mediaId) : false;
 			                        return (
                               <Fragment key={`media-row-${item.id}`}>
                                 {startsGallerySection ? (
@@ -2070,7 +2372,7 @@ const AdminDashboard = () => {
                                   isDropTarget ? "admin-media-row-drop-target" : ""
                                 } ${isBeingDragged ? "admin-media-row-dragging" : ""} ${
                                   isSlideRow ? "admin-media-row-slide" : "admin-media-row-gallery"
-                                }`}
+                                } ${isSelectedMediaRow ? "admin-table-row-selected" : ""}`.trim()}
 	                                draggable={canReorderItem}
 	                                onDragStart={(event) => {
 	                                  if (!canReorderItem) return;
@@ -2108,8 +2410,13 @@ const AdminDashboard = () => {
                                 }}
 				                          role="button"
 				                          onClick={() => {
+                                  setShowCreatedMediaHighlight(false);
+                                  setMediaEditCardPlacement("below_table");
+                                  setShouldScrollToMediaEditCard(true);
 				                            setSelectedMediaId(item.id);
-			                            setMediaForm(buildMediaForm(item));
+			                            const nextForm = buildMediaForm(item);
+			                            setMediaForm(nextForm);
+			                            setMediaFormOriginal(nextForm);
 			                          }}>
 	                          <td className="admin-media-type-cell">{renderMediaTypeIcon(item.media_type)}</td>
 	                          <td className="admin-media-thumb-cell">
@@ -2192,69 +2499,7 @@ const AdminDashboard = () => {
                 </Table>
               </Card.Body>
             </Card>
-	            {selectedMediaId && mediaForm ? (
-	              <Card>
-	                <Card.Body>
-	                  <div className="d-flex justify-content-between align-items-center mb-2">
-	                    <div className="d-flex align-items-center gap-2 min-w-0">
-	                      <h3 className="h6 mb-0">Edit Media</h3>
-	                      {formatMediaSourceFilename(mediaForm.src) ? (
-	                        <div className="small text-secondary text-truncate">{formatMediaSourceFilename(mediaForm.src)}</div>
-	                      ) : null}
-	                    </div>
-	                    <button
-	                      type="button"
-	                      className="btn-close admin-edit-card-close"
-	                      aria-label="Close edit media"
-	                      onClick={() => {
-	                        setSelectedMediaId(null);
-	                        setMediaForm(null);
-	                        setFormErrors((prev) => ({ ...prev, [FORM_ERROR_EDIT_MEDIA]: "" }));
-	                      }}
-	                    />
-	                  </div>
-	                  {formErrors[FORM_ERROR_EDIT_MEDIA] ? <Alert variant="danger">{formErrors[FORM_ERROR_EDIT_MEDIA]}</Alert> : null}
-	                  <Form.Label className="small mb-1" htmlFor="admin-edit-media-title">
-	                    Title
-	                  </Form.Label>
-	                  <Form.Control
-	                    id="admin-edit-media-title"
-	                    className="mb-2"
-	                    value={mediaForm.title}
-	                    onChange={(event) => setMediaForm((prev) => ({ ...prev, title: event.target.value }))}
-	                  />
-	                  <Form.Label className="small mb-1" htmlFor="admin-edit-media-caption">
-	                    Caption
-	                  </Form.Label>
-	                  <Form.Control
-	                    id="admin-edit-media-caption"
-	                    className="mb-2"
-	                    value={mediaForm.caption}
-	                    onChange={(event) => setMediaForm((prev) => ({ ...prev, caption: event.target.value }))}
-	                  />
-	                  <Form.Check
-	                    className="mb-2"
-	                    type="switch"
-                    label="Homepage Slide"
-                    checked={mediaForm.is_slide}
-                    onChange={(event) => setMediaForm((prev) => ({ ...prev, is_slide: event.target.checked }))}
-                  />
-                  <Form.Check
-                    className="mb-2"
-                    type="switch"
-                    label="Active"
-                    checked={mediaForm.is_active}
-                    onChange={(event) => setMediaForm((prev) => ({ ...prev, is_active: event.target.checked }))}
-                  />
-	                  <Button
-	                    className="btn-inquiry-action mt-2"
-	                    variant="secondary"
-	                    onClick={() => queueConfirm("Save media", "Apply media metadata changes?", "Save", saveMedia, FORM_ERROR_EDIT_MEDIA)}>
-	                    Save Media
-	                  </Button>
-                </Card.Body>
-              </Card>
-            ) : null}
+            {shouldRenderMediaEditCardBelowTable ? editMediaCard : null}
           </Col>
         </Row>
       ) : null}
@@ -2297,7 +2542,10 @@ const AdminDashboard = () => {
         confirmLabel={confirmState.confirmLabel}
         confirmVariant={confirmState.confirmVariant}
         validationMessage={confirmState.validationMessage}
-        confirmDisabled={confirmState.errorTarget === FORM_ERROR_CREATE_ITEM && createValidationLocked}
+        confirmDisabled={
+          (confirmState.errorTarget === FORM_ERROR_CREATE_ITEM && createValidationLocked) ||
+          (confirmState.errorTarget === FORM_ERROR_UPLOAD_MEDIA && uploadValidationLocked)
+        }
         darkMode={isDarkMode}
         busy={confirmBusy}
         onCancel={() =>
