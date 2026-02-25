@@ -695,18 +695,19 @@ button:hover {
   opacity: 0.9;
   border-radius: 0.35rem;
   border: 1px solid transparent;
-  transition: opacity 0.15s ease, border-color 0.15s ease;
+  background: transparent var(--bs-btn-close-bg) center / 1em auto no-repeat;
+  transition: none;
 }
 
 .admin-dashboard .admin-edit-card-close:hover,
 .admin-dashboard .admin-edit-card-close:focus {
   opacity: 0.9;
-  background-color: transparent;
-  border-color: var(--admin-border);
+  background: transparent var(--bs-btn-close-bg) center / 1em auto no-repeat;
+  border-color: transparent;
 }
 
 .admin-dashboard .admin-edit-card-close:focus-visible {
-  border-color: var(--admin-border);
+  border-color: transparent;
   box-shadow: none;
 }
 
@@ -896,8 +897,14 @@ button:hover {
 .admin-dashboard.admin-dashboard-dark .admin-edit-card-close:hover,
 .admin-dashboard.admin-dashboard-dark .admin-edit-card-close:focus {
   background-color: transparent;
-  border-color: var(--admin-border);
+  border-color: transparent;
   opacity: 0.95;
+  box-shadow: none;
+}
+
+.admin-dashboard.admin-dashboard-dark .admin-edit-card-close:focus-visible {
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .admin-confirm-modal .modal-content {

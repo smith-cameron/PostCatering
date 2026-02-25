@@ -559,7 +559,13 @@ const AdminDashboard = () => {
   const [confirmBusy, setConfirmBusy] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window === "undefined") return false;
-    return window.localStorage.getItem("admin_dashboard_theme") === "dark";
+    const persistedTheme = window.localStorage.getItem("admin_dashboard_theme");
+    if (persistedTheme === "dark") return true;
+    if (persistedTheme === "light") return false;
+    if (typeof window.matchMedia === "function") {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    return false;
   });
   const [isMobileLayout, setIsMobileLayout] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth <= MOBILE_LAYOUT_MAX_WIDTH : false
@@ -1763,7 +1769,9 @@ const AdminDashboard = () => {
   }
 
   return (
-    <main className={`container-fluid py-4 admin-dashboard ${isDarkMode ? "admin-dashboard-dark" : ""}`}>
+    <main
+      className={`container-fluid py-4 admin-dashboard ${isDarkMode ? "admin-dashboard-dark" : ""}`}
+      data-bs-theme={isDarkMode ? "dark" : "light"}>
       <header className="admin-header mb-3">
         <div className="admin-header-main">
           <h2 className="h4 mb-1">Admin Dashboard</h2>
