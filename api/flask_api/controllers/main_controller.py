@@ -458,7 +458,7 @@ def admin_media_upload(admin_user=None):
     return jsonify(response_body), status_code
 
 
-@app.route("/api/admin/media/<int:media_id>", methods=["PATCH", "OPTIONS"])
+@app.route("/api/admin/media/<int:media_id>", methods=["PATCH", "DELETE", "OPTIONS"])
 @_require_admin_auth
 def admin_media_update(media_id, admin_user=None):
     if request.method == "OPTIONS":
@@ -467,6 +467,20 @@ def admin_media_update(media_id, admin_user=None):
     before = AdminMediaService.get_media_by_id(media_id)
     if not before:
         return jsonify({"error": "Media item not found."}), 404
+
+    if request.method == "DELETE":
+        response_body, status_code = AdminMediaService.delete_media(media_id)
+        if status_code < 400:
+            AdminAuditService.log_change(
+                admin_user_id=admin_user["id"],
+                action="delete",
+                entity_type="media",
+                entity_id=media_id,
+                change_summary=f"Deleted media '{before.get('title', '')}'",
+                before=before,
+                after=None,
+            )
+        return jsonify(response_body), status_code
 
     response_body, status_code = AdminMediaService.update_media(media_id, request.get_json(silent=True) or {})
     if status_code < 400:

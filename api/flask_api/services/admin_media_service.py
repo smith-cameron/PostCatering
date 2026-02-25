@@ -255,10 +255,16 @@ class AdminMediaService:
     def create_media_record(cls, payload):
         image_url = str((payload or {}).get("image_url") or "").strip()
         media_type = str((payload or {}).get("media_type") or "").strip().lower()
+        resolved_title = str((payload or {}).get("title") or "").strip()
+        resolved_caption = str((payload or {}).get("caption") or "").strip()
         if not image_url:
             return {"error": "image_url is required."}, 400
         if media_type not in ("image", "video"):
             return {"error": "media_type must be image or video."}, 400
+        if not resolved_title:
+            return {"error": "Title is required."}, 400
+        if not resolved_caption:
+            return {"error": "Caption is required."}, 400
 
         with db_transaction() as connection:
             resolved_is_slide = cls._to_bool((payload or {}).get("is_slide"), default=False)
@@ -267,8 +273,6 @@ class AdminMediaService:
                 default=cls._next_group_display_order(is_slide=True, connection=connection) if resolved_is_slide else 1,
                 minimum=1,
             )
-            resolved_title = str((payload or {}).get("title") or "").strip() or "placeholder title"
-            resolved_caption = str((payload or {}).get("caption") or "").strip() or "placeholder text"
 
             slide_id = query_db(
                 """
@@ -345,6 +349,10 @@ class AdminMediaService:
             if "caption" in (payload or {})
             else existing["caption"]
         )
+        if not resolved_title:
+            return {"error": "Title is required."}, 400
+        if not resolved_caption:
+            return {"error": "Caption is required."}, 400
 
         with db_transaction() as connection:
             is_slide_explicit = "is_slide" in (payload or {})
@@ -397,6 +405,36 @@ class AdminMediaService:
 
         updated = cls.get_media_by_id(normalized_media_id)
         return {"media": updated}, 200
+
+    @classmethod
+    def delete_media(cls, media_id):
+        normalized_media_id = cls._to_int(media_id, minimum=1)
+        if not normalized_media_id:
+            return {"error": "Invalid media id."}, 400
+
+        existing = cls.get_media_by_id(normalized_media_id)
+        if not existing:
+            return {"error": "Media item not found."}, 404
+
+        with db_transaction() as connection:
+            query_db(
+                """
+        DELETE FROM slides
+        WHERE id = %(id)s
+        LIMIT 1;
+        """,
+                {"id": normalized_media_id},
+                fetch="none",
+                connection=connection,
+                auto_commit=False,
+            )
+            cls._resequence_group(is_slide=bool(existing.get("is_slide")), connection=connection)
+
+        return {
+            "ok": True,
+            "deleted_media_id": normalized_media_id,
+            "title": str(existing.get("title") or "").strip(),
+        }, 200
 
     @classmethod
     def reorder_slide_items(cls, payload):
