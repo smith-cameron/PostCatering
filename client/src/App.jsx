@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Context from "./context";
 import { AdminDashboard, AdminLogin, Wrapper, Landing, NotFound, ServiceMenu, ShowcaseGallery } from "./imports";
 import "./App.css";
@@ -23,6 +23,25 @@ function App() {
       open: false,
     }));
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyThemeFromBrowser = (prefersDark) => {
+      const nextTheme = prefersDark ? "dark" : "light";
+      document.documentElement.setAttribute("data-bs-theme", nextTheme);
+      document.documentElement.style.colorScheme = nextTheme;
+    };
+
+    applyThemeFromBrowser(mediaQuery.matches);
+    const handleChange = (event) => applyThemeFromBrowser(event.matches);
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", handleChange);
+      return () => mediaQuery.removeEventListener("change", handleChange);
+    }
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
+  }, []);
 
   return (
     <div className="app">
