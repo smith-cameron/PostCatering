@@ -70,6 +70,13 @@ export const buildCommunitySelectionRules = (plan) => {
   if (!plan) return null;
   const normalizedTitle = String(plan.title || "").toLowerCase();
 
+  if (normalizedTitle.includes("hearty homestyle")) {
+    return {
+      entree: { min: 1, max: 1 },
+      sides_salads: { min: 2, max: 2 },
+    };
+  }
+
   if (plan.sectionId === "community_buffet_tiers" && normalizedTitle.includes("tier 1")) {
     return {
       entree: { min: 2, max: 2 },
@@ -157,7 +164,7 @@ const getCommunityPackageDetails = (plan) => {
   if (!plan) return [];
   const normalizedTitle = String(plan.title || "").toLowerCase();
   if (normalizedTitle.includes("hearty homestyle")) {
-    return ["1 Entree/Protein", "2 Sides", "Bread"];
+    return ["1 Entree/Protein", "2 Side/Salad", "Bread"];
   }
   return parseCommunityPackageDetails(plan.details);
 };

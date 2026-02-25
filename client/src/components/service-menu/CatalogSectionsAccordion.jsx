@@ -51,7 +51,7 @@ const CatalogSectionsAccordion = ({ menuKey, data, menuOptions }) => (
                       ? (() => {
                           const limits = normalizeCommunityTierConstraints(section.sectionId, tier.tierTitle, tier.constraints);
                           return [
-                            toCommunityTierBullet("Entrees", limits.entree),
+                            toCommunityTierBullet("Entrees/Protiens", limits.entree),
                             toCommunityTierBullet("Sides", limits.sides),
                             toCommunityTierBullet("Salads", limits.salads),
                             !limits.sides && !limits.salads ? toCommunityTierBullet("Sides/Salads", limits.sides_salads) : null,

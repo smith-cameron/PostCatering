@@ -4,6 +4,59 @@ import { Link } from "react-router-dom";
 import AboutUsModal from "./modals/AboutUsModal";
 import MondayMealModal from "./modals/MondayMealModal";
 
+const normalizeSortNumber = (value, fallback) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const normalizeLandingSlides = (slides) => {
+  const seen = new Set();
+  const seenDisplayOrders = new Set();
+  return (Array.isArray(slides) ? slides : [])
+    .filter((slide) => {
+      const src = String(slide?.src || slide?.image_url || "").trim();
+      if (!src) return false;
+
+      const mediaType = String(slide?.media_type || "image").trim().toLowerCase();
+      if (mediaType && mediaType !== "image") return false;
+      if (slide?.is_slide === false) return false;
+      if (slide?.is_active === false) return false;
+      return true;
+    })
+    .sort((left, right) => {
+      const leftOrder = normalizeSortNumber(left?.display_order, Number.MAX_SAFE_INTEGER);
+      const rightOrder = normalizeSortNumber(right?.display_order, Number.MAX_SAFE_INTEGER);
+      if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+      const leftId = normalizeSortNumber(left?.id, Number.MAX_SAFE_INTEGER);
+      const rightId = normalizeSortNumber(right?.id, Number.MAX_SAFE_INTEGER);
+      return leftId - rightId;
+    })
+    .reduce((next, slide, index) => {
+      const parsedDisplayOrder = Number(slide?.display_order);
+      const hasDisplayOrder = Number.isFinite(parsedDisplayOrder);
+      const displayOrderKey = hasDisplayOrder ? String(parsedDisplayOrder) : "";
+      if (displayOrderKey && seenDisplayOrders.has(displayOrderKey)) return next;
+
+      const src = String(slide?.src || slide?.image_url || "").trim();
+      const dedupeKey = `${String(slide?.id ?? "")}|${src}`;
+      if (seen.has(dedupeKey)) return next;
+      seen.add(dedupeKey);
+      if (displayOrderKey) seenDisplayOrders.add(displayOrderKey);
+
+      const title = String(slide?.title || "").trim();
+      const caption = String(slide?.text || slide?.caption || "").trim();
+      const alt = String(slide?.alt || slide?.alt_text || title || "Landing slide").trim();
+      next.push({
+        id: slide?.id ?? `slide-${index}`,
+        src,
+        alt,
+        title,
+        text: caption,
+      });
+      return next;
+    }, []);
+};
+
 const Landing = () => {
   const [activeModal, setActiveModal] = useState(null);
   const handleCloseModal = () => setActiveModal(null);
@@ -22,8 +75,8 @@ const Landing = () => {
         }
 
         const body = await response.json();
-        if (isMounted && Array.isArray(body.slides)) {
-          setSlides(body.slides);
+        if (isMounted) {
+          setSlides(normalizeLandingSlides(body.slides));
         }
       } catch {
         // Keep page functional even if slide API is temporarily unavailable.

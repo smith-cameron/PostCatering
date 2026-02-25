@@ -4,9 +4,6 @@ import re
 
 class Menu:
     PRICE_TOKEN_REGEX = re.compile(r"\$?\s*([0-9][0-9,]*(?:\.\d{1,2})?)\s*([kK])?\+?")
-    NON_FORMAL_CATALOG_KEYS = {"togo", "community"}
-    ITEM_FALLBACK_TYPE = "general"
-    ITEM_FALLBACK_CATEGORY = "other"
 
     @staticmethod
     def _coerce_price_number(value):
@@ -223,8 +220,6 @@ class Menu:
                         "max": max_value or 0,
                     }
 
-        if "sides_salads" in normalized and "sides" not in normalized and "salads" not in normalized:
-            normalized["sides"] = normalized.pop("sides_salads")
         return normalized
 
     @classmethod
@@ -262,7 +257,7 @@ class Menu:
                 }
 
         if section_key == "community_homestyle" and level == "package":
-            return {"entree": {"min": 1, "max": 1}, "sides": {"min": 2, "max": 2}}
+            return {"entree": {"min": 1, "max": 1}, "sides_salads": {"min": 2, "max": 2}}
         if section_key == "community_taco_bar" and level == "package":
             return {"entree": {"min": 1, "max": 1}}
 
