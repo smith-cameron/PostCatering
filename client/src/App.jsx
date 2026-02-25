@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Context from "./context";
 import { AdminDashboard, AdminLogin, Wrapper, Landing, NotFound, ServiceMenu, ShowcaseGallery } from "./imports";
 import "./App.css";
@@ -23,6 +23,12 @@ function App() {
       open: false,
     }));
   };
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.setAttribute("data-bs-theme", "light");
+    document.documentElement.style.colorScheme = "light";
+  }, []);
 
   return (
     <div className="app">

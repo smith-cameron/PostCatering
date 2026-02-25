@@ -234,6 +234,54 @@ def admin_auth_me():
     return jsonify({"user": AdminAuthService.to_public_user(admin_user)}), 200
 
 
+@app.route("/api/admin/auth/profile", methods=["PATCH", "OPTIONS"])
+@_require_admin_auth
+def admin_auth_profile_update(admin_user=None):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    before = AdminAuthService.to_public_user(admin_user)
+    response_body, status_code = AdminAuthService.update_user_profile(
+        admin_user["id"],
+        request.get_json(silent=True) or {},
+    )
+    if status_code < 400 and response_body.get("user"):
+        updated_user = response_body["user"]
+        session["admin_user_id"] = updated_user.get("id")
+        session.modified = True
+        AdminAuditService.log_change(
+            admin_user_id=admin_user["id"],
+            action="update",
+            entity_type="admin_user",
+            entity_id=updated_user.get("id"),
+            change_summary=f"Updated admin profile '{updated_user.get('username', '')}'",
+            before=before,
+            after=updated_user,
+        )
+    return jsonify(response_body), status_code
+
+
+@app.route("/api/admin/auth/users", methods=["POST", "OPTIONS"])
+@_require_admin_auth
+def admin_auth_create_user(admin_user=None):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    response_body, status_code = AdminAuthService.create_admin_user(request.get_json(silent=True) or {})
+    created_user = response_body.get("user") if isinstance(response_body, dict) else None
+    if status_code < 400 and created_user:
+        AdminAuditService.log_change(
+            admin_user_id=admin_user["id"],
+            action="create",
+            entity_type="admin_user",
+            entity_id=created_user.get("id"),
+            change_summary=f"Created admin user '{created_user.get('username', '')}'",
+            before=None,
+            after=created_user,
+        )
+    return jsonify(response_body), status_code
+
+
 @app.route("/api/admin/menu/reference-data", methods=["GET", "OPTIONS"])
 @_require_admin_auth
 def admin_menu_reference_data(admin_user=None):
@@ -301,7 +349,7 @@ def admin_menu_catalog_items(admin_user=None):
     return jsonify({"items": items}), 200
 
 
-@app.route("/api/admin/menu/items/<int:item_id>", methods=["GET", "PATCH", "OPTIONS"])
+@app.route("/api/admin/menu/items/<int:item_id>", methods=["GET", "PATCH", "DELETE", "OPTIONS"])
 @_require_admin_auth
 def admin_menu_item_detail(item_id, admin_user=None):
     if request.method == "OPTIONS":
@@ -316,6 +364,20 @@ def admin_menu_item_detail(item_id, admin_user=None):
     before = AdminMenuService.get_menu_item_detail(item_id)
     if not before:
         return jsonify({"error": "Menu item not found."}), 404
+
+    if request.method == "DELETE":
+        response_body, status_code = AdminMenuService.delete_menu_item(item_id)
+        if status_code < 400:
+            AdminAuditService.log_change(
+                admin_user_id=admin_user["id"],
+                action="delete",
+                entity_type="menu_item",
+                entity_id=item_id,
+                change_summary=f"Deleted menu item '{before.get('item_name', '')}'",
+                before=before,
+                after=None,
+            )
+        return jsonify(response_body), status_code
 
     response_body, status_code = AdminMenuService.update_menu_item(item_id, request.get_json(silent=True) or {})
     if status_code < 400:
@@ -416,7 +478,6 @@ def admin_media_upload(admin_user=None):
     create_payload = {
         "title": request.form.get("title"),
         "caption": request.form.get("caption"),
-        "alt_text": request.form.get("alt_text"),
         "is_slide": request.form.get("is_slide"),
         "is_active": request.form.get("is_active", "true"),
         "display_order": request.form.get("display_order"),
@@ -445,7 +506,7 @@ def admin_media_upload(admin_user=None):
     return jsonify(response_body), status_code
 
 
-@app.route("/api/admin/media/<int:media_id>", methods=["PATCH", "OPTIONS"])
+@app.route("/api/admin/media/<int:media_id>", methods=["PATCH", "DELETE", "OPTIONS"])
 @_require_admin_auth
 def admin_media_update(media_id, admin_user=None):
     if request.method == "OPTIONS":
@@ -454,6 +515,20 @@ def admin_media_update(media_id, admin_user=None):
     before = AdminMediaService.get_media_by_id(media_id)
     if not before:
         return jsonify({"error": "Media item not found."}), 404
+
+    if request.method == "DELETE":
+        response_body, status_code = AdminMediaService.delete_media(media_id)
+        if status_code < 400:
+            AdminAuditService.log_change(
+                admin_user_id=admin_user["id"],
+                action="delete",
+                entity_type="media",
+                entity_id=media_id,
+                change_summary=f"Deleted media '{before.get('title', '')}'",
+                before=before,
+                after=None,
+            )
+        return jsonify(response_body), status_code
 
     response_body, status_code = AdminMediaService.update_media(media_id, request.get_json(silent=True) or {})
     if status_code < 400:
@@ -466,6 +541,53 @@ def admin_media_update(media_id, admin_user=None):
             change_summary=f"Updated media '{after.get('title', '')}'",
             before=before,
             after=after,
+        )
+    return jsonify(response_body), status_code
+
+
+@app.route("/api/admin/media/reorder-slides", methods=["PATCH", "OPTIONS"])
+@_require_admin_auth
+def admin_media_reorder_slides(admin_user=None):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    before = AdminMediaService.list_media(is_slide=True, limit=2000)
+    response_body, status_code = AdminMediaService.reorder_slide_items(request.get_json(silent=True) or {})
+    if status_code < 400:
+        after = response_body.get("slides") or []
+        AdminAuditService.log_change(
+            admin_user_id=admin_user["id"],
+            action="reorder",
+            entity_type="media",
+            entity_id="slides",
+            change_summary="Reordered homepage slides",
+            before=[{"id": row.get("id"), "display_order": row.get("display_order")} for row in before],
+            after=[{"id": row.get("id"), "display_order": row.get("display_order")} for row in after],
+        )
+    return jsonify(response_body), status_code
+
+
+@app.route("/api/admin/media/reorder", methods=["PATCH", "OPTIONS"])
+@_require_admin_auth
+def admin_media_reorder(admin_user=None):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    request_body = request.get_json(silent=True) or {}
+    is_slide_group = bool(AdminMediaService._to_bool(request_body.get("is_slide"), default=False))
+    before = AdminMediaService.list_media(is_slide=is_slide_group, limit=2000)
+    response_body, status_code = AdminMediaService.reorder_media_items(request_body)
+    if status_code < 400:
+        after = response_body.get("media") or []
+        group_label = "slides" if bool(response_body.get("is_slide")) else "gallery"
+        AdminAuditService.log_change(
+            admin_user_id=admin_user["id"],
+            action="reorder",
+            entity_type="media",
+            entity_id=group_label,
+            change_summary=f"Reordered {group_label}",
+            before=[{"id": row.get("id"), "display_order": row.get("display_order")} for row in before],
+            after=[{"id": row.get("id"), "display_order": row.get("display_order")} for row in after],
         )
     return jsonify(response_body), status_code
 

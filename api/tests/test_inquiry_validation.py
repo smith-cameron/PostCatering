@@ -12,6 +12,7 @@ from flask_api.validators.inquiry_validators import (
   normalize_budget,
   normalize_email,
   normalize_phone,
+  validate_service_selection_constraints,
   validate_budget,
   validate_email_format,
   validate_phone,
@@ -61,6 +62,21 @@ class InquiryValidationTests(unittest.TestCase):
     self.assertEqual(inquiry.budget, "$2,500-$5,000")
     self.assertEqual(inquiry.message, "Looking for options")
     self.assertEqual(inquiry.validate(), [])
+
+  def test_homestyle_allows_combined_two_sides_or_salads(self):
+    errors = validate_service_selection_constraints(
+      {
+        "level": "package",
+        "sectionId": "community_homestyle",
+        "title": "Hearty Homestyle Packages",
+      },
+      [
+        {"name": "Jerk Chicken", "category": "entree"},
+        {"name": "Green Beans", "category": "sides"},
+        {"name": "House Salad", "category": "salads"},
+      ],
+    )
+    self.assertEqual(errors, [])
 
 
 if __name__ == "__main__":

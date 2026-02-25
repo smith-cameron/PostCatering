@@ -46,6 +46,13 @@ class MenuConstraintNormalizationTests(unittest.TestCase):
         self.assertEqual(constraints.get("starter"), {"min": 1, "max": 1})
         self.assertEqual(constraints.get("entree"), {"min": 1, "max": 2})
 
+    def test_get_effective_service_constraints_for_homestyle_package(self):
+        constraints = Menu.get_effective_service_constraints(
+            {"level": "package", "sectionId": "community_homestyle", "title": "Hearty Homestyle Packages"}
+        )
+        self.assertEqual(constraints.get("entree"), {"min": 1, "max": 1})
+        self.assertEqual(constraints.get("sides_salads"), {"min": 2, "max": 2})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -220,8 +220,6 @@ class Menu:
                         "max": max_value or 0,
                     }
 
-        if "sides_salads" in normalized and "sides" not in normalized and "salads" not in normalized:
-            normalized["sides"] = normalized.pop("sides_salads")
         return normalized
 
     @classmethod
@@ -259,7 +257,7 @@ class Menu:
                 }
 
         if section_key == "community_homestyle" and level == "package":
-            return {"entree": {"min": 1, "max": 1}, "sides": {"min": 2, "max": 2}}
+            return {"entree": {"min": 1, "max": 1}, "sides_salads": {"min": 2, "max": 2}}
         if section_key == "community_taco_bar" and level == "package":
             return {"entree": {"min": 1, "max": 1}}
 
