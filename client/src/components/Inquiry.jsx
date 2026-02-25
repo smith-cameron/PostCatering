@@ -13,6 +13,45 @@ import {
 } from "./inquiry/inquiryUtils";
 import useInquirySelections from "./inquiry/useInquirySelections";
 
+const EMPTY_FIELD_ERRORS = {
+  full_name: "",
+  email: "",
+  phone: "",
+  event_date: "",
+  service_interest: "",
+  guest_count: "",
+  service_plan: "",
+  desired_menu_items: "",
+};
+
+const getFieldKeyFromMessage = (message) => {
+  const normalized = String(message || "").toLowerCase();
+  if (!normalized) return "";
+  if (/(^|\b)full[_\s]?name\b/.test(normalized)) return "full_name";
+  if (/(^|\b)email\b/.test(normalized)) return "email";
+  if (/(^|\b)phone\b/.test(normalized)) return "phone";
+  if (/(^|\b)event[_\s]?date\b/.test(normalized)) return "event_date";
+  if (/(^|\b)service[_\s]?interest\b/.test(normalized)) return "service_interest";
+  if (/(^|\b)guest[_\s]?count\b/.test(normalized)) return "guest_count";
+  if (/desired[_\s]?menu[_\s]?items?|desired menu item/.test(normalized)) return "desired_menu_items";
+  if (/package|tier|service selection/.test(normalized)) return "service_plan";
+  return "";
+};
+
+const buildFieldErrorsFromMessages = (messages) => {
+  const next = { ...EMPTY_FIELD_ERRORS };
+  (messages || []).forEach((message) => {
+    const key = getFieldKeyFromMessage(message);
+    if (key && !next[key]) {
+      next[key] = String(message || "");
+    }
+  });
+  return next;
+};
+
+const hasFieldValidationErrors = (fieldErrors) =>
+  Object.values(fieldErrors || {}).some((message) => Boolean(message));
+
 const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" }) => {
   const minEventDateISO = useMemo(() => getMinEventDateISO(), []);
   const { menu, menuOptions, formalPlanOptions, loading: menuLoading, error: menuError } = useMenuConfig();
@@ -22,6 +61,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
   const [showModal, setShowModal] = useState(true);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState([]);
+  const [fieldErrors, setFieldErrors] = useState(EMPTY_FIELD_ERRORS);
   const [highlightedDetailKeys, setHighlightedDetailKeys] = useState([]);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -90,8 +130,64 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
     });
   }, [form.service_interest, servicePlanId, selectedServicePlan, desiredItemGroups]);
 
+  const getDesiredItemCategory = (itemName) => {
+    const selectedGroup = desiredItemGroups.find((group) =>
+      group.items.some((groupItem) => groupItem.name === itemName)
+    );
+    return selectedGroup?.groupKey || "other";
+  };
+
+  const buildCommunityCategoryCounts = (items) =>
+    (items || []).reduce((acc, selectedItem) => {
+      const category = getDesiredItemCategory(selectedItem);
+      acc[category] = (acc[category] || 0) + 1;
+      return acc;
+    }, {});
+
+  const getCombinedSideSaladCount = (categoryCounts) =>
+    Number(categoryCounts?.sides || 0) + Number(categoryCounts?.salads || 0);
+
+  const setTopErrors = (nextErrors) => {
+    setHighlightedDetailKeys([]);
+    setErrors(nextErrors);
+  };
+
+  const applyValidationState = ({ nextFieldErrors = EMPTY_FIELD_ERRORS, nextHighlightedDetailKeys = [] }) => {
+    setErrors([]);
+    setFieldErrors(nextFieldErrors);
+    setHighlightedDetailKeys(nextHighlightedDetailKeys);
+  };
+
+  const clearFieldError = (fieldKey) => {
+    if (!fieldKey) return;
+    setFieldErrors((prev) => {
+      if (!prev[fieldKey]) return prev;
+      return { ...prev, [fieldKey]: "" };
+    });
+  };
+
+  const clearFieldErrors = (fieldKeys) => {
+    if (!Array.isArray(fieldKeys) || !fieldKeys.length) return;
+    setFieldErrors((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      fieldKeys.forEach((fieldKey) => {
+        if (next[fieldKey]) {
+          next[fieldKey] = "";
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  };
+
   const onChange = (event) => {
     const { name, value } = event.target;
+    if (name === "service_interest") {
+      clearFieldErrors(["service_interest", "service_plan", "desired_menu_items"]);
+    } else {
+      clearFieldError(name);
+    }
     if (name === "phone") {
       const sanitizedPhone = value.replace(/[^0-9+()\-\s.]/g, "");
       setForm((prev) => ({ ...prev, [name]: sanitizedPhone }));
@@ -112,69 +208,77 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
     setTraySizes({});
     setErrors([]);
     setHighlightedDetailKeys([]);
+    clearFieldErrors(["service_plan", "desired_menu_items", "service_interest"]);
   };
 
   const onToggleDesiredItem = (item) => {
-    setDesiredItems((prev) => {
-      const isSelected = prev.includes(item);
+    const isSelected = desiredItems.includes(item);
 
-      if (!isSelected && form.service_interest === "formal") {
-        const limits = selectedServicePlan?.constraints || {};
-        const itemGroup = desiredItemGroups.find((group) => group.items.some((groupItem) => groupItem.name === item));
-        const groupKey = itemGroup?.groupKey || "other";
-        const groupLimit = limits[groupKey] || null;
+    if (!isSelected && form.service_interest === "formal") {
+      const limits = selectedServicePlan?.constraints || {};
+      const itemGroup = desiredItemGroups.find((group) => group.items.some((groupItem) => groupItem.name === item));
+      const groupKey = itemGroup?.groupKey || "other";
+      const groupLimit = limits[groupKey] || null;
 
-        if (groupLimit?.max) {
-          const selectedInGroup = prev.filter((selectedItem) =>
-            itemGroup?.items.some((groupItem) => groupItem.name === selectedItem)
-          ).length;
-          if (selectedInGroup >= groupLimit.max) {
-            setHighlightedDetailKeys([groupKey]);
-            setErrors([]);
-            return prev;
-          }
+      if (groupLimit?.max) {
+        const selectedInGroup = desiredItems.filter((selectedItem) =>
+          itemGroup?.items.some((groupItem) => groupItem.name === selectedItem)
+        ).length;
+        if (selectedInGroup >= groupLimit.max) {
+          setHighlightedDetailKeys([groupKey]);
+          setErrors([]);
+          return;
+        }
+      }
+    }
+
+    if (!isSelected && form.service_interest === "community" && communitySelectionRules) {
+      const category = getDesiredItemCategory(item);
+      const categoryRule = communitySelectionRules[category];
+
+      if (categoryRule?.max) {
+        const categoryCounts = buildCommunityCategoryCounts(desiredItems);
+        const selectedInCategory = categoryCounts[category] || 0;
+
+        if (selectedInCategory >= categoryRule.max) {
+          setHighlightedDetailKeys([category]);
+          setErrors([]);
+          return;
         }
       }
 
-      if (!isSelected && form.service_interest === "community" && communitySelectionRules) {
-        const itemGroup = desiredItemGroups.find((group) => group.items.some((groupItem) => groupItem.name === item));
-        const category = itemGroup?.groupKey || "other";
-        const categoryRule = communitySelectionRules[category];
-
-        if (categoryRule?.max) {
-          const selectedInCategory = prev.filter((selectedItem) => {
-            const selectedGroup = desiredItemGroups.find((group) =>
-              group.items.some((groupItem) => groupItem.name === selectedItem)
-            );
-            return (selectedGroup?.groupKey || "other") === category;
-          }).length;
-
-          if (selectedInCategory >= categoryRule.max) {
-            setHighlightedDetailKeys([category]);
-            setErrors([]);
-            return prev;
-          }
+      const combinedSideSaladRule = communitySelectionRules.sides_salads;
+      if (combinedSideSaladRule?.max && (category === "sides" || category === "salads")) {
+        const categoryCounts = buildCommunityCategoryCounts(desiredItems);
+        const selectedCombinedCount = getCombinedSideSaladCount(categoryCounts);
+        if (selectedCombinedCount >= combinedSideSaladRule.max) {
+          setHighlightedDetailKeys(["sides", "salads"]);
+          setErrors([]);
+          return;
         }
       }
+    }
 
-      const next = isSelected ? prev.filter((existingItem) => existingItem !== item) : [...prev, item];
-      setErrors([]);
-      setHighlightedDetailKeys([]);
+    const nextDesiredItems = isSelected
+      ? desiredItems.filter((existingItem) => existingItem !== item)
+      : [...desiredItems, item];
 
-      setTraySizes((prevSizes) => {
-        const nextSizes = { ...prevSizes };
-        if (isSelected) {
-          delete nextSizes[item];
-        } else {
-          const options = itemSizeOptions[item] || [];
-          if (options.length && !nextSizes[item]) {
-            nextSizes[item] = options[0].value;
-          }
+    setDesiredItems(nextDesiredItems);
+    setErrors([]);
+    setHighlightedDetailKeys([]);
+    clearFieldError("desired_menu_items");
+
+    setTraySizes((prevSizes) => {
+      const nextSizes = { ...prevSizes };
+      if (isSelected) {
+        delete nextSizes[item];
+      } else {
+        const options = itemSizeOptions[item] || [];
+        if (options.length && !nextSizes[item]) {
+          nextSizes[item] = options[0].value;
         }
-        return nextSizes;
-      });
-
-      return next;
+      }
+      return nextSizes;
     });
   };
 
@@ -186,17 +290,18 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
     event.preventDefault();
     setLoading(true);
     setErrors([]);
+    setFieldErrors(EMPTY_FIELD_ERRORS);
     setHighlightedDetailKeys([]);
     setShowSuccessModal(false);
 
     try {
       if (menuLoading) {
-        setErrors(["Menu configuration is still loading. Please wait."]);
+        setTopErrors(["Menu configuration is still loading. Please wait."]);
         setLoading(false);
         return;
       }
       if (menuError) {
-        setErrors(["Menu configuration failed to load. Please refresh and try again."]);
+        setTopErrors(["Menu configuration failed to load. Please refresh and try again."]);
         setLoading(false);
         return;
       }
@@ -213,79 +318,85 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
         message: form.message.trim(),
       };
 
+      const nextFieldErrors = { ...EMPTY_FIELD_ERRORS };
       if (!normalizedForm.full_name) {
-        setErrors(["full_name is required."]);
-        setLoading(false);
-        return;
+        nextFieldErrors.full_name = "full_name is required.";
       }
       if (!normalizedForm.email) {
-        setErrors(["email is required."]);
-        setLoading(false);
-        return;
+        nextFieldErrors.email = "email is required.";
       }
       if (!normalizedForm.phone) {
-        setErrors(["phone is required."]);
-        setLoading(false);
-        return;
+        nextFieldErrors.phone = "phone is required.";
       }
       if (!normalizedForm.event_date) {
-        setErrors(["event_date is required."]);
-        setLoading(false);
-        return;
+        nextFieldErrors.event_date = "event_date is required.";
       }
       if (!normalizedForm.service_interest) {
-        setErrors(["service_interest is required."]);
-        setLoading(false);
-        return;
+        nextFieldErrors.service_interest = "service_interest is required.";
       }
       if (!form.guest_count) {
-        setErrors(["guest_count is required."]);
-        setLoading(false);
-        return;
+        nextFieldErrors.guest_count = "guest_count is required.";
       }
       if (shouldRequirePlanSelection && !servicePlanId) {
-        setErrors(["Please select a package or tier option."]);
+        nextFieldErrors.service_plan = "Please select a package or tier option.";
+      }
+      if (!desiredItems.length) {
+        nextFieldErrors.desired_menu_items = "Please select at least one desired menu item.";
+      }
+      if (hasFieldValidationErrors(nextFieldErrors)) {
+        applyValidationState({ nextFieldErrors });
         setLoading(false);
         return;
       }
 
       if (form.service_interest === "formal") {
         const limits = selectedServicePlan?.constraints || {};
+        const nextHighlightedDetailKeys = [];
         for (const [groupKey, rule] of Object.entries(limits)) {
           const groups = desiredItemGroups.filter((group) => group.groupKey === groupKey);
           const selectedInGroup = groups
             .flatMap((group) => group.items || [])
             .filter((groupItem) => desiredItems.includes(groupItem.name)).length;
           if (rule.min && selectedInGroup < rule.min) {
-            setHighlightedDetailKeys([groupKey]);
-            setLoading(false);
-            return;
+            nextHighlightedDetailKeys.push(groupKey);
           }
+        }
+        if (nextHighlightedDetailKeys.length) {
+          applyValidationState({ nextHighlightedDetailKeys: [...new Set(nextHighlightedDetailKeys)] });
+          setLoading(false);
+          return;
         }
       }
 
       if (form.service_interest === "community" && communitySelectionRules) {
-        const categoryCounts = desiredItems.reduce((acc, selectedItem) => {
-          const selectedGroup = desiredItemGroups.find((group) =>
-            group.items.some((groupItem) => groupItem.name === selectedItem)
-          );
-          const category = selectedGroup?.groupKey || "other";
-          acc[category] = (acc[category] || 0) + 1;
-          return acc;
-        }, {});
+        const categoryCounts = buildCommunityCategoryCounts(desiredItems);
+        const nextHighlightedDetailKeys = [];
 
         for (const [category, rule] of Object.entries(communitySelectionRules)) {
+          if (category === "sides_salads") continue;
           const selectedCount = categoryCounts[category] || 0;
           if (rule.min && selectedCount < rule.min) {
-            setHighlightedDetailKeys([category]);
-            setLoading(false);
-            return;
+            nextHighlightedDetailKeys.push(category);
           }
           if (rule.max && selectedCount > rule.max) {
-            setHighlightedDetailKeys([category]);
-            setLoading(false);
-            return;
+            nextHighlightedDetailKeys.push(category);
           }
+        }
+
+        const combinedSideSaladRule = communitySelectionRules.sides_salads;
+        if (combinedSideSaladRule) {
+          const selectedCombinedCount = getCombinedSideSaladCount(categoryCounts);
+          if (combinedSideSaladRule.min && selectedCombinedCount < combinedSideSaladRule.min) {
+            nextHighlightedDetailKeys.push("sides", "salads");
+          }
+          if (combinedSideSaladRule.max && selectedCombinedCount > combinedSideSaladRule.max) {
+            nextHighlightedDetailKeys.push("sides", "salads");
+          }
+        }
+        if (nextHighlightedDetailKeys.length) {
+          applyValidationState({ nextHighlightedDetailKeys: [...new Set(nextHighlightedDetailKeys)] });
+          setLoading(false);
+          return;
         }
       }
 
@@ -304,12 +415,6 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
         };
       });
 
-      if (!selectedItems.length) {
-        setErrors(["Please select at least one desired menu item."]);
-        setLoading(false);
-        return;
-      }
-
       const payload = {
         ...normalizedForm,
         service_interest: selectedService ? selectedService.label : "",
@@ -327,13 +432,15 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
 
       if (!response.ok) {
         const responseErrors = Array.isArray(body.errors) ? body.errors : ["Unable to submit inquiry."];
+        const mappedFieldErrors = buildFieldErrorsFromMessages(responseErrors);
         const selectionKeys = [...new Set(responseErrors.map(getSelectionCategoryKeyFromText).filter(Boolean))];
-        if (selectionKeys.length) {
-          setHighlightedDetailKeys(selectionKeys);
-          const nonSelectionErrors = responseErrors.filter((error) => !getSelectionCategoryKeyFromText(error));
-          setErrors(nonSelectionErrors);
+        if (response.status === 400 || hasFieldValidationErrors(mappedFieldErrors) || selectionKeys.length) {
+          applyValidationState({
+            nextFieldErrors: mappedFieldErrors,
+            nextHighlightedDetailKeys: selectionKeys,
+          });
         } else {
-          setErrors(responseErrors);
+          setTopErrors(responseErrors);
         }
         return;
       }
@@ -349,11 +456,12 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
       setDesiredItems([]);
       setTraySizes({});
       setServicePlanId("");
+      setFieldErrors(EMPTY_FIELD_ERRORS);
       setHighlightedDetailKeys([]);
       handleCloseModal();
       setShowSuccessModal(true);
     } catch {
-      setErrors(["Network error. Please try again."]);
+      setTopErrors(["Network error. Please try again."]);
     } finally {
       setLoading(false);
     }
@@ -366,7 +474,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
           <Modal.Title>Send Catering Inquiry</Modal.Title>
         </Modal.Header>
 
-        <Form onSubmit={onSubmit}>
+        <Form noValidate onSubmit={onSubmit}>
           <Modal.Body>
             <p className="mb-2 text-danger fw-semibold">* indicates a required field.</p>
             {menuLoading ? <Alert variant="info">Loading menu configuration...</Alert> : null}
@@ -383,14 +491,27 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
               <Form.Label>
                 Full Name <span className="text-danger">*</span>
               </Form.Label>
-              <Form.Control name="full_name" value={form.full_name} onChange={onChange} required />
+              <Form.Control
+                name="full_name"
+                value={form.full_name}
+                onChange={onChange}
+                isInvalid={Boolean(fieldErrors.full_name)}
+                required
+              />
             </Form.Group>
 
             <Form.Group className="mb-3">
               <Form.Label>
                 Email <span className="text-danger">*</span>
               </Form.Label>
-              <Form.Control type="email" name="email" value={form.email} onChange={onChange} required />
+              <Form.Control
+                type="email"
+                name="email"
+                value={form.email}
+                onChange={onChange}
+                isInvalid={Boolean(fieldErrors.email)}
+                required
+              />
             </Form.Group>
 
             <Form.Group className="mb-3">
@@ -406,6 +527,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
                 placeholder="(555) 123-4567"
                 pattern="^(\+?1[\s.-]?)?(\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}$"
                 title="Enter a valid US phone number, e.g. (555) 123-4567"
+                isInvalid={Boolean(fieldErrors.phone)}
                 required
               />
               <Form.Text className="text-muted">Use a valid US number (10 digits; optional +1 and separators).</Form.Text>
@@ -426,6 +548,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
                 name="event_date"
                 value={form.event_date}
                 onChange={onChange}
+                isInvalid={Boolean(fieldErrors.event_date)}
                 required
               />
               <Form.Text className="text-muted">Event date must be at least one week in the future.</Form.Text>
@@ -435,7 +558,15 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
               <Form.Label>
                 Guest Count <span className="text-danger">*</span>
               </Form.Label>
-              <Form.Control type="number" min="1" name="guest_count" value={form.guest_count} onChange={onChange} required />
+              <Form.Control
+                type="number"
+                min="1"
+                name="guest_count"
+                value={form.guest_count}
+                onChange={onChange}
+                isInvalid={Boolean(fieldErrors.guest_count)}
+                required
+              />
             </Form.Group>
 
             <Form.Group className="mb-3">
@@ -453,7 +584,12 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
               <Form.Label>
                 Service Interest <span className="text-danger">*</span>
               </Form.Label>
-              <Form.Select name="service_interest" value={form.service_interest} onChange={onChange} required>
+              <Form.Select
+                name="service_interest"
+                value={form.service_interest}
+                onChange={onChange}
+                isInvalid={Boolean(fieldErrors.service_interest)}
+                required>
                 <option value="">Select a service</option>
                 {serviceOptions.map((service) => (
                   <option key={service.key} value={service.key}>
@@ -472,6 +608,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
               selectedServicePlan={selectedServicePlan}
               displayedPlanDetails={displayedPlanDetails}
               highlightedDetailKeys={highlightedDetailKeys}
+              isInvalid={Boolean(fieldErrors.service_plan)}
             />
 
             <InquiryDesiredItemsSection
@@ -483,6 +620,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
               traySizes={traySizes}
               onToggleDesiredItem={onToggleDesiredItem}
               onChangeTraySize={onChangeTraySize}
+              hasError={Boolean(fieldErrors.desired_menu_items)}
             />
 
             <Form.Group>
