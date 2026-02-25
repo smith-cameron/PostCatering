@@ -15,6 +15,14 @@ const FORM_ERROR_EDIT_ITEM = "edit_item";
 const FORM_ERROR_UPLOAD_MEDIA = "upload_media";
 const FORM_ERROR_EDIT_MEDIA = "edit_media";
 const MENU_TYPE_OPTIONS = ["regular", "formal"];
+const ACCESS_TIER_OWNER = 0;
+const ACCESS_TIER_MANAGER = 1;
+const ACCESS_TIER_OPERATOR = 2;
+const ACCESS_TIER_OPTIONS = [
+  { value: ACCESS_TIER_OWNER, label: "Tier 0 (Owner)" },
+  { value: ACCESS_TIER_MANAGER, label: "Tier 1 (Manager)" },
+  { value: ACCESS_TIER_OPERATOR, label: "Tier 2 (Operator)" },
+];
 const EMPTY_FORM_ERRORS = {
   [FORM_ERROR_CREATE_ITEM]: "",
   [FORM_ERROR_EDIT_ITEM]: "",
@@ -43,6 +51,7 @@ const EMPTY_PROFILE_FIELD_ERRORS = {
 const EMPTY_NEW_ADMIN_FIELD_ERRORS = {
   username: "",
   display_name: "",
+  access_tier: "",
   password: "",
   confirm_password: "",
 };
@@ -71,6 +80,7 @@ const INITIAL_PROFILE_FORM = {
 const INITIAL_NEW_ADMIN_FORM = {
   username: "",
   display_name: "",
+  access_tier: ACCESS_TIER_OPERATOR,
   password: "",
   confirm_password: "",
   is_active: true,
@@ -186,6 +196,9 @@ const mapNewAdminValidationErrors = (message) => {
   if (normalized.includes("display name")) {
     mapped.display_name = String(message || "Invalid display name.");
   }
+  if (normalized.includes("access tier") || normalized.includes("tier")) {
+    mapped.access_tier = String(message || "Invalid access tier.");
+  }
   if (normalized.includes("confirm password") || normalized.includes("must match")) {
     mapped.confirm_password = String(message || "Confirm password does not match.");
   }
@@ -219,6 +232,25 @@ const formatCurrencyDisplay = (value) => {
 };
 
 const formatBooleanLabel = (value) => (value ? "Yes" : "No");
+
+const toAccessTier = (value, fallback = ACCESS_TIER_MANAGER) => {
+  const parsed = Number.parseInt(String(value ?? "").trim(), 10);
+  if ([ACCESS_TIER_OWNER, ACCESS_TIER_MANAGER, ACCESS_TIER_OPERATOR].includes(parsed)) return parsed;
+  return fallback;
+};
+
+const formatAccessTierLabel = (value) => {
+  const tier = toAccessTier(value, ACCESS_TIER_MANAGER);
+  const match = ACCESS_TIER_OPTIONS.find((option) => option.value === tier);
+  return match ? match.label : `Tier ${tier}`;
+};
+
+const formatDateTime = (value) => {
+  if (!value) return "-";
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) return "-";
+  return timestamp.toLocaleString();
+};
 
 const formatMediaSourceFilename = (value) => {
   const raw = String(value || "").trim();
@@ -623,6 +655,11 @@ const AdminDashboard = () => {
   const [newAdminFieldErrors, setNewAdminFieldErrors] = useState(EMPTY_NEW_ADMIN_FIELD_ERRORS);
   const [newAdminError, setNewAdminError] = useState("");
   const [newAdminBusy, setNewAdminBusy] = useState(false);
+  const [showManageAdminsModal, setShowManageAdminsModal] = useState(false);
+  const [managedAdminUsers, setManagedAdminUsers] = useState([]);
+  const [manageAdminsError, setManageAdminsError] = useState("");
+  const [manageAdminsLoading, setManageAdminsLoading] = useState(false);
+  const [manageAdminsActionBusy, setManageAdminsActionBusy] = useState({});
   const [createAdminPasswordVisibility, setCreateAdminPasswordVisibility] = useState(
     INITIAL_CREATE_ADMIN_PASSWORD_VISIBILITY
   );
@@ -690,6 +727,16 @@ const AdminDashboard = () => {
   const editCardRef = useRef(null);
   const mediaEditCardRef = useRef(null);
   const uploadFileInputRef = useRef(null);
+  const adminAccessTier = toAccessTier(adminUser?.access_tier, ACCESS_TIER_MANAGER);
+  const isBossChefSession = normalizeFilterText(adminUser?.username) === "boss_chef";
+  const canAccessDashboardSettings = adminAccessTier === ACCESS_TIER_OWNER || adminAccessTier === ACCESS_TIER_MANAGER;
+  const assignableTierOptions = useMemo(() => {
+    if (adminAccessTier === ACCESS_TIER_OWNER) return ACCESS_TIER_OPTIONS;
+    if (adminAccessTier === ACCESS_TIER_MANAGER) {
+      return ACCESS_TIER_OPTIONS.filter((option) => option.value !== ACCESS_TIER_OWNER);
+    }
+    return [];
+  }, [adminAccessTier]);
 
   const activeGroupOptions = useMemo(
     () =>
@@ -819,6 +866,16 @@ const AdminDashboard = () => {
     setAuditEntries(payload.entries || []);
   }, []);
 
+  const refreshAuditIfAllowed = useCallback(async () => {
+    if (!canAccessDashboardSettings) return;
+    await loadAudit();
+  }, [canAccessDashboardSettings, loadAudit]);
+
+  const loadManagedAdminUsers = useCallback(async () => {
+    const payload = await requestJson("/api/admin/auth/users");
+    setManagedAdminUsers(payload.users || []);
+  }, []);
+
   const loadItemDetail = useCallback(async (itemId) => {
     const payload = await requestJson(`/api/admin/menu/items/${itemId}`);
     const nextForm = buildItemForm(payload.item);
@@ -881,7 +938,7 @@ const AdminDashboard = () => {
   useEffect(() => {
     if (!adminUser) return;
     const needsMediaLoad = activeTab === TAB_MEDIA && !hasLoadedMediaTab;
-    const needsAuditLoad = activeTab === TAB_AUDIT && !hasLoadedAuditTab;
+    const needsAuditLoad = canAccessDashboardSettings && activeTab === TAB_AUDIT && !hasLoadedAuditTab;
     if (!needsMediaLoad && !needsAuditLoad) return;
 
     let mounted = true;
@@ -910,7 +967,20 @@ const AdminDashboard = () => {
     return () => {
       mounted = false;
     };
-  }, [activeTab, adminUser, hasLoadedAuditTab, hasLoadedMediaTab, loadAudit, loadMedia]);
+  }, [activeTab, adminUser, canAccessDashboardSettings, hasLoadedAuditTab, hasLoadedMediaTab, loadAudit, loadMedia]);
+
+  useEffect(() => {
+    if (canAccessDashboardSettings) return;
+    if (activeTab === TAB_AUDIT) {
+      setActiveTab(TAB_MENU);
+    }
+    if (showCreateAdminModal) {
+      setShowCreateAdminModal(false);
+    }
+    if (showManageAdminsModal) {
+      setShowManageAdminsModal(false);
+    }
+  }, [activeTab, canAccessDashboardSettings, showCreateAdminModal, showManageAdminsModal]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1091,7 +1161,7 @@ const AdminDashboard = () => {
       }),
     });
     resetCreateItemForm();
-    await Promise.all([loadMenuItems(), loadAudit()]);
+    await Promise.all([loadMenuItems(), refreshAuditIfAllowed()]);
     if (payload.item?.id) {
       const nextForm = buildItemForm(payload.item);
       setSelectedItemId(payload.item.id);
@@ -1304,14 +1374,14 @@ const AdminDashboard = () => {
     setItemForm(nextForm);
     setItemFormOriginal(nextForm);
     setShowCreatedItemHighlight(true);
-    await Promise.all([loadMenuItems(), loadAudit()]);
+    await Promise.all([loadMenuItems(), refreshAuditIfAllowed()]);
   };
 
   const deleteItem = async () => {
     if (!itemForm?.id) return;
     setFormErrors((prev) => ({ ...prev, [FORM_ERROR_EDIT_ITEM]: "" }));
 
-    const response = await requestJson(`/api/admin/menu/items/${itemForm.id}`, {
+    await requestJson(`/api/admin/menu/items/${itemForm.id}`, {
       method: "DELETE",
     });
     setSelectedItemId(null);
@@ -1320,7 +1390,7 @@ const AdminDashboard = () => {
     setEditCardPlacement("below_table");
     setShouldScrollToEditCard(false);
     setShowCreatedItemHighlight(false);
-    await Promise.all([loadMenuItems(), loadAudit()]);
+    await Promise.all([loadMenuItems(), refreshAuditIfAllowed()]);
   };
 
   const uploadMedia = async () => {
@@ -1363,7 +1433,7 @@ const AdminDashboard = () => {
       setShowCreatedMediaHighlight(true);
     }
     resetUploadMediaForm();
-    await Promise.all([loadMedia(), loadAudit()]);
+    await Promise.all([loadMedia(), refreshAuditIfAllowed()]);
   };
 
   const saveMedia = async () => {
@@ -1376,7 +1446,7 @@ const AdminDashboard = () => {
     const nextForm = buildMediaForm(payload.media);
     setMediaForm(nextForm);
     setMediaFormOriginal(nextForm);
-    await Promise.all([loadMedia(), loadAudit()]);
+    await Promise.all([loadMedia(), refreshAuditIfAllowed()]);
   };
 
   const deleteMedia = async () => {
@@ -1391,7 +1461,7 @@ const AdminDashboard = () => {
     setMediaEditCardPlacement("below_table");
     setShouldScrollToMediaEditCard(false);
     setShowCreatedMediaHighlight(false);
-    await Promise.all([loadMedia(), loadAudit()]);
+    await Promise.all([loadMedia(), refreshAuditIfAllowed()]);
   };
 
   const handleMenuCreateSubmit = useCallback(
@@ -1444,19 +1514,19 @@ const AdminDashboard = () => {
     setMenuTableError("");
     try {
       const menuTypes = uniqueMenuTypeList(item?.menu_types || []);
-      const response = await requestJson(`/api/admin/menu/items/${itemId}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          is_active: !Boolean(item?.is_active),
-          menu_type: menuTypes,
-        }),
-      });
+        const response = await requestJson(`/api/admin/menu/items/${itemId}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            is_active: !item?.is_active,
+            menu_type: menuTypes,
+          }),
+        });
       if (Number(selectedItemId) === Number(itemId) && response?.item) {
         const nextForm = buildItemForm(response.item);
         setItemForm(nextForm);
         setItemFormOriginal(nextForm);
       }
-      await Promise.all([loadMenuItems(), loadAudit()]);
+      await Promise.all([loadMenuItems(), refreshAuditIfAllowed()]);
     } catch (error) {
       setMenuTableError(error.message || "Failed to update menu item status.");
     } finally {
@@ -1479,14 +1549,14 @@ const AdminDashboard = () => {
     try {
       const payload = await requestJson(`/api/admin/media/${mediaId}`, {
         method: "PATCH",
-        body: JSON.stringify({ is_active: !Boolean(item?.is_active) }),
+        body: JSON.stringify({ is_active: !item?.is_active }),
       });
       if (Number(selectedMediaId) === Number(mediaId) && payload?.media) {
         const nextForm = buildMediaForm(payload.media);
         setMediaForm(nextForm);
         setMediaFormOriginal(nextForm);
       }
-      await Promise.all([loadMedia(), loadAudit()]);
+      await Promise.all([loadMedia(), refreshAuditIfAllowed()]);
     } catch (error) {
       setMediaTableError(error.message || "Failed to update media status.");
     } finally {
@@ -1533,7 +1603,7 @@ const AdminDashboard = () => {
           setMediaFormOriginal((prev) => (prev ? { ...prev, display_order: selectedIndex + 1 } : prev));
         }
       }
-      await Promise.all([loadMedia(), loadAudit()]);
+      await Promise.all([loadMedia(), refreshAuditIfAllowed()]);
     } catch (error) {
       setMediaTableError(error.message || "Failed to reorder media.");
     } finally {
@@ -1640,7 +1710,7 @@ const AdminDashboard = () => {
       setShowProfileModal(false);
       setProfileForm(INITIAL_PROFILE_FORM);
       setProfilePasswordVisibility(INITIAL_PROFILE_PASSWORD_VISIBILITY);
-      await loadAudit().catch(() => {});
+      await refreshAuditIfAllowed().catch(() => {});
     } catch (error) {
       const message = error.message || "Failed to update profile.";
       const mappedErrors = mapProfileValidationErrors(message);
@@ -1655,6 +1725,7 @@ const AdminDashboard = () => {
   };
 
   const openCreateAdminModal = () => {
+    if (!canAccessDashboardSettings) return;
     setNewAdminForm(INITIAL_NEW_ADMIN_FORM);
     setNewAdminFieldErrors(EMPTY_NEW_ADMIN_FIELD_ERRORS);
     setNewAdminError("");
@@ -1671,10 +1742,136 @@ const AdminDashboard = () => {
     setCreateAdminPasswordVisibility(INITIAL_CREATE_ADMIN_PASSWORD_VISIBILITY);
   };
 
+  const openManageAdminsModal = () => {
+    if (!canAccessDashboardSettings) return;
+    setShowManageAdminsModal(true);
+    setManageAdminsError("");
+    setManageAdminsLoading(true);
+    setManageAdminsActionBusy({});
+    void loadManagedAdminUsers()
+      .catch((error) => {
+        setManageAdminsError(error.message || "Failed to load admin users.");
+      })
+      .finally(() => {
+        setManageAdminsLoading(false);
+      });
+  };
+
+  const closeManageAdminsModal = () => {
+    if (manageAdminsLoading || hasManageAdminsActionBusy) return;
+    setShowManageAdminsModal(false);
+    setManageAdminsError("");
+    setManageAdminsActionBusy({});
+  };
+
+  const toggleManagedAdminStatus = async (user) => {
+    const userId = toId(user?.id);
+    if (!userId) return;
+    const busyKey = `admin-user:${userId}`;
+    if (manageAdminsActionBusy[busyKey]) return;
+
+    setManageAdminsActionBusy((prev) => ({ ...prev, [busyKey]: true }));
+    setManageAdminsError("");
+    try {
+      const payload = await requestJson(`/api/admin/auth/users/${userId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_active: !user?.is_active }),
+      });
+      const updatedUser = payload?.user || null;
+      const isSelfUpdate = Number(updatedUser?.id) === Number(adminUser?.id);
+      if (isSelfUpdate && updatedUser) {
+        setAdminUser(updatedUser);
+      }
+      const nextSelfTier = isSelfUpdate && updatedUser ? toAccessTier(updatedUser.access_tier, adminAccessTier) : adminAccessTier;
+      if (nextSelfTier === ACCESS_TIER_OWNER || nextSelfTier === ACCESS_TIER_MANAGER) {
+        await Promise.all([loadManagedAdminUsers(), refreshAuditIfAllowed()]);
+      } else {
+        setShowManageAdminsModal(false);
+        if (activeTab === TAB_AUDIT) setActiveTab(TAB_MENU);
+      }
+    } catch (error) {
+      setManageAdminsError(error.message || "Failed to update admin status.");
+    } finally {
+      setManageAdminsActionBusy((prev) => {
+        const next = { ...prev };
+        delete next[busyKey];
+        return next;
+      });
+    }
+  };
+
+  const updateManagedAdminTier = async (user, nextAccessTier) => {
+    const userId = toId(user?.id);
+    if (!userId) return;
+    const busyKey = `admin-user:${userId}`;
+    if (manageAdminsActionBusy[busyKey]) return;
+
+    setManageAdminsActionBusy((prev) => ({ ...prev, [busyKey]: true }));
+    setManageAdminsError("");
+    try {
+      const payload = await requestJson(`/api/admin/auth/users/${userId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ access_tier: nextAccessTier }),
+      });
+      const updatedUser = payload?.user || null;
+      const isSelfUpdate = Number(updatedUser?.id) === Number(adminUser?.id);
+      if (isSelfUpdate && updatedUser) {
+        setAdminUser(updatedUser);
+      }
+      const nextSelfTier = isSelfUpdate && updatedUser ? toAccessTier(updatedUser.access_tier, adminAccessTier) : adminAccessTier;
+      if (nextSelfTier === ACCESS_TIER_OWNER || nextSelfTier === ACCESS_TIER_MANAGER) {
+        await Promise.all([loadManagedAdminUsers(), refreshAuditIfAllowed()]);
+      } else {
+        setShowManageAdminsModal(false);
+        if (activeTab === TAB_AUDIT) setActiveTab(TAB_MENU);
+      }
+    } catch (error) {
+      setManageAdminsError(error.message || "Failed to update admin tier.");
+    } finally {
+      setManageAdminsActionBusy((prev) => {
+        const next = { ...prev };
+        delete next[busyKey];
+        return next;
+      });
+    }
+  };
+
+  const requestManagedAdminDelete = (user) => {
+    const userId = toId(user?.id);
+    if (!userId) return;
+    const username = String(user?.username || "").trim();
+    const displayName = String(user?.display_name || "").trim();
+    const label = displayName || username || `#${userId}`;
+    const busyKey = `admin-user:${userId}`;
+
+    queueConfirm(
+      "Delete admin account?",
+      `Delete ${label}? This action cannot be undone.`,
+      "Delete",
+      async () => {
+        setManageAdminsActionBusy((prev) => ({ ...prev, [busyKey]: true }));
+        setManageAdminsError("");
+        try {
+          await requestJson(`/api/admin/auth/users/${userId}`, { method: "DELETE" });
+          await Promise.all([loadManagedAdminUsers(), refreshAuditIfAllowed()]);
+        } finally {
+          setManageAdminsActionBusy((prev) => {
+            const next = { ...prev };
+            delete next[busyKey];
+            return next;
+          });
+        }
+      },
+      null,
+      "danger"
+    );
+  };
+
   const submitNewAdminUser = async (event) => {
     event.preventDefault();
     const normalizedUsername = String(newAdminForm.username || "").trim().toLowerCase();
     const normalizedDisplayName = String(newAdminForm.display_name || "").trim();
+    const normalizedAccessTier = toAccessTier(newAdminForm.access_tier, ACCESS_TIER_OPERATOR);
     const password = String(newAdminForm.password || "");
     const confirmPassword = String(newAdminForm.confirm_password || "");
     const nextErrors = { ...EMPTY_NEW_ADMIN_FIELD_ERRORS };
@@ -1691,6 +1888,11 @@ const AdminDashboard = () => {
 
     if (normalizedDisplayName.length > 150) {
       nextErrors.display_name = "Display name must be 150 characters or fewer.";
+    }
+
+    const allowedTierValues = assignableTierOptions.map((option) => option.value);
+    if (!allowedTierValues.includes(normalizedAccessTier)) {
+      nextErrors.access_tier = "Select an allowed access tier.";
     }
 
     if (!password) {
@@ -1720,6 +1922,7 @@ const AdminDashboard = () => {
         body: JSON.stringify({
           username: normalizedUsername,
           display_name: normalizedDisplayName,
+          access_tier: normalizedAccessTier,
           password,
           confirm_password: confirmPassword,
           is_active: Boolean(newAdminForm.is_active),
@@ -1728,7 +1931,7 @@ const AdminDashboard = () => {
       setShowCreateAdminModal(false);
       setNewAdminForm(INITIAL_NEW_ADMIN_FORM);
       setCreateAdminPasswordVisibility(INITIAL_CREATE_ADMIN_PASSWORD_VISIBILITY);
-      await loadAudit().catch(() => {});
+      await refreshAuditIfAllowed().catch(() => {});
     } catch (error) {
       const message = error.message || "Failed to create admin user.";
       const mappedErrors = mapNewAdminValidationErrors(message);
@@ -1744,8 +1947,10 @@ const AdminDashboard = () => {
 
   const createAdminUsernameInvalid = Boolean(newAdminFieldErrors.username);
   const createAdminDisplayNameInvalid = Boolean(newAdminFieldErrors.display_name);
+  const createAdminAccessTierInvalid = Boolean(newAdminFieldErrors.access_tier);
   const createAdminPasswordInvalid = Boolean(newAdminFieldErrors.password);
   const createAdminConfirmPasswordInvalid = Boolean(newAdminFieldErrors.confirm_password);
+  const hasManageAdminsActionBusy = Object.values(manageAdminsActionBusy).some(Boolean);
   const createAdminDisplayNameMaxRuleTriggered = /150|characters or fewer|max/.test(
     String(newAdminFieldErrors.display_name || "").toLowerCase()
   );
@@ -2142,12 +2347,14 @@ const AdminDashboard = () => {
             <span className="admin-tab-label-short">Media</span>
           </Nav.Link>
         </Nav.Item>
-        <Nav.Item>
-          <Nav.Link eventKey={TAB_AUDIT} role="tab" aria-label="Dashboard Settings" aria-selected={activeTab === TAB_AUDIT}>
-            <span className="admin-tab-label-full">Dashboard Settings</span>
-            <span className="admin-tab-label-short">Settings</span>
-          </Nav.Link>
-        </Nav.Item>
+        {canAccessDashboardSettings ? (
+          <Nav.Item>
+            <Nav.Link eventKey={TAB_AUDIT} role="tab" aria-label="Dashboard Settings" aria-selected={activeTab === TAB_AUDIT}>
+              <span className="admin-tab-label-full">Dashboard Settings</span>
+              <span className="admin-tab-label-short">Settings</span>
+            </Nav.Link>
+          </Nav.Item>
+        ) : null}
       </Nav>
 
       {activeTab === TAB_MENU ? (
@@ -2847,11 +3054,14 @@ const AdminDashboard = () => {
         </Row>
       ) : null}
 
-      {activeTab === TAB_AUDIT ? (
+      {canAccessDashboardSettings && activeTab === TAB_AUDIT ? (
         <>
-          <div className="d-flex justify-content-start mb-3">
+          <div className="d-flex flex-wrap justify-content-start gap-2 mb-3">
             <Button className="btn-inquiry-action" variant="secondary" onClick={openCreateAdminModal}>
               Add New Admin Account
+            </Button>
+            <Button variant="outline-secondary" onClick={openManageAdminsModal}>
+              Manage Admin Accounts
             </Button>
           </div>
           <Card>
@@ -3091,6 +3301,34 @@ const AdminDashboard = () => {
                 }}
               />
             </Form.Group>
+            <Form.Group className="mb-3" controlId="admin-create-user-tier">
+              <div className="d-flex flex-wrap align-items-center gap-2 mb-1">
+                <Form.Label className={`mb-0 ${createAdminAccessTierInvalid ? "admin-field-label-invalid" : ""}`}>
+                  Access Tier
+                  <span className="text-danger ms-1" aria-hidden="true">
+                    *
+                  </span>
+                </Form.Label>
+                <span className={`admin-form-requirement-text ${createAdminAccessTierInvalid ? "admin-form-requirement-text-invalid" : ""}`}>
+                  tier 0 owner, tier 1 manager, tier 2 operator
+                </span>
+              </div>
+              <Form.Select
+                aria-label="Access Tier"
+                value={String(toAccessTier(newAdminForm.access_tier, ACCESS_TIER_OPERATOR))}
+                isInvalid={Boolean(newAdminFieldErrors.access_tier)}
+                onChange={(event) => {
+                  const nextTierValue = Number.parseInt(event.target.value, 10);
+                  setNewAdminForm((prev) => ({ ...prev, access_tier: toAccessTier(nextTierValue, ACCESS_TIER_OPERATOR) }));
+                  setNewAdminFieldErrors((prev) => ({ ...prev, access_tier: "" }));
+                }}>
+                {assignableTierOptions.map((option) => (
+                  <option key={`create-admin-tier-${option.value}`} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Form.Select>
+            </Form.Group>
             <Form.Group className="mb-3" controlId="admin-create-user-password">
               <div className="d-flex flex-wrap align-items-center gap-2 mb-1">
                 <Form.Label className={`mb-0 ${createAdminPasswordInvalid ? "admin-field-label-invalid" : ""}`}>
@@ -3195,6 +3433,167 @@ const AdminDashboard = () => {
             </Button>
           </Modal.Footer>
         </Form>
+      </Modal>
+
+      <Modal
+        show={showManageAdminsModal}
+        onHide={closeManageAdminsModal}
+        centered
+        size="lg"
+        className={`admin-manage-users-modal ${isDarkMode ? "admin-confirm-modal-dark" : ""}`.trim()}>
+        <Modal.Header closeButton>
+          <Modal.Title>Manage Admin Accounts</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {manageAdminsError ? <Alert variant="danger">{manageAdminsError}</Alert> : null}
+          <Form.Text className="text-secondary d-block mb-3">
+            Update tier, toggle active status, or delete accounts from this list. Your current account cannot be deactivated or deleted.
+          </Form.Text>
+          {manageAdminsLoading ? (
+            <div className="py-4 text-center">
+              <Spinner animation="border" />
+            </div>
+          ) : (
+            <div className="admin-scroll-card">
+              <Table hover responsive size="sm" className="admin-manage-users-table mb-0">
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Last Login</th>
+                    <th className="text-center">Tier</th>
+                    <th className="text-center">Active</th>
+                    <th className="text-end">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {managedAdminUsers.length ? (
+                    managedAdminUsers.map((user) => {
+                      const userId = toId(user?.id);
+                      const busyKey = `admin-user:${userId}`;
+                      const isRowBusy = Boolean(manageAdminsActionBusy[busyKey]);
+                      const isCurrentUser = Number(userId) === Number(adminUser?.id);
+                      const username = String(user?.username || "").trim();
+                      const displayName = String(user?.display_name || "").trim();
+                      const displayLabel = displayName || username || `User #${userId}`;
+                      const activeLabel = user?.is_active ? "Set inactive" : "Set active";
+                      const rowAccessTier = toAccessTier(user?.access_tier, ACCESS_TIER_MANAGER);
+                      const isOwnerRow = rowAccessTier === ACCESS_TIER_OWNER;
+                      const hideActionsForBossChefSelfRow = isBossChefSession && isCurrentUser;
+                      const rowTierOptions = assignableTierOptions.some((option) => option.value === rowAccessTier)
+                        ? assignableTierOptions
+                        : [...assignableTierOptions, { value: rowAccessTier, label: formatAccessTierLabel(rowAccessTier) }];
+                      const isDeleteProtected = Boolean(user?.is_delete_protected);
+                      const toggleDisabled =
+                        isOwnerRow || hideActionsForBossChefSelfRow || isRowBusy || (isCurrentUser && Boolean(user?.is_active));
+                      const deleteDisabled =
+                        isOwnerRow ||
+                        hideActionsForBossChefSelfRow ||
+                        isRowBusy ||
+                        isCurrentUser ||
+                        (adminAccessTier === ACCESS_TIER_MANAGER && isDeleteProtected);
+
+                      return (
+                        <tr key={userId || displayLabel}>
+                          <td>
+                            <div className="d-flex align-items-center gap-2">
+                              <div>
+                                <div>{displayLabel}</div>
+                                {displayName && username ? <small className="text-secondary">@{username}</small> : null}
+                              </div>
+                              {isCurrentUser ? <Badge bg="secondary">You</Badge> : null}
+                            </div>
+                          </td>
+                          <td>{formatDateTime(user?.last_login_at)}</td>
+                          <td className="text-center">
+                            <Form.Select
+                              size="sm"
+                              aria-label={`Access tier for ${displayLabel}`}
+                              className="admin-manage-tier-select"
+                              value={String(rowAccessTier)}
+                              disabled={isRowBusy || !rowTierOptions.length}
+                              onChange={(event) => {
+                                const nextTier = Number.parseInt(event.target.value, 10);
+                                void updateManagedAdminTier(user, toAccessTier(nextTier, rowAccessTier));
+                              }}>
+                              {rowTierOptions.map((option) => (
+                                <option key={`manage-admin-tier-${userId}-${option.value}`} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </Form.Select>
+                          </td>
+                          <td className="text-center">
+                            {isOwnerRow || hideActionsForBossChefSelfRow ? (
+                              <span
+                                className={`admin-status-dot ${user?.is_active ? "admin-status-dot-active" : "admin-status-dot-inactive"}`}
+                                role="img"
+                                aria-label={user?.is_active ? "Active" : "Inactive"}
+                              />
+                            ) : (
+                              <div className="admin-status-line">
+                                {isRowBusy ? <Spinner animation="border" size="sm" /> : null}
+                                <button
+                                  type="button"
+                                  className="admin-status-toggle"
+                                  disabled={toggleDisabled}
+                                  onClick={() => {
+                                    void toggleManagedAdminStatus(user);
+                                  }}
+                                  aria-label={`${activeLabel} ${displayLabel}`}
+                                  title={
+                                    isCurrentUser && Boolean(user?.is_active)
+                                      ? "Current account cannot be deactivated."
+                                      : `${activeLabel} ${displayLabel}`
+                                  }>
+                                  <span
+                                    className={`admin-status-dot ${user?.is_active ? "admin-status-dot-active" : "admin-status-dot-inactive"}`}
+                                    role="img"
+                                    aria-label={user?.is_active ? "Active" : "Inactive"}
+                                  />
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                          <td className="text-end">
+                            {isOwnerRow || hideActionsForBossChefSelfRow ? null : (
+                              <Button
+                                size="sm"
+                                variant="outline-danger"
+                                disabled={deleteDisabled}
+                                onClick={() => requestManagedAdminDelete(user)}
+                                aria-label={`Delete ${displayLabel}`}
+                                title={
+                                  adminAccessTier === ACCESS_TIER_MANAGER && isDeleteProtected
+                                    ? "Tier 1 users cannot delete protected admin accounts."
+                                    : undefined
+                                }>
+                                Delete
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={5} className="text-center text-secondary py-3">
+                        No admin users found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </Table>
+            </div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button
+            variant="outline-secondary"
+            onClick={closeManageAdminsModal}
+            disabled={manageAdminsLoading || hasManageAdminsActionBusy}>
+            Close
+          </Button>
+        </Modal.Footer>
       </Modal>
 
       <ConfirmActionModal

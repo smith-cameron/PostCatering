@@ -203,6 +203,7 @@ describe("AdminDashboard", () => {
               id: 2,
               username: "manager",
               display_name: "Manager",
+              access_tier: 2,
               is_active: true,
               last_login_at: null,
             },
@@ -251,6 +252,381 @@ describe("AdminDashboard", () => {
     expect(payload.password).toBe("new-password-123");
     expect(payload.confirm_password).toBe("new-password-123");
     expect(payload.display_name).toBe("Manager");
+    expect(payload.access_tier).toBe(2);
+  });
+
+  it("opens manage admin accounts modal and supports status toggle + delete", async () => {
+    let users = [
+      {
+        id: 1,
+        username: "admin",
+        display_name: "Admin",
+        access_tier: 1,
+        is_active: true,
+        last_login_at: null,
+      },
+      {
+        id: 2,
+        username: "manager",
+        display_name: "Manager",
+        access_tier: 2,
+        is_active: false,
+        last_login_at: null,
+      },
+    ];
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(buildResponse({ user: users[0] }));
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      if (url === "/api/admin/auth/users" && (!options?.method || options.method === "GET")) {
+        return Promise.resolve(buildResponse({ users }));
+      }
+      if (url === "/api/admin/auth/users/2" && options?.method === "PATCH") {
+        const patchPayload = JSON.parse(options.body || "{}");
+        users = users.map((user) =>
+          user.id === 2
+            ? {
+                ...user,
+                ...(Object.prototype.hasOwnProperty.call(patchPayload, "is_active")
+                  ? { is_active: patchPayload.is_active }
+                  : {}),
+                ...(Object.prototype.hasOwnProperty.call(patchPayload, "access_tier")
+                  ? { access_tier: patchPayload.access_tier }
+                  : {}),
+              }
+            : user
+        );
+        return Promise.resolve(buildResponse({ user: users.find((user) => user.id === 2) }));
+      }
+      if (url === "/api/admin/auth/users/2" && options?.method === "DELETE") {
+        users = users.filter((user) => user.id !== 2);
+        return Promise.resolve(buildResponse({ ok: true, deleted_user_id: 2 }));
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Menu Operations");
+    fireEvent.click(screen.getByRole("tab", { name: "Dashboard Settings" }));
+    await screen.findByRole("button", { name: "Manage Admin Accounts" });
+    fireEvent.click(screen.getByRole("button", { name: "Manage Admin Accounts" }));
+
+    const dialogsAfterOpen = await screen.findAllByRole("dialog");
+    const manageDialog = dialogsAfterOpen[dialogsAfterOpen.length - 1];
+    const managerCell = await within(manageDialog).findByText("Manager");
+    const managerRow = managerCell.closest("tr");
+    expect(managerRow).not.toBeNull();
+
+    fireEvent.change(within(managerRow).getByRole("combobox", { name: /Access tier for Manager/i }), {
+      target: { value: "1" },
+    });
+    await waitFor(() => {
+      const tierPatchCall = globalThis.fetch.mock.calls.find(
+        (call) =>
+          call[0] === "/api/admin/auth/users/2" &&
+          call[1]?.method === "PATCH" &&
+          String(call[1]?.body || "").includes("\"access_tier\":1")
+      );
+      expect(Boolean(tierPatchCall)).toBe(true);
+    });
+
+    fireEvent.click(within(managerRow).getByRole("button", { name: /Set active Manager/i }));
+    await waitFor(() => {
+      const activePatchCall = globalThis.fetch.mock.calls.find(
+        (call) =>
+          call[0] === "/api/admin/auth/users/2" &&
+          call[1]?.method === "PATCH" &&
+          String(call[1]?.body || "").includes("\"is_active\":true")
+      );
+      expect(Boolean(activePatchCall)).toBe(true);
+    });
+
+    fireEvent.click(within(managerRow).getByRole("button", { name: "Delete Manager" }));
+    const dialogs = screen.getAllByRole("dialog");
+    const confirmDialog = dialogs[dialogs.length - 1];
+    fireEvent.click(within(confirmDialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(globalThis.fetch.mock.calls.some((call) => call[0] === "/api/admin/auth/users/2" && call[1]?.method === "DELETE")).toBe(true);
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("Manager")).not.toBeInTheDocument();
+    });
+  });
+
+  it("disables delete action for tier 1 when target admin is delete-protected", async () => {
+    const users = [
+      {
+        id: 1,
+        username: "boss_chef",
+        display_name: "Boss Chef",
+        access_tier: 1,
+        is_active: true,
+        last_login_at: null,
+      },
+      {
+        id: 2,
+        username: "manager",
+        display_name: "Manager",
+        access_tier: 1,
+        is_delete_protected: true,
+        is_active: true,
+        last_login_at: null,
+      },
+    ];
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(buildResponse({ user: users[0] }));
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      if (url === "/api/admin/auth/users" && (!options?.method || options.method === "GET")) {
+        return Promise.resolve(buildResponse({ users }));
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Menu Operations");
+    fireEvent.click(screen.getByRole("tab", { name: "Dashboard Settings" }));
+    await screen.findByRole("button", { name: "Manage Admin Accounts" });
+    fireEvent.click(screen.getByRole("button", { name: "Manage Admin Accounts" }));
+
+    const dialogsAfterOpen = await screen.findAllByRole("dialog");
+    const manageDialog = dialogsAfterOpen[dialogsAfterOpen.length - 1];
+    const managerCell = await within(manageDialog).findByText("Manager");
+    const managerRow = managerCell.closest("tr");
+    expect(managerRow).not.toBeNull();
+
+    const deleteButton = within(managerRow).getByRole("button", { name: "Delete Manager" });
+    expect(deleteButton).toBeDisabled();
+    expect(deleteButton).toHaveAttribute("title", "Tier 1 users cannot delete protected admin accounts.");
+  });
+
+  it("hides active and delete buttons for tier 0 users in manage admin accounts", async () => {
+    const users = [
+      {
+        id: 1,
+        username: "gypsysamauri",
+        display_name: "Owner",
+        access_tier: 0,
+        is_delete_protected: true,
+        is_active: true,
+        last_login_at: null,
+      },
+      {
+        id: 2,
+        username: "owner_two",
+        display_name: "Owner Two",
+        access_tier: 0,
+        is_delete_protected: true,
+        is_active: true,
+        last_login_at: null,
+      },
+      {
+        id: 3,
+        username: "manager",
+        display_name: "Manager",
+        access_tier: 1,
+        is_active: true,
+        last_login_at: null,
+      },
+    ];
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(buildResponse({ user: users[0] }));
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      if (url === "/api/admin/auth/users" && (!options?.method || options.method === "GET")) {
+        return Promise.resolve(buildResponse({ users }));
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Menu Operations");
+    fireEvent.click(screen.getByRole("tab", { name: "Dashboard Settings" }));
+    await screen.findByRole("button", { name: "Manage Admin Accounts" });
+    fireEvent.click(screen.getByRole("button", { name: "Manage Admin Accounts" }));
+
+    const dialogsAfterOpen = await screen.findAllByRole("dialog");
+    const manageDialog = dialogsAfterOpen[dialogsAfterOpen.length - 1];
+    const ownerCell = await within(manageDialog).findByText("Owner Two");
+    const ownerRow = ownerCell.closest("tr");
+    expect(ownerRow).not.toBeNull();
+    expect(within(ownerRow).queryByRole("button", { name: /Set .* Owner Two/i })).not.toBeInTheDocument();
+    expect(within(ownerRow).queryByRole("button", { name: "Delete Owner Two" })).not.toBeInTheDocument();
+  });
+
+  it("hides active and delete buttons on the logged-in boss_chef row only", async () => {
+    const users = [
+      {
+        id: 2,
+        username: "boss_chef",
+        display_name: "Boss Chef",
+        access_tier: 1,
+        is_delete_protected: true,
+        is_active: true,
+        last_login_at: null,
+      },
+      {
+        id: 3,
+        username: "manager",
+        display_name: "Manager",
+        access_tier: 1,
+        is_delete_protected: false,
+        is_active: true,
+        last_login_at: null,
+      },
+    ];
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(buildResponse({ user: users[0] }));
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      if (url === "/api/admin/auth/users" && (!options?.method || options.method === "GET")) {
+        return Promise.resolve(buildResponse({ users }));
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Menu Operations");
+    fireEvent.click(screen.getByRole("tab", { name: "Dashboard Settings" }));
+    await screen.findByRole("button", { name: "Manage Admin Accounts" });
+    fireEvent.click(screen.getByRole("button", { name: "Manage Admin Accounts" }));
+
+    const dialogsAfterOpen = await screen.findAllByRole("dialog");
+    const manageDialog = dialogsAfterOpen[dialogsAfterOpen.length - 1];
+
+    const bossCell = await within(manageDialog).findByText("Boss Chef");
+    const bossRow = bossCell.closest("tr");
+    expect(bossRow).not.toBeNull();
+    expect(within(bossRow).queryByRole("button", { name: /Set .* Boss Chef/i })).not.toBeInTheDocument();
+    expect(within(bossRow).queryByRole("button", { name: "Delete Boss Chef" })).not.toBeInTheDocument();
+
+    const managerCell = await within(manageDialog).findByText("Manager");
+    const managerRow = managerCell.closest("tr");
+    expect(managerRow).not.toBeNull();
+    expect(within(managerRow).getByRole("button", { name: /Set .* Manager/i })).toBeInTheDocument();
+    expect(within(managerRow).getByRole("button", { name: "Delete Manager" })).toBeInTheDocument();
+  });
+
+  it("hides dashboard settings tab for tier 2 while keeping menu and media tabs", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 3, username: "line_cook", display_name: "Line Cook", access_tier: 2, is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (String(url).startsWith("/api/admin/media?")) {
+        return Promise.resolve(buildResponse({ media: [] }));
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Menu Operations");
+    expect(screen.getByRole("tab", { name: "Menu Operations" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Media Manager" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Dashboard Settings" })).not.toBeInTheDocument();
   });
 
   it("highlights selected rows in menu and media tables while editing", async () => {
