@@ -14,6 +14,7 @@ const InquiryServicePlanSection = ({
   selectedServicePlan,
   displayedPlanDetails,
   highlightedDetailKeys,
+  isInvalid = false,
 }) => {
   if (!serviceInterest || !shouldRequirePlanSelection) return null;
 
@@ -28,7 +29,7 @@ const InquiryServicePlanSection = ({
         <span className="text-danger">*</span>
       </Form.Label>
 
-      <Form.Select value={servicePlanId} onChange={onChangeServicePlan} required>
+      <Form.Select value={servicePlanId} onChange={onChangeServicePlan} isInvalid={isInvalid} required>
         <option value="">Select an option</option>
         <optgroup label={serviceInterest === "formal" ? "Dinner Packages" : "Packages"}>
           {servicePlans

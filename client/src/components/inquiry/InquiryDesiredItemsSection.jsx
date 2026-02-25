@@ -10,6 +10,7 @@ const InquiryDesiredItemsSection = ({
   traySizes,
   onToggleDesiredItem,
   onChangeTraySize,
+  hasError = false,
 }) => (
   <Form.Group className="mb-3">
     <Form.Label>
@@ -17,7 +18,10 @@ const InquiryDesiredItemsSection = ({
     </Form.Label>
     {canShowDesiredItems ? (
       desiredItemGroups.length ? (
-        <div className="border rounded p-2" style={{ maxHeight: "220px", overflowY: "auto" }}>
+        <div
+          className={`border rounded p-2${hasError ? " border-danger" : ""}`}
+          style={{ maxHeight: "220px", overflowY: "auto" }}
+          aria-invalid={hasError ? "true" : undefined}>
           {desiredItemGroups.map((group) => (
             <div key={group.title} className="mb-3">
               <div className="fw-semibold small text-uppercase mb-1">{getDisplayGroupTitle(serviceInterest, group)}</div>

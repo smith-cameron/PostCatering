@@ -147,7 +147,10 @@ def validate_service_selection_constraints(service_selection, desired_menu_items
 
   errors = []
   for category, limits in constraints.items():
-    selected_count = category_counts.get(category, 0)
+    if category == "sides_salads":
+      selected_count = category_counts.get("sides", 0) + category_counts.get("salads", 0)
+    else:
+      selected_count = category_counts.get(category, 0)
     min_select = limits.get("min", 0)
     max_select = limits.get("max", 0)
     label = category.replace("_", "/")

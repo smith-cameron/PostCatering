@@ -66,4 +66,91 @@ describe("CatalogSectionsAccordion", () => {
     expect(screen.queryByText("$75")).not.toBeInTheDocument();
     expect(screen.queryByText("$140")).not.toBeInTheDocument();
   });
+
+  it("renders homestyle package copy without choose phrasing", () => {
+    render(
+      <CatalogSectionsAccordion
+        menuKey="community"
+        data={{
+          sections: [
+            {
+              sectionId: "community_homestyle",
+              type: "package",
+              title: "Hearty Homestyle Packages",
+              description: "Choose 1 protein + 2 sides + bread",
+              constraints: {
+                entree: { min: 1, max: 1 },
+                sides: { min: 2, max: 2 },
+              },
+            },
+          ],
+        }}
+        menuOptions={{}}
+      />
+    );
+
+    expect(screen.getByText("1 Entree/Protein")).toBeInTheDocument();
+    expect(screen.getByText("2 Sides")).toBeInTheDocument();
+    expect(screen.queryByText(/choose/i)).not.toBeInTheDocument();
+  });
+
+  it("renders taco bar with a taco protein bullet", () => {
+    render(
+      <CatalogSectionsAccordion
+        menuKey="community"
+        data={{
+          sections: [
+            {
+              sectionId: "community_taco_bar",
+              type: "package",
+              title: "Taco Bar",
+              description: "Includes Spanish rice, refried beans, tortillas, toppings",
+            },
+          ],
+        }}
+        menuOptions={{}}
+      />
+    );
+
+    expect(screen.getByText("Taco Bar Proteins")).toBeInTheDocument();
+  });
+
+  it("renders community tier entree label as in inquiry copy", () => {
+    render(
+      <CatalogSectionsAccordion
+        menuKey="community"
+        data={{
+          sections: [
+            {
+              sectionId: "community_buffet_tiers",
+              type: "tiers",
+              title: "Event Catering - Buffet Style",
+              tiers: [
+                {
+                  tierTitle: "Tier 1: Casual Buffet",
+                  constraints: {
+                    entree: { min: 2, max: 2 },
+                    sides: { min: 2, max: 2 },
+                    salads: { min: 1, max: 1 },
+                  },
+                },
+                {
+                  tierTitle: "Tier 2: Elevated Buffet / Family-Style",
+                  constraints: {
+                    entree: { min: 2, max: 3 },
+                    sides: { min: 3, max: 3 },
+                    salads: { min: 2, max: 2 },
+                  },
+                },
+              ],
+            },
+          ],
+        }}
+        menuOptions={{}}
+      />
+    );
+
+    expect(screen.getByText("2 Entrees/Protiens")).toBeInTheDocument();
+    expect(screen.getByText("2-3 Entrees/Protiens")).toBeInTheDocument();
+  });
 });
