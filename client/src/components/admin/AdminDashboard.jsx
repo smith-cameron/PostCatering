@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Accordion, Alert, Badge, Button, Card, Col, Form, InputGroup, Nav, Row, Spinner, Table } from "react-bootstrap";
+import { Accordion, Alert, Badge, Button, Card, Col, Form, InputGroup, Modal, Nav, Row, Spinner, Table } from "react-bootstrap";
 import { Navigate, useNavigate } from "react-router-dom";
 import ConfirmActionModal from "./ConfirmActionModal";
 import ConfirmReviewList from "./ConfirmReviewList";
@@ -33,6 +33,13 @@ const EMPTY_UPLOAD_FIELD_ERRORS = {
   title: "",
   caption: "",
 };
+const EMPTY_PROFILE_FIELD_ERRORS = {
+  username: "",
+  display_name: "",
+  current_password: "",
+  new_password: "",
+  confirm_password: "",
+};
 const INITIAL_NEW_ITEM_FORM = {
   item_name: "",
   is_active: true,
@@ -47,6 +54,13 @@ const INITIAL_UPLOAD_FORM = {
   is_slide: false,
   is_active: true,
   file: null,
+};
+const INITIAL_PROFILE_FORM = {
+  username: "",
+  display_name: "",
+  current_password: "",
+  new_password: "",
+  confirm_password: "",
 };
 
 const mapCreateValidationErrors = (message) => {
@@ -85,6 +99,29 @@ const mapUploadValidationErrors = (message) => {
   }
   if (normalized.includes("caption")) {
     mapped.caption = String(message || "Invalid caption.");
+  }
+  return mapped;
+};
+
+const mapProfileValidationErrors = (message) => {
+  const normalized = String(message || "").toLowerCase();
+  const mapped = {};
+  if (!normalized) return mapped;
+
+  if (normalized.includes("username")) {
+    mapped.username = String(message || "Invalid username.");
+  }
+  if (normalized.includes("display name")) {
+    mapped.display_name = String(message || "Invalid display name.");
+  }
+  if (normalized.includes("current password")) {
+    mapped.current_password = String(message || "Invalid current password.");
+  }
+  if (normalized.includes("new password")) {
+    mapped.new_password = String(message || "Invalid new password.");
+  }
+  if (normalized.includes("confirm password") || normalized.includes("must match")) {
+    mapped.confirm_password = String(message || "Confirm password does not match.");
   }
   return mapped;
 };
@@ -506,6 +543,11 @@ const AdminDashboard = () => {
   const [sessionLoading, setSessionLoading] = useState(true);
   const [authError, setAuthError] = useState("");
   const [adminUser, setAdminUser] = useState(null);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileForm, setProfileForm] = useState(INITIAL_PROFILE_FORM);
+  const [profileFieldErrors, setProfileFieldErrors] = useState(EMPTY_PROFILE_FIELD_ERRORS);
+  const [profileError, setProfileError] = useState("");
+  const [profileBusy, setProfileBusy] = useState(false);
 
   const [activeTab, setActiveTab] = useState(TAB_MENU);
   const [formErrors, setFormErrors] = useState(EMPTY_FORM_ERRORS);
@@ -1432,6 +1474,108 @@ const AdminDashboard = () => {
     navigate("/admin/login", { replace: true });
   };
 
+  const openProfileEditor = () => {
+    if (!adminUser) return;
+    setProfileForm({
+      ...INITIAL_PROFILE_FORM,
+      username: String(adminUser.username || ""),
+      display_name: String(adminUser.display_name || ""),
+    });
+    setProfileFieldErrors(EMPTY_PROFILE_FIELD_ERRORS);
+    setProfileError("");
+    setShowProfileModal(true);
+  };
+
+  const closeProfileEditor = () => {
+    if (profileBusy) return;
+    setShowProfileModal(false);
+    setProfileFieldErrors(EMPTY_PROFILE_FIELD_ERRORS);
+    setProfileError("");
+    setProfileForm(INITIAL_PROFILE_FORM);
+  };
+
+  const submitProfileUpdate = async (event) => {
+    event.preventDefault();
+    const normalizedUsername = String(profileForm.username || "").trim().toLowerCase();
+    const normalizedDisplayName = String(profileForm.display_name || "").trim();
+    const currentPassword = String(profileForm.current_password || "");
+    const newPassword = String(profileForm.new_password || "");
+    const confirmPassword = String(profileForm.confirm_password || "");
+    const wantsPasswordChange = Boolean(currentPassword || newPassword || confirmPassword);
+
+    const nextErrors = { ...EMPTY_PROFILE_FIELD_ERRORS };
+    if (!normalizedUsername) {
+      nextErrors.username = "Username is required.";
+    } else if (normalizedUsername.length < 3) {
+      nextErrors.username = "Username must be at least 3 characters.";
+    } else if (normalizedUsername.length > 120) {
+      nextErrors.username = "Username must be 120 characters or fewer.";
+    } else if (!/^[a-z0-9._-]+$/.test(normalizedUsername)) {
+      nextErrors.username = "Use lowercase letters, numbers, periods, underscores, or hyphens.";
+    }
+
+    if (normalizedDisplayName.length > 150) {
+      nextErrors.display_name = "Display name must be 150 characters or fewer.";
+    }
+
+    if (wantsPasswordChange) {
+      if (!currentPassword) {
+        nextErrors.current_password = "Current password is required.";
+      }
+      if (!newPassword) {
+        nextErrors.new_password = "New password is required.";
+      } else if (newPassword.length < 10) {
+        nextErrors.new_password = "New password must be at least 10 characters.";
+      }
+      if (!confirmPassword) {
+        nextErrors.confirm_password = "Confirm password is required.";
+      } else if (newPassword && confirmPassword !== newPassword) {
+        nextErrors.confirm_password = "New password and confirm password must match.";
+      }
+      if (currentPassword && newPassword && currentPassword === newPassword) {
+        nextErrors.new_password = "New password must be different from current password.";
+      }
+    }
+
+    if (Object.values(nextErrors).some(Boolean)) {
+      setProfileFieldErrors(nextErrors);
+      setProfileError("");
+      return;
+    }
+
+    setProfileBusy(true);
+    setProfileError("");
+    setProfileFieldErrors(EMPTY_PROFILE_FIELD_ERRORS);
+    try {
+      const payload = await requestJson("/api/admin/auth/profile", {
+        method: "PATCH",
+        body: JSON.stringify({
+          username: normalizedUsername,
+          display_name: normalizedDisplayName,
+          current_password: currentPassword,
+          new_password: newPassword,
+          confirm_password: confirmPassword,
+        }),
+      });
+      if (payload?.user) {
+        setAdminUser(payload.user);
+      }
+      setShowProfileModal(false);
+      setProfileForm(INITIAL_PROFILE_FORM);
+      await loadAudit().catch(() => {});
+    } catch (error) {
+      const message = error.message || "Failed to update profile.";
+      const mappedErrors = mapProfileValidationErrors(message);
+      if (Object.keys(mappedErrors).length) {
+        setProfileFieldErrors((prev) => ({ ...prev, ...mappedErrors }));
+      } else {
+        setProfileError(message);
+      }
+    } finally {
+      setProfileBusy(false);
+    }
+  };
+
   const shouldRenderEditCardAboveList = Boolean(
     selectedItemId && itemForm && isMobileLayout && editCardPlacement === "above_list"
   );
@@ -1776,7 +1920,21 @@ const AdminDashboard = () => {
         <div className="admin-header-main">
           <h2 className="h4 mb-1">Admin Dashboard</h2>
           <p className="text-secondary mb-0">
-            Signed in as <strong>{adminUser?.display_name || adminUser?.username}</strong>
+            Signed in as{" "}
+            <strong>{adminUser?.display_name || adminUser?.username}</strong>
+            <button
+              type="button"
+              className="admin-profile-edit-btn ms-2"
+              aria-label="Edit admin profile"
+              title="Edit profile"
+              onClick={openProfileEditor}>
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="m11.01 1.927 3.063 3.063-8.93 8.93-3.673.61.61-3.673 8.93-8.93Zm1.06-1.06a1.5 1.5 0 0 1 2.122 0l1.941 1.94a1.5 1.5 0 0 1 0 2.122l-.53.53-3.063-3.063.53-.53Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
           </p>
           <Form.Check
             className="admin-theme-toggle mt-2"
@@ -2542,6 +2700,106 @@ const AdminDashboard = () => {
           </Card.Body>
         </Card>
       ) : null}
+
+      <Modal
+        show={showProfileModal}
+        onHide={closeProfileEditor}
+        centered
+        className={`admin-profile-modal ${isDarkMode ? "admin-confirm-modal-dark" : ""}`.trim()}>
+        <Modal.Header closeButton>
+          <Modal.Title>Edit Admin Profile</Modal.Title>
+        </Modal.Header>
+        <Form noValidate onSubmit={submitProfileUpdate}>
+          <Modal.Body>
+            {profileError ? <Alert variant="danger">{profileError}</Alert> : null}
+            <Form.Group className="mb-3" controlId="admin-profile-username">
+              <Form.Label>Username</Form.Label>
+              <Form.Control
+                autoComplete="username"
+                value={profileForm.username}
+                isInvalid={Boolean(profileFieldErrors.username)}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setProfileForm((prev) => ({ ...prev, username: nextValue }));
+                  setProfileFieldErrors((prev) => ({ ...prev, username: "" }));
+                }}
+              />
+            </Form.Group>
+            <Form.Group className="mb-3" controlId="admin-profile-display-name">
+              <Form.Label>Display Name</Form.Label>
+              <Form.Control
+                value={profileForm.display_name}
+                isInvalid={Boolean(profileFieldErrors.display_name)}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setProfileForm((prev) => ({ ...prev, display_name: nextValue }));
+                  setProfileFieldErrors((prev) => ({ ...prev, display_name: "" }));
+                }}
+              />
+            </Form.Group>
+            <Form.Text className="text-secondary d-block mb-3">
+              Leave password fields blank to keep your current password.
+            </Form.Text>
+            <Form.Group className="mb-3" controlId="admin-profile-current-password">
+              <Form.Label>Current Password</Form.Label>
+              <Form.Control
+                type="password"
+                autoComplete="current-password"
+                value={profileForm.current_password}
+                isInvalid={Boolean(profileFieldErrors.current_password)}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setProfileForm((prev) => ({ ...prev, current_password: nextValue }));
+                  setProfileFieldErrors((prev) => ({ ...prev, current_password: "" }));
+                }}
+              />
+            </Form.Group>
+            <Form.Group className="mb-3" controlId="admin-profile-new-password">
+              <Form.Label>New Password</Form.Label>
+              <Form.Control
+                type="password"
+                autoComplete="new-password"
+                value={profileForm.new_password}
+                isInvalid={Boolean(profileFieldErrors.new_password)}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setProfileForm((prev) => ({ ...prev, new_password: nextValue }));
+                  setProfileFieldErrors((prev) => ({ ...prev, new_password: "" }));
+                }}
+              />
+            </Form.Group>
+            <Form.Group controlId="admin-profile-confirm-password">
+              <Form.Label>Confirm New Password</Form.Label>
+              <Form.Control
+                type="password"
+                autoComplete="new-password"
+                value={profileForm.confirm_password}
+                isInvalid={Boolean(profileFieldErrors.confirm_password)}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setProfileForm((prev) => ({ ...prev, confirm_password: nextValue }));
+                  setProfileFieldErrors((prev) => ({ ...prev, confirm_password: "" }));
+                }}
+              />
+            </Form.Group>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="outline-secondary" onClick={closeProfileEditor} disabled={profileBusy}>
+              Cancel
+            </Button>
+            <Button className="btn-inquiry-action" variant="secondary" type="submit" disabled={profileBusy}>
+              {profileBusy ? (
+                <>
+                  <Spinner size="sm" className="me-2" />
+                  Saving...
+                </>
+              ) : (
+                "Save Profile"
+              )}
+            </Button>
+          </Modal.Footer>
+        </Form>
+      </Modal>
 
       <ConfirmActionModal
         show={confirmState.show}

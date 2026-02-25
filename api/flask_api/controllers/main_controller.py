@@ -234,6 +234,33 @@ def admin_auth_me():
     return jsonify({"user": AdminAuthService.to_public_user(admin_user)}), 200
 
 
+@app.route("/api/admin/auth/profile", methods=["PATCH", "OPTIONS"])
+@_require_admin_auth
+def admin_auth_profile_update(admin_user=None):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    before = AdminAuthService.to_public_user(admin_user)
+    response_body, status_code = AdminAuthService.update_user_profile(
+        admin_user["id"],
+        request.get_json(silent=True) or {},
+    )
+    if status_code < 400 and response_body.get("user"):
+        updated_user = response_body["user"]
+        session["admin_user_id"] = updated_user.get("id")
+        session.modified = True
+        AdminAuditService.log_change(
+            admin_user_id=admin_user["id"],
+            action="update",
+            entity_type="admin_user",
+            entity_id=updated_user.get("id"),
+            change_summary=f"Updated admin profile '{updated_user.get('username', '')}'",
+            before=before,
+            after=updated_user,
+        )
+    return jsonify(response_body), status_code
+
+
 @app.route("/api/admin/menu/reference-data", methods=["GET", "OPTIONS"])
 @_require_admin_auth
 def admin_menu_reference_data(admin_user=None):

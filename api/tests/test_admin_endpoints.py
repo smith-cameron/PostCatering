@@ -56,6 +56,7 @@ class AdminEndpointTests(unittest.TestCase):
 
     def test_admin_protected_options_preflight_returns_204_without_auth(self):
         for path in (
+            "/api/admin/auth/profile",
             "/api/admin/menu/reference-data",
             "/api/admin/menu/catalog-items",
             "/api/admin/menu/items/1",
@@ -124,6 +125,78 @@ class AdminEndpointTests(unittest.TestCase):
             response.get_json(),
             {"error": "Unsupported file type. Allowed: image and video formats."},
         )
+
+    @patch(
+        "flask_api.controllers.main_controller.AdminAuthService.get_user_by_id",
+        return_value={"id": 1, "username": "admin", "display_name": "Admin", "is_active": 1},
+    )
+    @patch(
+        "flask_api.controllers.main_controller.AdminAuthService.update_user_profile",
+        return_value=({"errors": ["Current password is incorrect."]}, 400),
+    )
+    def test_admin_profile_update_returns_validation_errors(self, _mock_update_profile, _mock_get_user):
+        with self.client.session_transaction() as session:
+            session["admin_user_id"] = 1
+
+        response = self.client.patch(
+            "/api/admin/auth/profile",
+            json={
+                "username": "admin",
+                "display_name": "Admin",
+                "current_password": "bad",
+                "new_password": "new-password-123",
+                "confirm_password": "new-password-123",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json(), {"errors": ["Current password is incorrect."]})
+
+    @patch(
+        "flask_api.controllers.main_controller.AdminAuthService.get_user_by_id",
+        return_value={"id": 1, "username": "admin", "display_name": "Admin", "is_active": 1},
+    )
+    @patch("flask_api.controllers.main_controller.AdminAuditService.log_change")
+    @patch(
+        "flask_api.controllers.main_controller.AdminAuthService.update_user_profile",
+        return_value=(
+            {
+                "user": {
+                    "id": 1,
+                    "username": "admin2",
+                    "display_name": "Admin Two",
+                    "is_active": True,
+                    "last_login_at": None,
+                }
+            },
+            200,
+        ),
+    )
+    def test_admin_profile_update_returns_user_payload_when_valid(
+        self,
+        mock_update_profile,
+        mock_log_change,
+        _mock_get_user,
+    ):
+        with self.client.session_transaction() as session:
+            session["admin_user_id"] = 1
+
+        response = self.client.patch(
+            "/api/admin/auth/profile",
+            json={
+                "username": "admin2",
+                "display_name": "Admin Two",
+                "current_password": "valid-password",
+                "new_password": "new-password-123",
+                "confirm_password": "new-password-123",
+            },
+        )
+        body = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["user"]["username"], "admin2")
+        self.assertEqual(body["user"]["display_name"], "Admin Two")
+        mock_update_profile.assert_called_once()
+        mock_log_change.assert_called_once()
 
 
 if __name__ == "__main__":

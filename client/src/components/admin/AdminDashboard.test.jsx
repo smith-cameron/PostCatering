@@ -99,6 +99,81 @@ describe("AdminDashboard", () => {
     expect(requests.some((requestUrl) => requestUrl.startsWith("/api/admin/menu/sections?"))).toBe(false);
   });
 
+  it("edits admin profile from header and requires current password for password changes", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      if (url === "/api/admin/auth/profile" && options?.method === "PATCH") {
+        return Promise.resolve(
+          buildResponse({
+            user: {
+              id: 1,
+              username: "admin",
+              display_name: "Admin Updated",
+              is_active: true,
+              last_login_at: null,
+            },
+          })
+        );
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Signed in as");
+    fireEvent.click(screen.getByLabelText("Edit admin profile"));
+    await screen.findByText("Edit Admin Profile");
+
+    fireEvent.change(screen.getByLabelText("New Password"), { target: { value: "new-password-123" } });
+    fireEvent.change(screen.getByLabelText("Confirm New Password"), { target: { value: "new-password-123" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save Profile" }));
+
+    expect(screen.getByLabelText("Current Password")).toHaveClass("is-invalid");
+    expect(globalThis.fetch.mock.calls.some((call) => call[0] === "/api/admin/auth/profile")).toBe(false);
+
+    fireEvent.change(screen.getByLabelText("Current Password"), { target: { value: "old-password-123" } });
+    fireEvent.change(screen.getByLabelText("Display Name"), { target: { value: "Admin Updated" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save Profile" }));
+
+    await waitFor(() => {
+      expect(globalThis.fetch.mock.calls.some((call) => call[0] === "/api/admin/auth/profile")).toBe(true);
+    });
+
+    const profileCall = globalThis.fetch.mock.calls.find((call) => call[0] === "/api/admin/auth/profile");
+    expect(profileCall[1].method).toBe("PATCH");
+    const payload = JSON.parse(profileCall[1].body);
+    expect(payload.current_password).toBe("old-password-123");
+    expect(payload.new_password).toBe("new-password-123");
+    expect(payload.confirm_password).toBe("new-password-123");
+    expect(payload.display_name).toBe("Admin Updated");
+    await waitFor(() => {
+      expect(screen.getByText("Admin Updated")).toBeInTheDocument();
+    });
+  });
+
   it("highlights selected rows in menu and media tables while editing", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
       if (url === "/api/admin/auth/me") {

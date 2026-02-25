@@ -637,6 +637,36 @@ button:hover {
   color: var(--admin-text);
 }
 
+.admin-profile-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0;
+  border: 1px solid var(--admin-border);
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--admin-text);
+  vertical-align: middle;
+}
+
+.admin-profile-edit-btn svg {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.admin-profile-edit-btn:hover,
+.admin-profile-edit-btn:focus {
+  border-color: #3473a4;
+  background: rgba(52, 115, 164, 0.12);
+  color: var(--admin-text);
+}
+
+.admin-profile-edit-btn:focus-visible {
+  box-shadow: 0 0 0 0.2rem rgba(52, 115, 164, 0.22);
+}
+
 .admin-header {
   display: flex;
   justify-content: space-between;
@@ -942,6 +972,23 @@ button:hover {
 
 .admin-confirm-modal-dark .btn-close {
   filter: invert(1) grayscale(100%) brightness(180%);
+}
+
+.admin-profile-modal .btn-close {
+  opacity: 0.85;
+  border: 1px solid transparent;
+  background: transparent var(--bs-btn-close-bg) center / 1em auto no-repeat;
+  box-shadow: none;
+  transition: none;
+}
+
+.admin-profile-modal .btn-close:hover,
+.admin-profile-modal .btn-close:focus,
+.admin-profile-modal .btn-close:focus-visible {
+  opacity: 0.85;
+  border-color: transparent;
+  background: transparent var(--bs-btn-close-bg) center / 1em auto no-repeat;
+  box-shadow: none;
 }
 
 .admin-confirm-modal-dark .alert-danger {
