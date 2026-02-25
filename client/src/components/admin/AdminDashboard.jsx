@@ -40,6 +40,12 @@ const EMPTY_PROFILE_FIELD_ERRORS = {
   new_password: "",
   confirm_password: "",
 };
+const EMPTY_NEW_ADMIN_FIELD_ERRORS = {
+  username: "",
+  display_name: "",
+  password: "",
+  confirm_password: "",
+};
 const INITIAL_NEW_ITEM_FORM = {
   item_name: "",
   is_active: true,
@@ -62,6 +68,49 @@ const INITIAL_PROFILE_FORM = {
   new_password: "",
   confirm_password: "",
 };
+const INITIAL_NEW_ADMIN_FORM = {
+  username: "",
+  display_name: "",
+  password: "",
+  confirm_password: "",
+  is_active: true,
+};
+const INITIAL_PROFILE_PASSWORD_VISIBILITY = {
+  current: false,
+  next: false,
+  confirm: false,
+};
+const INITIAL_CREATE_ADMIN_PASSWORD_VISIBILITY = {
+  password: false,
+  confirm: false,
+};
+
+const PasswordVisibilityButton = ({ visible, label, onToggle, disabled = false }) => (
+  <Button
+    type="button"
+    variant="outline-secondary"
+    className="admin-password-visibility-toggle"
+    aria-label={label}
+    title={label}
+    onClick={onToggle}
+    disabled={disabled}>
+    <svg
+      aria-hidden="true"
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round">
+      <path d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8Z" />
+      <circle cx="8" cy="8" r="2.2" />
+      {visible ? <path d="M2 2l12 12" /> : null}
+    </svg>
+  </Button>
+);
 
 const mapCreateValidationErrors = (message) => {
   const normalized = String(message || "").toLowerCase();
@@ -122,6 +171,26 @@ const mapProfileValidationErrors = (message) => {
   }
   if (normalized.includes("confirm password") || normalized.includes("must match")) {
     mapped.confirm_password = String(message || "Confirm password does not match.");
+  }
+  return mapped;
+};
+
+const mapNewAdminValidationErrors = (message) => {
+  const normalized = String(message || "").toLowerCase();
+  const mapped = {};
+  if (!normalized) return mapped;
+
+  if (normalized.includes("username")) {
+    mapped.username = String(message || "Invalid username.");
+  }
+  if (normalized.includes("display name")) {
+    mapped.display_name = String(message || "Invalid display name.");
+  }
+  if (normalized.includes("confirm password") || normalized.includes("must match")) {
+    mapped.confirm_password = String(message || "Confirm password does not match.");
+  }
+  if (normalized.includes("password")) {
+    mapped.password = String(message || "Invalid password.");
   }
   return mapped;
 };
@@ -548,6 +617,15 @@ const AdminDashboard = () => {
   const [profileFieldErrors, setProfileFieldErrors] = useState(EMPTY_PROFILE_FIELD_ERRORS);
   const [profileError, setProfileError] = useState("");
   const [profileBusy, setProfileBusy] = useState(false);
+  const [profilePasswordVisibility, setProfilePasswordVisibility] = useState(INITIAL_PROFILE_PASSWORD_VISIBILITY);
+  const [showCreateAdminModal, setShowCreateAdminModal] = useState(false);
+  const [newAdminForm, setNewAdminForm] = useState(INITIAL_NEW_ADMIN_FORM);
+  const [newAdminFieldErrors, setNewAdminFieldErrors] = useState(EMPTY_NEW_ADMIN_FIELD_ERRORS);
+  const [newAdminError, setNewAdminError] = useState("");
+  const [newAdminBusy, setNewAdminBusy] = useState(false);
+  const [createAdminPasswordVisibility, setCreateAdminPasswordVisibility] = useState(
+    INITIAL_CREATE_ADMIN_PASSWORD_VISIBILITY
+  );
 
   const [activeTab, setActiveTab] = useState(TAB_MENU);
   const [formErrors, setFormErrors] = useState(EMPTY_FORM_ERRORS);
@@ -604,9 +682,6 @@ const AdminDashboard = () => {
     const persistedTheme = window.localStorage.getItem("admin_dashboard_theme");
     if (persistedTheme === "dark") return true;
     if (persistedTheme === "light") return false;
-    if (typeof window.matchMedia === "function") {
-      return window.matchMedia("(prefers-color-scheme: dark)").matches;
-    }
     return false;
   });
   const [isMobileLayout, setIsMobileLayout] = useState(() =>
@@ -1483,6 +1558,7 @@ const AdminDashboard = () => {
     });
     setProfileFieldErrors(EMPTY_PROFILE_FIELD_ERRORS);
     setProfileError("");
+    setProfilePasswordVisibility(INITIAL_PROFILE_PASSWORD_VISIBILITY);
     setShowProfileModal(true);
   };
 
@@ -1492,6 +1568,7 @@ const AdminDashboard = () => {
     setProfileFieldErrors(EMPTY_PROFILE_FIELD_ERRORS);
     setProfileError("");
     setProfileForm(INITIAL_PROFILE_FORM);
+    setProfilePasswordVisibility(INITIAL_PROFILE_PASSWORD_VISIBILITY);
   };
 
   const submitProfileUpdate = async (event) => {
@@ -1562,6 +1639,7 @@ const AdminDashboard = () => {
       }
       setShowProfileModal(false);
       setProfileForm(INITIAL_PROFILE_FORM);
+      setProfilePasswordVisibility(INITIAL_PROFILE_PASSWORD_VISIBILITY);
       await loadAudit().catch(() => {});
     } catch (error) {
       const message = error.message || "Failed to update profile.";
@@ -1575,6 +1653,105 @@ const AdminDashboard = () => {
       setProfileBusy(false);
     }
   };
+
+  const openCreateAdminModal = () => {
+    setNewAdminForm(INITIAL_NEW_ADMIN_FORM);
+    setNewAdminFieldErrors(EMPTY_NEW_ADMIN_FIELD_ERRORS);
+    setNewAdminError("");
+    setCreateAdminPasswordVisibility(INITIAL_CREATE_ADMIN_PASSWORD_VISIBILITY);
+    setShowCreateAdminModal(true);
+  };
+
+  const closeCreateAdminModal = () => {
+    if (newAdminBusy) return;
+    setShowCreateAdminModal(false);
+    setNewAdminForm(INITIAL_NEW_ADMIN_FORM);
+    setNewAdminFieldErrors(EMPTY_NEW_ADMIN_FIELD_ERRORS);
+    setNewAdminError("");
+    setCreateAdminPasswordVisibility(INITIAL_CREATE_ADMIN_PASSWORD_VISIBILITY);
+  };
+
+  const submitNewAdminUser = async (event) => {
+    event.preventDefault();
+    const normalizedUsername = String(newAdminForm.username || "").trim().toLowerCase();
+    const normalizedDisplayName = String(newAdminForm.display_name || "").trim();
+    const password = String(newAdminForm.password || "");
+    const confirmPassword = String(newAdminForm.confirm_password || "");
+    const nextErrors = { ...EMPTY_NEW_ADMIN_FIELD_ERRORS };
+
+    if (!normalizedUsername) {
+      nextErrors.username = "Username is required.";
+    } else if (normalizedUsername.length < 3) {
+      nextErrors.username = "Username must be at least 3 characters.";
+    } else if (normalizedUsername.length > 120) {
+      nextErrors.username = "Username must be 120 characters or fewer.";
+    } else if (!/^[a-z0-9._-]+$/.test(normalizedUsername)) {
+      nextErrors.username = "Use lowercase letters, numbers, periods, underscores, or hyphens.";
+    }
+
+    if (normalizedDisplayName.length > 150) {
+      nextErrors.display_name = "Display name must be 150 characters or fewer.";
+    }
+
+    if (!password) {
+      nextErrors.password = "Password is required.";
+    } else if (password.length < 10) {
+      nextErrors.password = "Password must be at least 10 characters.";
+    }
+
+    if (!confirmPassword) {
+      nextErrors.confirm_password = "Confirm password is required.";
+    } else if (password && confirmPassword !== password) {
+      nextErrors.confirm_password = "Password and confirm password must match.";
+    }
+
+    if (Object.values(nextErrors).some(Boolean)) {
+      setNewAdminFieldErrors(nextErrors);
+      setNewAdminError("");
+      return;
+    }
+
+    setNewAdminBusy(true);
+    setNewAdminError("");
+    setNewAdminFieldErrors(EMPTY_NEW_ADMIN_FIELD_ERRORS);
+    try {
+      await requestJson("/api/admin/auth/users", {
+        method: "POST",
+        body: JSON.stringify({
+          username: normalizedUsername,
+          display_name: normalizedDisplayName,
+          password,
+          confirm_password: confirmPassword,
+          is_active: Boolean(newAdminForm.is_active),
+        }),
+      });
+      setShowCreateAdminModal(false);
+      setNewAdminForm(INITIAL_NEW_ADMIN_FORM);
+      setCreateAdminPasswordVisibility(INITIAL_CREATE_ADMIN_PASSWORD_VISIBILITY);
+      await loadAudit().catch(() => {});
+    } catch (error) {
+      const message = error.message || "Failed to create admin user.";
+      const mappedErrors = mapNewAdminValidationErrors(message);
+      if (Object.keys(mappedErrors).length) {
+        setNewAdminFieldErrors((prev) => ({ ...prev, ...mappedErrors }));
+      } else {
+        setNewAdminError(message);
+      }
+    } finally {
+      setNewAdminBusy(false);
+    }
+  };
+
+  const createAdminUsernameInvalid = Boolean(newAdminFieldErrors.username);
+  const createAdminDisplayNameInvalid = Boolean(newAdminFieldErrors.display_name);
+  const createAdminPasswordInvalid = Boolean(newAdminFieldErrors.password);
+  const createAdminConfirmPasswordInvalid = Boolean(newAdminFieldErrors.confirm_password);
+  const createAdminDisplayNameMaxRuleTriggered = /150|characters or fewer|max/.test(
+    String(newAdminFieldErrors.display_name || "").toLowerCase()
+  );
+  const createAdminUsernameSpecialCharacterRuleTriggered = /lowercase|underscore|hyphen|period|may only include|use lowercase/.test(
+    String(newAdminFieldErrors.username || "").toLowerCase()
+  );
 
   const shouldRenderEditCardAboveList = Boolean(
     selectedItemId && itemForm && isMobileLayout && editCardPlacement === "above_list"
@@ -1966,9 +2143,9 @@ const AdminDashboard = () => {
           </Nav.Link>
         </Nav.Item>
         <Nav.Item>
-          <Nav.Link eventKey={TAB_AUDIT} role="tab" aria-label="Audit History" aria-selected={activeTab === TAB_AUDIT}>
-            <span className="admin-tab-label-full">Audit History</span>
-            <span className="admin-tab-label-short">Logs</span>
+          <Nav.Link eventKey={TAB_AUDIT} role="tab" aria-label="Dashboard Settings" aria-selected={activeTab === TAB_AUDIT}>
+            <span className="admin-tab-label-full">Dashboard Settings</span>
+            <span className="admin-tab-label-short">Settings</span>
           </Nav.Link>
         </Nav.Item>
       </Nav>
@@ -2671,34 +2848,42 @@ const AdminDashboard = () => {
       ) : null}
 
       {activeTab === TAB_AUDIT ? (
-        <Card>
-          <Card.Body className="admin-scroll-card">
-            <Table striped responsive size="sm">
-              <thead>
-                <tr>
-                  <th>When</th>
-                  <th>User</th>
-                  <th>Action</th>
-                  <th>Entity</th>
-                  <th>Summary</th>
-                </tr>
-              </thead>
-              <tbody>
-                {auditEntries.map((entry) => (
-                  <tr key={entry.id}>
-                    <td>{entry.created_at ? new Date(entry.created_at).toLocaleString() : "-"}</td>
-                    <td>{entry.admin_display_name || entry.admin_username}</td>
-                    <td>{entry.action}</td>
-                    <td>
-                      {entry.entity_type} #{entry.entity_id || "-"}
-                    </td>
-                    <td>{entry.change_summary || "-"}</td>
+        <>
+          <div className="d-flex justify-content-start mb-3">
+            <Button className="btn-inquiry-action" variant="secondary" onClick={openCreateAdminModal}>
+              Add New Admin Account
+            </Button>
+          </div>
+          <Card>
+            <Card.Header>Audit History</Card.Header>
+            <Card.Body className="admin-scroll-card">
+              <Table striped responsive size="sm">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>User</th>
+                    <th>Action</th>
+                    <th>Entity</th>
+                    <th>Summary</th>
                   </tr>
-                ))}
-              </tbody>
-            </Table>
-          </Card.Body>
-        </Card>
+                </thead>
+                <tbody>
+                  {auditEntries.map((entry) => (
+                    <tr key={entry.id}>
+                      <td>{entry.created_at ? new Date(entry.created_at).toLocaleString() : "-"}</td>
+                      <td>{entry.admin_display_name || entry.admin_username}</td>
+                      <td>{entry.action}</td>
+                      <td>
+                        {entry.entity_type} #{entry.entity_id || "-"}
+                      </td>
+                      <td>{entry.change_summary || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            </Card.Body>
+          </Card>
+        </>
       ) : null}
 
       <Modal
@@ -2742,45 +2927,84 @@ const AdminDashboard = () => {
             </Form.Text>
             <Form.Group className="mb-3" controlId="admin-profile-current-password">
               <Form.Label>Current Password</Form.Label>
-              <Form.Control
-                type="password"
-                autoComplete="current-password"
-                value={profileForm.current_password}
-                isInvalid={Boolean(profileFieldErrors.current_password)}
-                onChange={(event) => {
-                  const nextValue = event.target.value;
-                  setProfileForm((prev) => ({ ...prev, current_password: nextValue }));
-                  setProfileFieldErrors((prev) => ({ ...prev, current_password: "" }));
-                }}
-              />
+              <InputGroup hasValidation>
+                <Form.Control
+                  type={profilePasswordVisibility.current ? "text" : "password"}
+                  autoComplete="current-password"
+                  value={profileForm.current_password}
+                  isInvalid={Boolean(profileFieldErrors.current_password)}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    setProfileForm((prev) => ({ ...prev, current_password: nextValue }));
+                    setProfileFieldErrors((prev) => ({ ...prev, current_password: "" }));
+                  }}
+                />
+                <PasswordVisibilityButton
+                  visible={profilePasswordVisibility.current}
+                  label={profilePasswordVisibility.current ? "Hide current password" : "Show current password"}
+                  onToggle={() =>
+                    setProfilePasswordVisibility((prev) => ({
+                      ...prev,
+                      current: !prev.current,
+                    }))
+                  }
+                  disabled={profileBusy}
+                />
+              </InputGroup>
             </Form.Group>
             <Form.Group className="mb-3" controlId="admin-profile-new-password">
               <Form.Label>New Password</Form.Label>
-              <Form.Control
-                type="password"
-                autoComplete="new-password"
-                value={profileForm.new_password}
-                isInvalid={Boolean(profileFieldErrors.new_password)}
-                onChange={(event) => {
-                  const nextValue = event.target.value;
-                  setProfileForm((prev) => ({ ...prev, new_password: nextValue }));
-                  setProfileFieldErrors((prev) => ({ ...prev, new_password: "" }));
-                }}
-              />
+              <InputGroup hasValidation>
+                <Form.Control
+                  type={profilePasswordVisibility.next ? "text" : "password"}
+                  autoComplete="new-password"
+                  value={profileForm.new_password}
+                  isInvalid={Boolean(profileFieldErrors.new_password)}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    setProfileForm((prev) => ({ ...prev, new_password: nextValue }));
+                    setProfileFieldErrors((prev) => ({ ...prev, new_password: "" }));
+                  }}
+                />
+                <PasswordVisibilityButton
+                  visible={profilePasswordVisibility.next}
+                  label={profilePasswordVisibility.next ? "Hide new password" : "Show new password"}
+                  onToggle={() =>
+                    setProfilePasswordVisibility((prev) => ({
+                      ...prev,
+                      next: !prev.next,
+                    }))
+                  }
+                  disabled={profileBusy}
+                />
+              </InputGroup>
             </Form.Group>
             <Form.Group controlId="admin-profile-confirm-password">
               <Form.Label>Confirm New Password</Form.Label>
-              <Form.Control
-                type="password"
-                autoComplete="new-password"
-                value={profileForm.confirm_password}
-                isInvalid={Boolean(profileFieldErrors.confirm_password)}
-                onChange={(event) => {
-                  const nextValue = event.target.value;
-                  setProfileForm((prev) => ({ ...prev, confirm_password: nextValue }));
-                  setProfileFieldErrors((prev) => ({ ...prev, confirm_password: "" }));
-                }}
-              />
+              <InputGroup hasValidation>
+                <Form.Control
+                  type={profilePasswordVisibility.confirm ? "text" : "password"}
+                  autoComplete="new-password"
+                  value={profileForm.confirm_password}
+                  isInvalid={Boolean(profileFieldErrors.confirm_password)}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    setProfileForm((prev) => ({ ...prev, confirm_password: nextValue }));
+                    setProfileFieldErrors((prev) => ({ ...prev, confirm_password: "" }));
+                  }}
+                />
+                <PasswordVisibilityButton
+                  visible={profilePasswordVisibility.confirm}
+                  label={profilePasswordVisibility.confirm ? "Hide confirm new password" : "Show confirm new password"}
+                  onToggle={() =>
+                    setProfilePasswordVisibility((prev) => ({
+                      ...prev,
+                      confirm: !prev.confirm,
+                    }))
+                  }
+                  disabled={profileBusy}
+                />
+              </InputGroup>
             </Form.Group>
           </Modal.Body>
           <Modal.Footer>
@@ -2795,6 +3019,178 @@ const AdminDashboard = () => {
                 </>
               ) : (
                 "Save Profile"
+              )}
+            </Button>
+          </Modal.Footer>
+        </Form>
+      </Modal>
+
+      <Modal
+        show={showCreateAdminModal}
+        onHide={closeCreateAdminModal}
+        centered
+        className={`admin-create-user-modal ${isDarkMode ? "admin-confirm-modal-dark" : ""}`.trim()}>
+        <Modal.Header closeButton>
+          <Modal.Title>Create Admin Account</Modal.Title>
+        </Modal.Header>
+        <Form noValidate onSubmit={submitNewAdminUser}>
+          <Modal.Body>
+            {newAdminError ? <Alert variant="danger">{newAdminError}</Alert> : null}
+            <p className="mb-2 text-danger fw-semibold">* required</p>
+            <Form.Group className="mb-3" controlId="admin-create-user-username">
+              <div className="d-flex flex-wrap align-items-center gap-2 mb-1">
+                <Form.Label className={`mb-0 ${createAdminUsernameInvalid ? "admin-field-label-invalid" : ""}`}>
+                  Username
+                  <span className="text-danger ms-1" aria-hidden="true">
+                    *
+                  </span>
+                </Form.Label>
+                <span className={`admin-form-requirement-text ${createAdminUsernameInvalid ? "admin-form-requirement-text-invalid" : ""}`}>
+                  min 3 chars, unique
+                </span>
+                {createAdminUsernameSpecialCharacterRuleTriggered ? (
+                  <span className={`admin-form-requirement-text ${createAdminUsernameInvalid ? "admin-form-requirement-text-invalid" : ""}`}>
+                    lowercase + . _ - only
+                  </span>
+                ) : null}
+              </div>
+              <Form.Control
+                aria-label="Username"
+                autoComplete="username"
+                value={newAdminForm.username}
+                isInvalid={Boolean(newAdminFieldErrors.username)}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setNewAdminForm((prev) => ({ ...prev, username: nextValue }));
+                  setNewAdminFieldErrors((prev) => ({ ...prev, username: "" }));
+                }}
+              />
+            </Form.Group>
+            <Form.Group className="mb-3" controlId="admin-create-user-display-name">
+              <div className="d-flex flex-wrap align-items-center gap-2 mb-1">
+                <Form.Label className={`mb-0 ${createAdminDisplayNameInvalid ? "admin-field-label-invalid" : ""}`}>Display Name</Form.Label>
+                <span
+                  className={`admin-form-requirement-text ${createAdminDisplayNameInvalid ? "admin-form-requirement-text-invalid" : ""}`}>
+                  optional
+                </span>
+                {createAdminDisplayNameMaxRuleTriggered ? (
+                  <span
+                    className={`admin-form-requirement-text ${createAdminDisplayNameInvalid ? "admin-form-requirement-text-invalid" : ""}`}>
+                    max 150 chars
+                  </span>
+                ) : null}
+              </div>
+              <Form.Control
+                aria-label="Display Name"
+                value={newAdminForm.display_name}
+                isInvalid={Boolean(newAdminFieldErrors.display_name)}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setNewAdminForm((prev) => ({ ...prev, display_name: nextValue }));
+                  setNewAdminFieldErrors((prev) => ({ ...prev, display_name: "" }));
+                }}
+              />
+            </Form.Group>
+            <Form.Group className="mb-3" controlId="admin-create-user-password">
+              <div className="d-flex flex-wrap align-items-center gap-2 mb-1">
+                <Form.Label className={`mb-0 ${createAdminPasswordInvalid ? "admin-field-label-invalid" : ""}`}>
+                  Password
+                  <span className="text-danger ms-1" aria-hidden="true">
+                    *
+                  </span>
+                </Form.Label>
+                <span className={`admin-form-requirement-text ${createAdminPasswordInvalid ? "admin-form-requirement-text-invalid" : ""}`}>
+                  min 10 chars
+                </span>
+              </div>
+              <InputGroup hasValidation>
+                <Form.Control
+                  aria-label="Password"
+                  type={createAdminPasswordVisibility.password ? "text" : "password"}
+                  autoComplete="new-password"
+                  value={newAdminForm.password}
+                  isInvalid={Boolean(newAdminFieldErrors.password)}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    setNewAdminForm((prev) => ({ ...prev, password: nextValue }));
+                    setNewAdminFieldErrors((prev) => ({ ...prev, password: "" }));
+                  }}
+                />
+                <PasswordVisibilityButton
+                  visible={createAdminPasswordVisibility.password}
+                  label={createAdminPasswordVisibility.password ? "Hide password" : "Show password"}
+                  onToggle={() =>
+                    setCreateAdminPasswordVisibility((prev) => ({
+                      ...prev,
+                      password: !prev.password,
+                    }))
+                  }
+                  disabled={newAdminBusy}
+                />
+              </InputGroup>
+            </Form.Group>
+            <Form.Group className="mb-3" controlId="admin-create-user-confirm-password">
+              <div className="d-flex flex-wrap align-items-center gap-2 mb-1">
+                <Form.Label className={`mb-0 ${createAdminConfirmPasswordInvalid ? "admin-field-label-invalid" : ""}`}>
+                  Confirm Password
+                  <span className="text-danger ms-1" aria-hidden="true">
+                    *
+                  </span>
+                </Form.Label>
+                <span
+                  className={`admin-form-requirement-text ${createAdminConfirmPasswordInvalid ? "admin-form-requirement-text-invalid" : ""}`}>
+                  must match password
+                </span>
+              </div>
+              <InputGroup hasValidation>
+                <Form.Control
+                  aria-label="Confirm Password"
+                  type={createAdminPasswordVisibility.confirm ? "text" : "password"}
+                  autoComplete="new-password"
+                  value={newAdminForm.confirm_password}
+                  isInvalid={Boolean(newAdminFieldErrors.confirm_password)}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    setNewAdminForm((prev) => ({ ...prev, confirm_password: nextValue }));
+                    setNewAdminFieldErrors((prev) => ({ ...prev, confirm_password: "" }));
+                  }}
+                />
+                <PasswordVisibilityButton
+                  visible={createAdminPasswordVisibility.confirm}
+                  label={createAdminPasswordVisibility.confirm ? "Hide confirm password" : "Show confirm password"}
+                  onToggle={() =>
+                    setCreateAdminPasswordVisibility((prev) => ({
+                      ...prev,
+                      confirm: !prev.confirm,
+                    }))
+                  }
+                  disabled={newAdminBusy}
+                />
+              </InputGroup>
+            </Form.Group>
+            <Form.Check
+              className="mb-1"
+              type="switch"
+              id="admin-create-user-active"
+              label="Active"
+              checked={Boolean(newAdminForm.is_active)}
+              onChange={(event) => {
+                setNewAdminForm((prev) => ({ ...prev, is_active: event.target.checked }));
+              }}
+            />
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="outline-secondary" onClick={closeCreateAdminModal} disabled={newAdminBusy}>
+              Cancel
+            </Button>
+            <Button className="btn-inquiry-action" variant="secondary" type="submit" disabled={newAdminBusy}>
+              {newAdminBusy ? (
+                <>
+                  <Spinner size="sm" className="me-2" />
+                  Creating...
+                </>
+              ) : (
+                "Create Admin"
               )}
             </Button>
           </Modal.Footer>

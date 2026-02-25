@@ -53,10 +53,14 @@ class AdminEndpointTests(unittest.TestCase):
         catalog_response = self.client.get("/api/admin/menu/catalog-items")
         self.assertEqual(catalog_response.status_code, 401)
         self.assertEqual(catalog_response.get_json(), {"error": "Unauthorized"})
+        create_admin_response = self.client.post("/api/admin/auth/users", json={})
+        self.assertEqual(create_admin_response.status_code, 401)
+        self.assertEqual(create_admin_response.get_json(), {"error": "Unauthorized"})
 
     def test_admin_protected_options_preflight_returns_204_without_auth(self):
         for path in (
             "/api/admin/auth/profile",
+            "/api/admin/auth/users",
             "/api/admin/menu/reference-data",
             "/api/admin/menu/catalog-items",
             "/api/admin/menu/items/1",
@@ -196,6 +200,47 @@ class AdminEndpointTests(unittest.TestCase):
         self.assertEqual(body["user"]["username"], "admin2")
         self.assertEqual(body["user"]["display_name"], "Admin Two")
         mock_update_profile.assert_called_once()
+        mock_log_change.assert_called_once()
+
+    @patch(
+        "flask_api.controllers.main_controller.AdminAuthService.get_user_by_id",
+        return_value={"id": 1, "username": "admin", "display_name": "Admin", "is_active": 1},
+    )
+    @patch("flask_api.controllers.main_controller.AdminAuditService.log_change")
+    @patch(
+        "flask_api.controllers.main_controller.AdminAuthService.create_admin_user",
+        return_value=(
+            {
+                "user": {
+                    "id": 2,
+                    "username": "manager",
+                    "display_name": "Manager",
+                    "is_active": True,
+                    "last_login_at": None,
+                }
+            },
+            201,
+        ),
+    )
+    def test_admin_create_user_returns_created_payload(self, mock_create_user, mock_log_change, _mock_get_user):
+        with self.client.session_transaction() as session:
+            session["admin_user_id"] = 1
+
+        response = self.client.post(
+            "/api/admin/auth/users",
+            json={
+                "username": "manager",
+                "display_name": "Manager",
+                "password": "new-password-123",
+                "confirm_password": "new-password-123",
+                "is_active": True,
+            },
+        )
+        body = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(body["user"]["username"], "manager")
+        mock_create_user.assert_called_once()
         mock_log_change.assert_called_once()
 
 

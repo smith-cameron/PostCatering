@@ -11,6 +11,19 @@ class AdminAuthService:
     def _normalize_username(value):
         return str(value or "").strip().lower()
 
+    @staticmethod
+    def _to_bool(value, default=True):
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return default
+        normalized = str(value).strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+        return default
+
     @classmethod
     def get_user_by_username(cls, username):
         normalized_username = cls._normalize_username(username)
@@ -218,3 +231,79 @@ class AdminAuthService:
 
         updated_user = cls.get_user_by_id(current_user["id"])
         return {"user": cls.to_public_user(updated_user)}, 200
+
+    @classmethod
+    def create_admin_user(cls, body):
+        body = body or {}
+        requested_username = cls._normalize_username(body.get("username"))
+        requested_display_name = str(body.get("display_name") or "").strip() or None
+        requested_password = str(body.get("password") or "")
+        confirm_password = str(body.get("confirm_password") or "")
+        is_active = cls._to_bool(body.get("is_active"), default=True)
+
+        errors = []
+        if not requested_username:
+            errors.append("Username is required.")
+        elif len(requested_username) < 3:
+            errors.append("Username must be at least 3 characters.")
+        elif len(requested_username) > 120:
+            errors.append("Username must be 120 characters or fewer.")
+        elif not cls.USERNAME_PATTERN.fullmatch(requested_username):
+            errors.append("Username may only include lowercase letters, numbers, periods, underscores, and hyphens.")
+
+        if requested_display_name and len(requested_display_name) > 150:
+            errors.append("Display name must be 150 characters or fewer.")
+
+        if requested_username:
+            existing_user = cls.get_user_by_username(requested_username)
+            if existing_user:
+                errors.append("Username is already in use.")
+
+        if not requested_password:
+            errors.append("Password is required.")
+        elif len(requested_password) < 10:
+            errors.append("Password must be at least 10 characters.")
+
+        if not confirm_password:
+            errors.append("Confirm password is required.")
+        elif requested_password and confirm_password != requested_password:
+            errors.append("Password and confirm password must match.")
+
+        if errors:
+            return {"errors": errors}, 400
+
+        try:
+            query_db(
+                """
+      INSERT INTO admin_users (
+        username,
+        password_hash,
+        display_name,
+        is_active
+      )
+      VALUES (
+        %(username)s,
+        %(password_hash)s,
+        %(display_name)s,
+        %(is_active)s
+      );
+      """,
+                {
+                    "username": requested_username,
+                    "password_hash": generate_password_hash(requested_password),
+                    "display_name": requested_display_name,
+                    "is_active": 1 if is_active else 0,
+                },
+                fetch="none",
+            )
+        except Exception as error:
+            error_text = str(error).lower()
+            if "duplicate" in error_text or "uq_admin_users_username" in error_text:
+                return {"errors": ["Username is already in use."]}, 400
+            raise
+
+        created_user = cls.get_user_by_username(requested_username)
+        if not created_user:
+            return {"error": "Unable to create admin user."}, 500
+        created_user_public = cls.get_user_by_id(created_user.get("id"))
+        return {"user": cls.to_public_user(created_user_public)}, 201

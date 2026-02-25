@@ -476,7 +476,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
 
         <Form noValidate onSubmit={onSubmit}>
           <Modal.Body>
-            <p className="mb-2 text-danger fw-semibold">* indicates a required field.</p>
+            <p className="mb-2 text-danger fw-semibold">* required</p>
             {menuLoading ? <Alert variant="info">Loading menu configuration...</Alert> : null}
             {menuError ? <Alert variant="danger">Menu configuration unavailable: {menuError}</Alert> : null}
             {errors.length ? (

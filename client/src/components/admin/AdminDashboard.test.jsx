@@ -55,7 +55,7 @@ describe("AdminDashboard", () => {
       expect(requests.some((requestUrl) => requestUrl.startsWith("/api/admin/media?"))).toBe(true);
     });
 
-    fireEvent.click(screen.getByRole("tab", { name: "Audit History" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Dashboard Settings" }));
     await waitFor(() => {
       const requests = globalThis.fetch.mock.calls.map((call) => String(call[0]));
       expect(requests).toContain("/api/admin/audit?limit=200");
@@ -146,6 +146,9 @@ describe("AdminDashboard", () => {
     await screen.findByText("Signed in as");
     fireEvent.click(screen.getByLabelText("Edit admin profile"));
     await screen.findByText("Edit Admin Profile");
+    expect(screen.getByLabelText("Current Password")).toHaveAttribute("type", "password");
+    fireEvent.click(screen.getByLabelText("Show current password"));
+    expect(screen.getByLabelText("Current Password")).toHaveAttribute("type", "text");
 
     fireEvent.change(screen.getByLabelText("New Password"), { target: { value: "new-password-123" } });
     fireEvent.change(screen.getByLabelText("Confirm New Password"), { target: { value: "new-password-123" } });
@@ -172,6 +175,82 @@ describe("AdminDashboard", () => {
     await waitFor(() => {
       expect(screen.getByText("Admin Updated")).toBeInTheDocument();
     });
+  });
+
+  it("creates a new admin account from the audit tab with validation", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      if (url === "/api/admin/auth/users" && options?.method === "POST") {
+        return Promise.resolve(
+          buildResponse({
+            user: {
+              id: 2,
+              username: "manager",
+              display_name: "Manager",
+              is_active: true,
+              last_login_at: null,
+            },
+          })
+        );
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Menu Operations");
+    fireEvent.click(screen.getByRole("tab", { name: "Dashboard Settings" }));
+    await screen.findByRole("button", { name: "Add New Admin Account" });
+    fireEvent.click(screen.getByRole("button", { name: "Add New Admin Account" }));
+
+    await screen.findByText("Create Admin Account");
+    expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
+    fireEvent.click(screen.getByLabelText("Show password"));
+    expect(screen.getByLabelText("Password")).toHaveAttribute("type", "text");
+    fireEvent.click(screen.getByRole("button", { name: "Create Admin" }));
+    expect(screen.getByLabelText("Username")).toHaveClass("is-invalid");
+    expect(screen.getByLabelText("Password")).toHaveClass("is-invalid");
+    expect(screen.getByLabelText("Confirm Password")).toHaveClass("is-invalid");
+
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "manager" } });
+    fireEvent.change(screen.getByLabelText("Display Name"), { target: { value: "Manager" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "new-password-123" } });
+    fireEvent.change(screen.getByLabelText("Confirm Password"), { target: { value: "new-password-123" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Admin" }));
+
+    await waitFor(() => {
+      expect(globalThis.fetch.mock.calls.some((call) => call[0] === "/api/admin/auth/users")).toBe(true);
+    });
+    const createCall = globalThis.fetch.mock.calls.find((call) => call[0] === "/api/admin/auth/users");
+    expect(createCall[1].method).toBe("POST");
+    const payload = JSON.parse(createCall[1].body);
+    expect(payload.username).toBe("manager");
+    expect(payload.password).toBe("new-password-123");
+    expect(payload.confirm_password).toBe("new-password-123");
+    expect(payload.display_name).toBe("Manager");
   });
 
   it("highlights selected rows in menu and media tables while editing", async () => {
@@ -1968,5 +2047,8 @@ describe("AdminDashboard", () => {
     expect(screen.queryByText("Rice")).not.toBeInTheDocument();
   });
 });
+
+
+
 
 

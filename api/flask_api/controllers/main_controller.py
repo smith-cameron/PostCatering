@@ -261,6 +261,27 @@ def admin_auth_profile_update(admin_user=None):
     return jsonify(response_body), status_code
 
 
+@app.route("/api/admin/auth/users", methods=["POST", "OPTIONS"])
+@_require_admin_auth
+def admin_auth_create_user(admin_user=None):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    response_body, status_code = AdminAuthService.create_admin_user(request.get_json(silent=True) or {})
+    created_user = response_body.get("user") if isinstance(response_body, dict) else None
+    if status_code < 400 and created_user:
+        AdminAuditService.log_change(
+            admin_user_id=admin_user["id"],
+            action="create",
+            entity_type="admin_user",
+            entity_id=created_user.get("id"),
+            change_summary=f"Created admin user '{created_user.get('username', '')}'",
+            before=None,
+            after=created_user,
+        )
+    return jsonify(response_body), status_code
+
+
 @app.route("/api/admin/menu/reference-data", methods=["GET", "OPTIONS"])
 @_require_admin_auth
 def admin_menu_reference_data(admin_user=None):

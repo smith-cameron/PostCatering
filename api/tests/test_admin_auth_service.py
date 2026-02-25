@@ -13,6 +13,76 @@ from flask_api.services.admin_auth_service import AdminAuthService  # noqa: E402
 
 
 class AdminAuthServiceTests(unittest.TestCase):
+    def test_create_admin_user_requires_username_and_password(self):
+        body, status_code = AdminAuthService.create_admin_user(
+            {
+                "username": "",
+                "password": "",
+                "confirm_password": "",
+            }
+        )
+        self.assertEqual(status_code, 400)
+        self.assertIn("Username is required.", body["errors"])
+        self.assertIn("Password is required.", body["errors"])
+        self.assertIn("Confirm password is required.", body["errors"])
+
+    def test_create_admin_user_rejects_duplicate_username(self):
+        with patch.object(AdminAuthService, "get_user_by_username", return_value={"id": 9, "username": "manager"}):
+            body, status_code = AdminAuthService.create_admin_user(
+                {
+                    "username": "manager",
+                    "password": "new-password-123",
+                    "confirm_password": "new-password-123",
+                }
+            )
+        self.assertEqual(status_code, 400)
+        self.assertIn("Username is already in use.", body["errors"])
+
+    @patch("flask_api.services.admin_auth_service.query_db")
+    def test_create_admin_user_success_returns_public_user(self, mock_query_db):
+        with patch.object(
+            AdminAuthService,
+            "get_user_by_username",
+            side_effect=[
+                None,
+                {
+                    "id": 2,
+                    "username": "manager",
+                    "password_hash": generate_password_hash("new-password-123"),
+                    "display_name": "Manager",
+                    "is_active": 1,
+                    "last_login_at": None,
+                },
+            ],
+        ), patch.object(
+            AdminAuthService,
+            "get_user_by_id",
+            return_value={
+                "id": 2,
+                "username": "manager",
+                "display_name": "Manager",
+                "is_active": 1,
+                "last_login_at": None,
+            },
+        ):
+            body, status_code = AdminAuthService.create_admin_user(
+                {
+                    "username": "manager",
+                    "display_name": "Manager",
+                    "password": "new-password-123",
+                    "confirm_password": "new-password-123",
+                    "is_active": True,
+                }
+            )
+
+        self.assertEqual(status_code, 201)
+        self.assertEqual(body["user"]["username"], "manager")
+        self.assertEqual(body["user"]["display_name"], "Manager")
+        self.assertEqual(mock_query_db.call_count, 1)
+        inserted = mock_query_db.call_args.args[1]
+        self.assertEqual(inserted["username"], "manager")
+        self.assertNotEqual(inserted["password_hash"], "new-password-123")
+
     def test_update_profile_requires_current_password_when_changing_password(self):
         with patch.object(
             AdminAuthService,
