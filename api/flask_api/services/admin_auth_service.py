@@ -6,6 +6,9 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 class AdminAuthService:
     USERNAME_PATTERN = re.compile(r"^[a-z0-9._-]+$")
+    ACCESS_TIER_OWNER = 0
+    ACCESS_TIER_MANAGER = 1
+    ACCESS_TIER_OPERATOR = 2
 
     @staticmethod
     def _normalize_username(value):
@@ -25,6 +28,37 @@ class AdminAuthService:
         return default
 
     @classmethod
+    def _normalize_access_tier(cls, value, default=ACCESS_TIER_MANAGER):
+        try:
+            normalized = int(value)
+        except (TypeError, ValueError):
+            return default
+        if normalized in {cls.ACCESS_TIER_OWNER, cls.ACCESS_TIER_MANAGER, cls.ACCESS_TIER_OPERATOR}:
+            return normalized
+        return default
+
+    @classmethod
+    def _to_managed_user(cls, user_row):
+        if not user_row:
+            return None
+        return {
+            "id": user_row.get("id"),
+            "username": user_row.get("username"),
+            "display_name": user_row.get("display_name"),
+            "is_active": bool(user_row.get("is_active", 0)),
+            "last_login_at": (
+                user_row.get("last_login_at").isoformat()
+                if hasattr(user_row.get("last_login_at"), "isoformat")
+                else None
+            ),
+            "access_tier": cls._normalize_access_tier(
+                user_row.get("access_tier"),
+                default=cls.ACCESS_TIER_MANAGER,
+            ),
+            "is_delete_protected": bool(user_row.get("is_delete_protected", 0)),
+        }
+
+    @classmethod
     def get_user_by_username(cls, username):
         normalized_username = cls._normalize_username(username)
         if not normalized_username:
@@ -37,7 +71,9 @@ class AdminAuthService:
         username,
         password_hash,
         display_name,
+        access_tier,
         is_active,
+        is_delete_protected,
         last_login_at
       FROM admin_users
       WHERE username = %(username)s
@@ -60,7 +96,9 @@ class AdminAuthService:
         id,
         username,
         display_name,
+        access_tier,
         is_active,
+        is_delete_protected,
         last_login_at
       FROM admin_users
       WHERE id = %(id)s
@@ -84,7 +122,9 @@ class AdminAuthService:
         username,
         password_hash,
         display_name,
+        access_tier,
         is_active,
+        is_delete_protected,
         last_login_at
       FROM admin_users
       WHERE id = %(id)s
@@ -94,8 +134,8 @@ class AdminAuthService:
             fetch="one",
         )
 
-    @staticmethod
-    def to_public_user(user_row):
+    @classmethod
+    def to_public_user(cls, user_row):
         if not user_row:
             return None
 
@@ -104,6 +144,11 @@ class AdminAuthService:
             "username": user_row.get("username"),
             "display_name": user_row.get("display_name"),
             "is_active": bool(user_row.get("is_active", 0)),
+            "access_tier": cls._normalize_access_tier(
+                user_row.get("access_tier"),
+                default=cls.ACCESS_TIER_MANAGER,
+            ),
+            "is_delete_protected": bool(user_row.get("is_delete_protected", 0)),
             "last_login_at": (
                 user_row.get("last_login_at").isoformat()
                 if hasattr(user_row.get("last_login_at"), "isoformat")
@@ -240,6 +285,11 @@ class AdminAuthService:
         requested_password = str(body.get("password") or "")
         confirm_password = str(body.get("confirm_password") or "")
         is_active = cls._to_bool(body.get("is_active"), default=True)
+        requested_access_tier = cls._normalize_access_tier(
+            body.get("access_tier"),
+            default=cls.ACCESS_TIER_OPERATOR,
+        )
+        is_delete_protected = cls._to_bool(body.get("is_delete_protected"), default=False)
 
         errors = []
         if not requested_username:
@@ -269,6 +319,11 @@ class AdminAuthService:
         elif requested_password and confirm_password != requested_password:
             errors.append("Password and confirm password must match.")
 
+        if "access_tier" in body:
+            raw_access_tier = str(body.get("access_tier") or "").strip()
+            if raw_access_tier and raw_access_tier not in {"0", "1", "2"}:
+                errors.append("Access tier must be one of 0, 1, or 2.")
+
         if errors:
             return {"errors": errors}, 400
 
@@ -279,12 +334,14 @@ class AdminAuthService:
         username,
         password_hash,
         display_name,
+        access_tier,
         is_active
       )
       VALUES (
         %(username)s,
         %(password_hash)s,
         %(display_name)s,
+        %(access_tier)s,
         %(is_active)s
       );
       """,
@@ -292,10 +349,22 @@ class AdminAuthService:
                     "username": requested_username,
                     "password_hash": generate_password_hash(requested_password),
                     "display_name": requested_display_name,
+                    "access_tier": requested_access_tier,
                     "is_active": 1 if is_active else 0,
                 },
                 fetch="none",
             )
+
+            if is_delete_protected:
+                query_db(
+                    """
+      UPDATE admin_users
+      SET is_delete_protected = 1
+      WHERE username = %(username)s;
+      """,
+                    {"username": requested_username},
+                    fetch="none",
+                )
         except Exception as error:
             error_text = str(error).lower()
             if "duplicate" in error_text or "uq_admin_users_username" in error_text:
@@ -307,3 +376,150 @@ class AdminAuthService:
             return {"error": "Unable to create admin user."}, 500
         created_user_public = cls.get_user_by_id(created_user.get("id"))
         return {"user": cls.to_public_user(created_user_public)}, 201
+
+    @classmethod
+    def list_admin_users(cls, requesting_admin_user_id):
+        actor = cls.get_user_by_id(requesting_admin_user_id)
+        if not actor or not bool(actor.get("is_active", 0)):
+            return {"error": "Unauthorized"}, 401
+
+        actor_tier = cls._normalize_access_tier(
+            actor.get("access_tier"),
+            default=cls.ACCESS_TIER_MANAGER,
+        )
+        if actor_tier > cls.ACCESS_TIER_MANAGER:
+            return {"error": "Forbidden"}, 403
+
+        rows = query_db(
+            """
+      SELECT
+        id,
+        username,
+        display_name,
+        access_tier,
+        is_active,
+        is_delete_protected,
+        last_login_at
+      FROM admin_users
+      ORDER BY access_tier ASC, username ASC, id ASC;
+      """
+        )
+        return {"users": [cls._to_managed_user(row) for row in rows]}, 200
+
+    @classmethod
+    def update_admin_user(cls, requesting_admin_user_id, managed_admin_user_id, body):
+        body = body or {}
+        actor = cls.get_user_by_id(requesting_admin_user_id)
+        if not actor or not bool(actor.get("is_active", 0)):
+            return {"error": "Unauthorized"}, 401
+
+        actor_tier = cls._normalize_access_tier(
+            actor.get("access_tier"),
+            default=cls.ACCESS_TIER_MANAGER,
+        )
+        if actor_tier > cls.ACCESS_TIER_MANAGER:
+            return {"error": "Forbidden"}, 403
+
+        target = cls.get_user_by_id(managed_admin_user_id)
+        if not target:
+            return {"error": "Admin user not found."}, 404
+
+        target_tier = cls._normalize_access_tier(
+            target.get("access_tier"),
+            default=cls.ACCESS_TIER_MANAGER,
+        )
+        if actor_tier != cls.ACCESS_TIER_OWNER and target_tier == cls.ACCESS_TIER_OWNER:
+            return {"error": "Only tier 0 can modify tier 0 accounts."}, 403
+
+        next_is_active = target.get("is_active")
+        if "is_active" in body:
+            next_is_active = cls._to_bool(body.get("is_active"), default=bool(target.get("is_active", 0)))
+            if int(target.get("id") or 0) == int(actor.get("id") or 0) and not bool(next_is_active):
+                return {"error": "Current account cannot be deactivated."}, 400
+
+        next_access_tier = target_tier
+        if "access_tier" in body:
+            raw_access_tier = str(body.get("access_tier") or "").strip()
+            if raw_access_tier not in {"0", "1", "2"}:
+                return {"error": "Access tier must be one of 0, 1, or 2."}, 400
+            next_access_tier = cls._normalize_access_tier(raw_access_tier, default=target_tier)
+            if actor_tier != cls.ACCESS_TIER_OWNER and next_access_tier == cls.ACCESS_TIER_OWNER:
+                return {"error": "Only tier 0 can assign tier 0 access."}, 403
+
+        query_db(
+            """
+      UPDATE admin_users
+      SET
+        access_tier = %(access_tier)s,
+        is_active = %(is_active)s,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = %(id)s;
+      """,
+            {
+                "id": target["id"],
+                "access_tier": next_access_tier,
+                "is_active": 1 if bool(next_is_active) else 0,
+            },
+            fetch="none",
+        )
+
+        updated = cls.get_user_by_id(target["id"])
+        return {"user": cls._to_managed_user(updated)}, 200
+
+    @classmethod
+    def delete_admin_user(cls, requesting_admin_user_id, managed_admin_user_id):
+        actor = cls.get_user_by_id(requesting_admin_user_id)
+        if not actor or not bool(actor.get("is_active", 0)):
+            return {"error": "Unauthorized"}, 401
+
+        actor_tier = cls._normalize_access_tier(
+            actor.get("access_tier"),
+            default=cls.ACCESS_TIER_MANAGER,
+        )
+        if actor_tier > cls.ACCESS_TIER_MANAGER:
+            return {"error": "Forbidden"}, 403
+
+        target = cls.get_user_by_id(managed_admin_user_id)
+        if not target:
+            return {"error": "Admin user not found."}, 404
+
+        if int(target.get("id") or 0) == int(actor.get("id") or 0):
+            return {"error": "Current account cannot be deleted."}, 400
+
+        target_tier = cls._normalize_access_tier(
+            target.get("access_tier"),
+            default=cls.ACCESS_TIER_MANAGER,
+        )
+        if actor_tier != cls.ACCESS_TIER_OWNER and target_tier == cls.ACCESS_TIER_OWNER:
+            return {"error": "Only tier 0 can delete tier 0 accounts."}, 403
+        if actor_tier == cls.ACCESS_TIER_MANAGER and bool(target.get("is_delete_protected", 0)):
+            return {"error": "Tier 1 users cannot delete protected admin accounts."}, 403
+
+        active_remaining_row = query_db(
+            """
+      SELECT COUNT(*) AS active_remaining
+      FROM admin_users
+      WHERE id <> %(id)s
+        AND is_active = 1;
+      """,
+            {"id": target["id"]},
+            fetch="one",
+        )
+        active_remaining = int((active_remaining_row or {}).get("active_remaining") or 0)
+        if active_remaining <= 0:
+            return {"error": "At least one active admin account is required."}, 400
+
+        query_db(
+            """
+      DELETE FROM admin_users
+      WHERE id = %(id)s
+      LIMIT 1;
+      """,
+            {"id": target["id"]},
+            fetch="none",
+        )
+        return {
+            "ok": True,
+            "deleted_user_id": target.get("id"),
+            "username": target.get("username"),
+        }, 200

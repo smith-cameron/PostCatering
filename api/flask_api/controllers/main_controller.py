@@ -261,11 +261,15 @@ def admin_auth_profile_update(admin_user=None):
     return jsonify(response_body), status_code
 
 
-@app.route("/api/admin/auth/users", methods=["POST", "OPTIONS"])
+@app.route("/api/admin/auth/users", methods=["GET", "POST", "OPTIONS"])
 @_require_admin_auth
-def admin_auth_create_user(admin_user=None):
+def admin_auth_users(admin_user=None):
     if request.method == "OPTIONS":
         return ("", 204)
+
+    if request.method == "GET":
+        response_body, status_code = AdminAuthService.list_admin_users(admin_user["id"])
+        return jsonify(response_body), status_code
 
     response_body, status_code = AdminAuthService.create_admin_user(request.get_json(silent=True) or {})
     created_user = response_body.get("user") if isinstance(response_body, dict) else None
@@ -278,6 +282,54 @@ def admin_auth_create_user(admin_user=None):
             change_summary=f"Created admin user '{created_user.get('username', '')}'",
             before=None,
             after=created_user,
+        )
+    return jsonify(response_body), status_code
+
+
+@app.route("/api/admin/auth/users/<int:user_id>", methods=["PATCH", "DELETE", "OPTIONS"])
+@_require_admin_auth
+def admin_auth_user_detail(user_id, admin_user=None):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    before = AdminAuthService.get_user_by_id(user_id)
+    before_public = AdminAuthService.to_public_user(before) if before else None
+
+    if request.method == "PATCH":
+        response_body, status_code = AdminAuthService.update_admin_user(
+            admin_user["id"],
+            user_id,
+            request.get_json(silent=True) or {},
+        )
+        updated_user = response_body.get("user") if isinstance(response_body, dict) else None
+        if status_code < 400 and updated_user:
+            AdminAuditService.log_change(
+                admin_user_id=admin_user["id"],
+                action="update",
+                entity_type="admin_user",
+                entity_id=updated_user.get("id"),
+                change_summary=f"Updated admin user '{updated_user.get('username', '')}'",
+                before=before_public,
+                after=updated_user,
+            )
+        return jsonify(response_body), status_code
+
+    response_body, status_code = AdminAuthService.delete_admin_user(admin_user["id"], user_id)
+    if status_code < 400:
+        deleted_user_id = response_body.get("deleted_user_id") if isinstance(response_body, dict) else None
+        deleted_username = (
+            response_body.get("username")
+            if isinstance(response_body, dict)
+            else (before_public or {}).get("username", "")
+        )
+        AdminAuditService.log_change(
+            admin_user_id=admin_user["id"],
+            action="delete",
+            entity_type="admin_user",
+            entity_id=deleted_user_id or user_id,
+            change_summary=f"Deleted admin user '{deleted_username or ''}'",
+            before=before_public,
+            after=None,
         )
     return jsonify(response_body), status_code
 
