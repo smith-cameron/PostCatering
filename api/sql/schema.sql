@@ -24,13 +24,61 @@ CREATE TABLE IF NOT EXISTS admin_users (
   username VARCHAR(120) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
   display_name VARCHAR(150) NULL,
+  access_tier TINYINT UNSIGNED NOT NULL DEFAULT 1,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
+  is_delete_protected TINYINT(1) NOT NULL DEFAULT 0,
+  can_manage_admin_users TINYINT(1) NOT NULL DEFAULT 0,
   last_login_at TIMESTAMP NULL DEFAULT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_admin_users_username (username)
 );
+
+SET @admin_users_has_can_manage_admin_users = (
+  SELECT COUNT(*)
+  FROM INFORMATION_SCHEMA.COLUMNS c
+  WHERE c.TABLE_SCHEMA = DATABASE()
+    AND c.TABLE_NAME = 'admin_users'
+    AND c.COLUMN_NAME = 'can_manage_admin_users'
+);
+SET @add_admin_users_can_manage_admin_users_sql = IF(
+  @admin_users_has_can_manage_admin_users = 0,
+  'ALTER TABLE admin_users ADD COLUMN can_manage_admin_users TINYINT(1) NOT NULL DEFAULT 0 AFTER is_delete_protected',
+  'SELECT 1'
+);
+PREPARE add_admin_users_can_manage_admin_users_stmt FROM @add_admin_users_can_manage_admin_users_sql;
+EXECUTE add_admin_users_can_manage_admin_users_stmt;
+DEALLOCATE PREPARE add_admin_users_can_manage_admin_users_stmt;
+
+UPDATE admin_users
+SET can_manage_admin_users = 0
+WHERE access_tier = 0
+   OR access_tier <> 1;
+
+SET @admin_users_existing_delegated_manager_count = (
+  SELECT COUNT(*)
+  FROM admin_users existing
+  WHERE existing.access_tier = 1
+    AND existing.can_manage_admin_users = 1
+);
+
+SET @admin_users_delegated_seed_id = (
+  SELECT delegated_seed.delegated_id
+  FROM (
+    SELECT id AS delegated_id
+    FROM admin_users
+    WHERE access_tier = 1
+      AND is_delete_protected = 1
+    ORDER BY id ASC
+    LIMIT 1
+  ) delegated_seed
+);
+
+UPDATE admin_users
+SET can_manage_admin_users = 1
+WHERE id = @admin_users_delegated_seed_id
+  AND @admin_users_existing_delegated_manager_count = 0;
 
 CREATE TABLE IF NOT EXISTS admin_audit_log (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

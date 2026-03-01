@@ -17,7 +17,16 @@ describe("AdminDashboard", () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
       if (url === "/api/admin/auth/me") {
         return Promise.resolve(
-          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+          buildResponse({
+            user: {
+              id: 1,
+              username: "admin",
+              display_name: "Admin",
+              access_tier: 1,
+              can_manage_admin_users: true,
+              is_active: true,
+            },
+          })
         );
       }
       if (url === "/api/menu/general/groups") {
@@ -181,7 +190,16 @@ describe("AdminDashboard", () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
       if (url === "/api/admin/auth/me") {
         return Promise.resolve(
-          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+          buildResponse({
+            user: {
+              id: 1,
+              username: "admin",
+              display_name: "Admin",
+              access_tier: 1,
+              can_manage_admin_users: true,
+              is_active: true,
+            },
+          })
         );
       }
       if (url === "/api/menu/general/groups") {
@@ -262,6 +280,7 @@ describe("AdminDashboard", () => {
         username: "admin",
         display_name: "Admin",
         access_tier: 1,
+        can_manage_admin_users: true,
         is_active: true,
         last_login_at: null,
       },
@@ -379,9 +398,10 @@ describe("AdminDashboard", () => {
     const users = [
       {
         id: 1,
-        username: "boss_chef",
-        display_name: "Boss Chef",
+        username: "lead_manager",
+        display_name: "Lead Manager",
         access_tier: 1,
+        can_manage_admin_users: true,
         is_active: true,
         last_login_at: null,
       },
@@ -518,13 +538,14 @@ describe("AdminDashboard", () => {
     expect(within(ownerRow).queryByRole("button", { name: "Delete Owner Two" })).not.toBeInTheDocument();
   });
 
-  it("hides active and delete buttons on the logged-in boss_chef row only", async () => {
+  it("hides active and delete buttons on the logged-in delegated manager row only", async () => {
     const users = [
       {
         id: 2,
-        username: "boss_chef",
-        display_name: "Boss Chef",
+        username: "lead_manager",
+        display_name: "Lead Manager",
         access_tier: 1,
+        can_manage_admin_users: true,
         is_delete_protected: true,
         is_active: true,
         last_login_at: null,
@@ -579,17 +600,57 @@ describe("AdminDashboard", () => {
     const dialogsAfterOpen = await screen.findAllByRole("dialog");
     const manageDialog = dialogsAfterOpen[dialogsAfterOpen.length - 1];
 
-    const bossCell = await within(manageDialog).findByText("Boss Chef");
-    const bossRow = bossCell.closest("tr");
-    expect(bossRow).not.toBeNull();
-    expect(within(bossRow).queryByRole("button", { name: /Set .* Boss Chef/i })).not.toBeInTheDocument();
-    expect(within(bossRow).queryByRole("button", { name: "Delete Boss Chef" })).not.toBeInTheDocument();
+    const delegatedManagerCell = await within(manageDialog).findByText("Lead Manager");
+    const delegatedManagerRow = delegatedManagerCell.closest("tr");
+    expect(delegatedManagerRow).not.toBeNull();
+    expect(within(delegatedManagerRow).queryByRole("button", { name: /Set .* Lead Manager/i })).not.toBeInTheDocument();
+    expect(within(delegatedManagerRow).queryByRole("button", { name: "Delete Lead Manager" })).not.toBeInTheDocument();
 
     const managerCell = await within(manageDialog).findByText("Manager");
     const managerRow = managerCell.closest("tr");
     expect(managerRow).not.toBeNull();
     expect(within(managerRow).getByRole("button", { name: /Set .* Manager/i })).toBeInTheDocument();
     expect(within(managerRow).getByRole("button", { name: "Delete Manager" })).toBeInTheDocument();
+  });
+
+  it("hides user-management buttons for non-delegated tier 1 users while keeping dashboard settings", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 4, username: "manager", display_name: "Manager", access_tier: 1, is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (url === "/api/admin/audit?limit=200") {
+        return Promise.resolve(buildResponse({ entries: [] }));
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Menu Operations");
+    fireEvent.click(screen.getByRole("tab", { name: "Dashboard Settings" }));
+    await waitFor(() => {
+      expect(screen.getByText("Audit History")).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: "Add New Admin Account" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Manage Admin Accounts" })).not.toBeInTheDocument();
   });
 
   it("hides dashboard settings tab for tier 2 while keeping menu and media tabs", async () => {
