@@ -56,10 +56,15 @@ SET can_manage_admin_users = 0
 WHERE access_tier = 0
    OR access_tier <> 1;
 
-UPDATE admin_users
-SET can_manage_admin_users = 1
-WHERE id = (
-  SELECT delegated_id
+SET @admin_users_existing_delegated_manager_count = (
+  SELECT COUNT(*)
+  FROM admin_users existing
+  WHERE existing.access_tier = 1
+    AND existing.can_manage_admin_users = 1
+);
+
+SET @admin_users_delegated_seed_id = (
+  SELECT delegated_seed.delegated_id
   FROM (
     SELECT id AS delegated_id
     FROM admin_users
@@ -68,13 +73,12 @@ WHERE id = (
     ORDER BY id ASC
     LIMIT 1
   ) delegated_seed
-)
-  AND NOT EXISTS (
-    SELECT 1
-    FROM admin_users existing
-    WHERE existing.access_tier = 1
-      AND existing.can_manage_admin_users = 1
-  );
+);
+
+UPDATE admin_users
+SET can_manage_admin_users = 1
+WHERE id = @admin_users_delegated_seed_id
+  AND @admin_users_existing_delegated_manager_count = 0;
 
 CREATE TABLE IF NOT EXISTS admin_audit_log (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
