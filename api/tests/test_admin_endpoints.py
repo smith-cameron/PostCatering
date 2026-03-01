@@ -240,7 +240,16 @@ class AdminEndpointTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(body["user"]["username"], "manager")
-        mock_create_user.assert_called_once()
+        mock_create_user.assert_called_once_with(
+            1,
+            {
+                "username": "manager",
+                "display_name": "Manager",
+                "password": "new-password-123",
+                "confirm_password": "new-password-123",
+                "is_active": True,
+            },
+        )
         mock_log_change.assert_called_once()
 
 

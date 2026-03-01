@@ -567,6 +567,20 @@ Backend:
 - Implemented: optional logical-path restrictions via `menu_group_conflicts` and shared service-layer validation.
 - Implemented: compatibility updates across API/admin/public menu queries to preserve current display behavior.
 
+## TODO (Audit Follow-Up)
+
+Audit snapshot from March 1, 2026:
+- DB structure is current for the simplified menu schema (required tables/columns present, no legacy menu tables detected), so the remaining DB work is data cleanup rather than schema repair.
+- Seed or create the `menu_config` row for `inquiry_email_content`. Current DB keys are only `FORMAL_PLAN_OPTIONS`, `MENU`, and `MENU_OPTIONS`, so the DB-first inquiry email copy described in this README is not populated yet.
+- Remove or normalize the two inactive orphan `menu_items` rows with no `menu_item_type_groups` assignment (`id` 75 `ygkygkjghjk`, `id` 76 `efhsrhsh`). These look like stray test/manual entries and currently fail the “every item has a typed assignment” expectation.
+- Replace placeholder slide metadata. The current DB still has 29 `slides` rows using placeholder title/caption values, which means gallery/landing content is structurally valid but not fully curated.
+- Revisit legacy compatibility code once backward-compat support is no longer needed:
+  - `api/flask_api/models/slide.py` still carries unknown-column fallbacks for pre-`is_slide` / pre-`media_type` `slides` schemas.
+  - `api/flask_api/models/menu.py` still normalizes legacy `constraint_value` shapes even though the legacy menu graph tables have been dropped.
+  - `api/flask_api/services/menu_service.py` still contains legacy mapping helpers (`_general_group_from_legacy`, `_formal_group_from_legacy`) plus the backward-compatible token upsert path on `POST /api/admin/menu/items`.
+- Clarify or split the overloaded `POST /api/admin/menu/items` behavior in docs/code ownership. It currently serves both authenticated admin item creation and legacy token-based non-formal upserts, which increases maintenance ambiguity.
+- Resolve current frontend lint warnings: `client/src/components/admin/AdminDashboard.jsx` has four `react-hooks/exhaustive-deps` warnings around `createItem`, `saveItem`, `uploadMedia`, and `saveMedia`; `client/src/components/admin/ConfirmActionModal.jsx` has one missing dependency warning for `runPrimaryAction`.
+
 ## Program And Menu Reference (Current Data)
 
 This section preserves the current business/program content and pricing snapshot for maintainers.
