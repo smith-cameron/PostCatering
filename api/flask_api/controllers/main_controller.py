@@ -271,7 +271,10 @@ def admin_auth_users(admin_user=None):
         response_body, status_code = AdminAuthService.list_admin_users(admin_user["id"])
         return jsonify(response_body), status_code
 
-    response_body, status_code = AdminAuthService.create_admin_user(request.get_json(silent=True) or {})
+    response_body, status_code = AdminAuthService.create_admin_user(
+        admin_user["id"],
+        request.get_json(silent=True) or {},
+    )
     created_user = response_body.get("user") if isinstance(response_body, dict) else None
     if status_code < 400 and created_user:
         AdminAuditService.log_change(

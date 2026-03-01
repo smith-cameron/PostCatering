@@ -728,15 +728,14 @@ const AdminDashboard = () => {
   const mediaEditCardRef = useRef(null);
   const uploadFileInputRef = useRef(null);
   const adminAccessTier = toAccessTier(adminUser?.access_tier, ACCESS_TIER_MANAGER);
-  const isBossChefSession = normalizeFilterText(adminUser?.username) === "boss_chef";
+  const isOwnerSession = adminAccessTier === ACCESS_TIER_OWNER;
   const canAccessDashboardSettings = adminAccessTier === ACCESS_TIER_OWNER || adminAccessTier === ACCESS_TIER_MANAGER;
-  const assignableTierOptions = useMemo(() => {
-    if (adminAccessTier === ACCESS_TIER_OWNER) return ACCESS_TIER_OPTIONS;
-    if (adminAccessTier === ACCESS_TIER_MANAGER) {
-      return ACCESS_TIER_OPTIONS.filter((option) => option.value !== ACCESS_TIER_OWNER);
-    }
-    return [];
-  }, [adminAccessTier]);
+  const canManageAdminUsers =
+    isOwnerSession || (adminAccessTier === ACCESS_TIER_MANAGER && Boolean(adminUser?.can_manage_admin_users));
+  const assignableTierOptions = useMemo(
+    () => ACCESS_TIER_OPTIONS.filter((option) => option.value !== ACCESS_TIER_OWNER),
+    []
+  );
 
   const activeGroupOptions = useMemo(
     () =>
@@ -872,9 +871,13 @@ const AdminDashboard = () => {
   }, [canAccessDashboardSettings, loadAudit]);
 
   const loadManagedAdminUsers = useCallback(async () => {
+    if (!canManageAdminUsers) {
+      setManagedAdminUsers([]);
+      return;
+    }
     const payload = await requestJson("/api/admin/auth/users");
     setManagedAdminUsers(payload.users || []);
-  }, []);
+  }, [canManageAdminUsers]);
 
   const loadItemDetail = useCallback(async (itemId) => {
     const payload = await requestJson(`/api/admin/menu/items/${itemId}`);
@@ -981,6 +984,16 @@ const AdminDashboard = () => {
       setShowManageAdminsModal(false);
     }
   }, [activeTab, canAccessDashboardSettings, showCreateAdminModal, showManageAdminsModal]);
+
+  useEffect(() => {
+    if (canManageAdminUsers) return;
+    if (showCreateAdminModal) {
+      setShowCreateAdminModal(false);
+    }
+    if (showManageAdminsModal) {
+      setShowManageAdminsModal(false);
+    }
+  }, [canManageAdminUsers, showCreateAdminModal, showManageAdminsModal]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1725,7 +1738,7 @@ const AdminDashboard = () => {
   };
 
   const openCreateAdminModal = () => {
-    if (!canAccessDashboardSettings) return;
+    if (!canManageAdminUsers) return;
     setNewAdminForm(INITIAL_NEW_ADMIN_FORM);
     setNewAdminFieldErrors(EMPTY_NEW_ADMIN_FIELD_ERRORS);
     setNewAdminError("");
@@ -1743,7 +1756,7 @@ const AdminDashboard = () => {
   };
 
   const openManageAdminsModal = () => {
-    if (!canAccessDashboardSettings) return;
+    if (!canManageAdminUsers) return;
     setShowManageAdminsModal(true);
     setManageAdminsError("");
     setManageAdminsLoading(true);
@@ -3056,14 +3069,16 @@ const AdminDashboard = () => {
 
       {canAccessDashboardSettings && activeTab === TAB_AUDIT ? (
         <>
-          <div className="d-flex flex-wrap justify-content-start gap-2 mb-3">
-            <Button className="btn-inquiry-action" variant="secondary" onClick={openCreateAdminModal}>
-              Add New Admin Account
-            </Button>
-            <Button variant="outline-secondary" onClick={openManageAdminsModal}>
-              Manage Admin Accounts
-            </Button>
-          </div>
+          {canManageAdminUsers ? (
+            <div className="d-flex flex-wrap justify-content-start gap-2 mb-3">
+              <Button className="btn-inquiry-action" variant="secondary" onClick={openCreateAdminModal}>
+                Add New Admin Account
+              </Button>
+              <Button variant="outline-secondary" onClick={openManageAdminsModal}>
+                Manage Admin Accounts
+              </Button>
+            </div>
+          ) : null}
           <Card>
             <Card.Header>Audit History</Card.Header>
             <Card.Body className="admin-scroll-card">
@@ -3478,16 +3493,20 @@ const AdminDashboard = () => {
                       const activeLabel = user?.is_active ? "Set inactive" : "Set active";
                       const rowAccessTier = toAccessTier(user?.access_tier, ACCESS_TIER_MANAGER);
                       const isOwnerRow = rowAccessTier === ACCESS_TIER_OWNER;
-                      const hideActionsForBossChefSelfRow = isBossChefSession && isCurrentUser;
-                      const rowTierOptions = assignableTierOptions.some((option) => option.value === rowAccessTier)
-                        ? assignableTierOptions
-                        : [...assignableTierOptions, { value: rowAccessTier, label: formatAccessTierLabel(rowAccessTier) }];
+                      const isDelegatedManagerRow =
+                        Boolean(user?.can_manage_admin_users) && rowAccessTier === ACCESS_TIER_MANAGER;
+                      const hideProtectedManagementRow = !isOwnerSession && (isOwnerRow || isDelegatedManagerRow);
+                      const rowTierOptions = isOwnerRow
+                        ? [{ value: ACCESS_TIER_OWNER, label: formatAccessTierLabel(rowAccessTier) }]
+                        : assignableTierOptions.some((option) => option.value === rowAccessTier)
+                          ? assignableTierOptions
+                          : [...assignableTierOptions, { value: rowAccessTier, label: formatAccessTierLabel(rowAccessTier) }];
                       const isDeleteProtected = Boolean(user?.is_delete_protected);
-                      const toggleDisabled =
-                        isOwnerRow || hideActionsForBossChefSelfRow || isRowBusy || (isCurrentUser && Boolean(user?.is_active));
+                      const tierSelectDisabled =
+                        isOwnerRow || hideProtectedManagementRow || isRowBusy || !rowTierOptions.length;
+                      const toggleDisabled = hideProtectedManagementRow || isRowBusy || (isCurrentUser && Boolean(user?.is_active));
                       const deleteDisabled =
-                        isOwnerRow ||
-                        hideActionsForBossChefSelfRow ||
+                        hideProtectedManagementRow ||
                         isRowBusy ||
                         isCurrentUser ||
                         (adminAccessTier === ACCESS_TIER_MANAGER && isDeleteProtected);
@@ -3510,7 +3529,7 @@ const AdminDashboard = () => {
                               aria-label={`Access tier for ${displayLabel}`}
                               className="admin-manage-tier-select"
                               value={String(rowAccessTier)}
-                              disabled={isRowBusy || !rowTierOptions.length}
+                              disabled={tierSelectDisabled}
                               onChange={(event) => {
                                 const nextTier = Number.parseInt(event.target.value, 10);
                                 void updateManagedAdminTier(user, toAccessTier(nextTier, rowAccessTier));
@@ -3523,7 +3542,7 @@ const AdminDashboard = () => {
                             </Form.Select>
                           </td>
                           <td className="text-center">
-                            {isOwnerRow || hideActionsForBossChefSelfRow ? (
+                            {isOwnerRow || hideProtectedManagementRow ? (
                               <span
                                 className={`admin-status-dot ${user?.is_active ? "admin-status-dot-active" : "admin-status-dot-inactive"}`}
                                 role="img"
@@ -3555,7 +3574,7 @@ const AdminDashboard = () => {
                             )}
                           </td>
                           <td className="text-end">
-                            {isOwnerRow || hideActionsForBossChefSelfRow ? null : (
+                            {isOwnerRow || hideProtectedManagementRow ? null : (
                               <Button
                                 size="sm"
                                 variant="outline-danger"
