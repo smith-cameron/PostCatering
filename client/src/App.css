@@ -1484,8 +1484,85 @@ button {
 }
 
 .admin-profile-modal,
-.admin-create-user-modal {
+.admin-create-user-modal,
+.admin-manage-users-modal {
   --app-modal-close-opacity: 0.85;
+}
+
+.admin-manage-users-modal {
+  --admin-surface: #ffffff;
+  --admin-border: #bcc8d8;
+  --admin-text: #1a2433;
+  --admin-muted: #5f6e81;
+  --app-modal-border-color: var(--admin-border);
+  --app-modal-close-bg: transparent
+    url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%231a2433'%3e%3cpath d='M.293.293a1 1 0 011.414 0L8 6.586 14.293.293a1 1 0 111.414 1.414L9.414 8l6.293 6.293a1 1 0 01-1.414 1.414L8 9.414l-6.293 6.293A1 1 0 01.293 14.293L6.586 8 .293 1.707a1 1 0 010-1.414z'/%3e%3c/svg%3e")
+    center / 1em auto no-repeat;
+}
+
+.admin-manage-users-modal .modal-content {
+  background: var(--admin-surface);
+  color: var(--admin-text);
+}
+
+.admin-manage-users-modal .modal-title,
+.admin-manage-users-modal .modal-body,
+.admin-manage-users-modal .modal-footer {
+  color: var(--admin-text);
+}
+
+.admin-manage-users-modal .text-secondary {
+  color: var(--admin-muted) !important;
+}
+
+.admin-manage-users-modal .table {
+  --bs-table-bg: var(--admin-surface);
+  --bs-table-color: var(--admin-text);
+  --bs-table-border-color: var(--admin-border);
+  --bs-table-hover-color: var(--admin-text);
+}
+
+.admin-manage-users-modal .table > :not(caption) > * > * {
+  border-color: var(--admin-border);
+  border-bottom-width: 1.5px;
+}
+
+.admin-manage-users-modal .table.table-sm > :not(caption) > * > * {
+  padding: 0.45rem 0.6rem;
+}
+
+.admin-manage-users-modal .admin-scroll-card table thead th {
+  background: var(--admin-surface);
+  box-shadow: 0 2px 0 0 var(--admin-border);
+}
+
+.admin-manage-users-modal .admin-status-toggle:hover,
+.admin-manage-users-modal .admin-status-toggle:focus-visible {
+  border-color: var(--admin-border);
+}
+
+.admin-manage-users-modal.admin-confirm-modal-dark {
+  --admin-surface: #1a2432;
+  --admin-border: #3d4b61;
+  --admin-text: #e6edf7;
+  --admin-muted: #9eb1c8;
+  --app-modal-close-bg: transparent
+    url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23e6edf7'%3e%3cpath d='M.293.293a1 1 0 011.414 0L8 6.586 14.293.293a1 1 0 111.414 1.414L9.414 8l6.293 6.293a1 1 0 01-1.414 1.414L8 9.414l-6.293 6.293A1 1 0 01.293 14.293L6.586 8 .293 1.707a1 1 0 010-1.414z'/%3e%3c/svg%3e")
+    center / 1em auto no-repeat;
+}
+
+.admin-manage-users-modal.admin-confirm-modal-dark .table {
+  --bs-table-hover-bg: rgba(255, 255, 255, 0.08);
+  --bs-table-hover-color: #f5f9ff;
+}
+
+.admin-manage-users-modal.admin-confirm-modal-dark .admin-status-dot {
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.admin-manage-users-modal.admin-confirm-modal-dark .admin-status-toggle:hover,
+.admin-manage-users-modal.admin-confirm-modal-dark .admin-status-toggle:focus-visible {
+  border-color: #8da5c4;
 }
 
 .admin-confirm-modal-dark .alert-danger {
