@@ -163,6 +163,9 @@ The E2E suite launches the frontend dev server automatically and expects backend
 Current frontend coverage includes:
 - `client/src/components/Landing.test.jsx` (slide API load/fallback)
 - `client/src/components/Inquiry.test.jsx` (required validation + successful submit payload)
+- `client/src/components/service-menu/CatalogSectionsAccordion.test.jsx` (shared public menu accordion rendering and section promotion)
+- `client/src/components/service-menu/serviceMenuUtils.test.js` (filters formal-only items out of non-formal public menu displays)
+- `client/src/components/admin/AdminDashboard.test.jsx` (admin filter flows, including local media filtering behavior)
 - `client/e2e/customer-inquiry.spec.js` (browser flow from open inquiry modal to successful submission)
 
 ## Pre-commit Hooks
@@ -351,6 +354,11 @@ Maintenance details and SQL examples:
 Key maintenance rule:
 - Use `is_active = 0` to hide rows instead of deleting data.
 
+Public menu rendering notes (current UI):
+- All public menu pages render through the same accordion pipeline (`CatalogSectionsAccordion` + `MenuSectionBlocks`), so structural display changes should be made there instead of per-menu page.
+- Menu accordions default to collapsed.
+- Items assigned to the formal catalog are intentionally excluded from `to-go` and `community/catering` public displays, even if they exist in shared source data.
+
 ### Unified Menu Item Model (Current, Updated February 22, 2026)
 
 The menu schema now uses one canonical `menu_items` table for all item identities, with per-type group assignments in a join table.
@@ -528,6 +536,10 @@ Frontend:
 - Loads menu config from `/api/menus`
 - Builds service/package/tier selections dynamically
 - Posts inquiry payload to `/api/inquiries`
+
+Current frontend UX notes:
+- Shared form-control styling for public/admin modals now lives in `client/src/App.css` via common form tokens, so broad form visual updates can be made centrally.
+- The inquiry modal uses grouped key fields, required badges, and a currency-style budget input for clearer scanning.
 
 Backend:
 - Validates required fields and service selection rules
