@@ -94,6 +94,18 @@ const INITIAL_CREATE_ADMIN_PASSWORD_VISIBILITY = {
   password: false,
   confirm: false,
 };
+const INITIAL_ITEM_FILTERS = {
+  search: "",
+  is_active: "all",
+  menu_type: "all",
+  group_name: "all",
+};
+const INITIAL_MEDIA_FILTERS = {
+  search: "",
+  media_type: "",
+  is_active: "all",
+  is_slide: "all",
+};
 
 const PasswordVisibilityButton = ({ visible, label, onToggle, disabled = false }) => (
   <Button
@@ -639,6 +651,60 @@ const MENU_ITEM_FILTERS = [
   },
 ];
 
+const MEDIA_ITEM_FILTERS = [
+  {
+    key: "search",
+    shouldApply: (value) => Boolean(String(value || "").trim()),
+    apply: (item, value) => {
+      const normalized = normalizeFilterText(value);
+      if (!normalized) return true;
+      const haystack = [
+        item?.title,
+        item?.caption,
+        item?.src,
+        formatMediaSourceFilename(item?.src),
+        item?.media_type,
+        item?.is_slide ? "landing homepage slide" : "gallery",
+        item?.is_active ? "active" : "inactive",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(normalized);
+    },
+  },
+  {
+    key: "media_type",
+    shouldApply: (value) => Boolean(String(value || "").trim()),
+    apply: (item, value) => {
+      const normalized = normalizeFilterText(value);
+      if (!normalized) return true;
+      return normalizeFilterText(item?.media_type) === normalized;
+    },
+  },
+  {
+    key: "is_active",
+    shouldApply: (value) => String(value || "all") !== "all",
+    apply: (item, value) => {
+      const target = String(value || "all");
+      if (target === "all") return true;
+      if (target === "true") return Boolean(item?.is_active) === true;
+      if (target === "false") return Boolean(item?.is_active) === false;
+      return true;
+    },
+  },
+  {
+    key: "is_slide",
+    shouldApply: (value) => String(value || "all") !== "all",
+    apply: (item, value) => {
+      const target = String(value || "all");
+      if (target === "all") return true;
+      if (target === "true") return Boolean(item?.is_slide) === true;
+      if (target === "false") return Boolean(item?.is_slide) === false;
+      return true;
+    },
+  },
+];
+
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const [sessionLoading, setSessionLoading] = useState(true);
@@ -671,7 +737,7 @@ const AdminDashboard = () => {
   const [mediaTableError, setMediaTableError] = useState("");
 
   const [referenceData, setReferenceData] = useState({ catalogs: [], option_groups: [], sections: [], tiers: [] });
-  const [itemFilters, setItemFilters] = useState({ search: "", is_active: "all", menu_type: "all", group_name: "all" });
+  const [itemFilters, setItemFilters] = useState(INITIAL_ITEM_FILTERS);
   const [menuItems, setMenuItems] = useState([]);
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [itemForm, setItemForm] = useState(null);
@@ -683,7 +749,7 @@ const AdminDashboard = () => {
   const [createFieldErrors, setCreateFieldErrors] = useState(EMPTY_CREATE_FIELD_ERRORS);
   const [createValidationLocked, setCreateValidationLocked] = useState(false);
 
-  const [mediaFilters, setMediaFilters] = useState({ search: "", media_type: "", is_active: "all", is_slide: "all" });
+  const [mediaFilters, setMediaFilters] = useState(INITIAL_MEDIA_FILTERS);
   const [mediaItems, setMediaItems] = useState([]);
   const [selectedMediaId, setSelectedMediaId] = useState(null);
   const [mediaForm, setMediaForm] = useState(null);
@@ -792,6 +858,15 @@ const AdminDashboard = () => {
       }, menuItemRows),
     [itemFilters, menuItemRows]
   );
+  const filteredMediaItems = useMemo(
+    () =>
+      MEDIA_ITEM_FILTERS.reduce((rows, filterDefinition) => {
+        const filterValue = mediaFilters[filterDefinition.key];
+        if (!filterDefinition.shouldApply(filterValue)) return rows;
+        return rows.filter((item) => filterDefinition.apply(item, filterValue));
+      }, mediaItems),
+    [mediaFilters, mediaItems]
+  );
   const hasCreateFormChanges = useMemo(
     () =>
       newItemForm.is_active !== INITIAL_NEW_ITEM_FORM.is_active ||
@@ -846,10 +921,6 @@ const AdminDashboard = () => {
   const loadMedia = useCallback(async () => {
     try {
       const params = new URLSearchParams();
-      if (mediaFilters.search.trim()) params.set("search", mediaFilters.search.trim());
-      if (mediaFilters.media_type) params.set("media_type", mediaFilters.media_type);
-      if (mediaFilters.is_active !== "all") params.set("is_active", mediaFilters.is_active);
-      if (mediaFilters.is_slide !== "all") params.set("is_slide", mediaFilters.is_slide);
       params.set("limit", "800");
       const payload = await requestJson(`/api/admin/media?${params.toString()}`);
       setMediaItems(payload.media || []);
@@ -858,11 +929,15 @@ const AdminDashboard = () => {
       setMediaTableError(error.message || "Failed to load media items.");
       throw error;
     }
-  }, [mediaFilters]);
+  }, []);
 
   const loadAudit = useCallback(async () => {
     const payload = await requestJson("/api/admin/audit?limit=200");
     setAuditEntries(payload.entries || []);
+  }, []);
+
+  const resetMediaFilters = useCallback(() => {
+    setMediaFilters(INITIAL_MEDIA_FILTERS);
   }, []);
 
   const refreshAuditIfAllowed = useCallback(async () => {
@@ -1126,7 +1201,7 @@ const AdminDashboard = () => {
     const validationMessages = Object.values(nextFieldErrors).filter(Boolean);
     if (validationMessages.length) {
       setCreateFieldErrors(nextFieldErrors);
-      throw new Error(validationMessages.join(" "));
+      throw new Error(validationMessages.join("\n"));
     }
 
     const nonFormalSections = (referenceData.sections || []).filter(
@@ -1425,7 +1500,7 @@ const AdminDashboard = () => {
     const validationMessages = Object.values(nextUploadFieldErrors).filter(Boolean);
     if (validationMessages.length) {
       setUploadFieldErrors(nextUploadFieldErrors);
-      throw new Error(validationMessages.join(" "));
+      throw new Error(validationMessages.join("\n"));
     }
 
     setUploadFieldErrors(EMPTY_UPLOAD_FIELD_ERRORS);
@@ -2610,14 +2685,7 @@ const AdminDashboard = () => {
 	                  <Button
 	                    className="mt-2 me-2"
 	                    variant="outline-secondary"
-	                    onClick={() =>
-	                      setItemFilters({
-	                        search: "",
-	                        is_active: "all",
-	                        menu_type: "all",
-	                        group_name: "all",
-	                      })
-	                    }>
+	                    onClick={() => setItemFilters(INITIAL_ITEM_FILTERS)}>
 	                    Reset Filters
 	                  </Button>
 	                  <Button className="mt-2" variant="outline-secondary" onClick={loadMenuItems}>
@@ -2872,8 +2940,11 @@ const AdminDashboard = () => {
 	                    <option value="true">Homepage Slide</option>
 	                    <option value="false">Gallery Only</option>
 	                  </Form.Select>
-	                  <Button className="mt-2" variant="outline-secondary" onClick={loadMedia}>
-	                    Apply
+	                  <Button className="mt-2 me-2" variant="outline-secondary" onClick={resetMediaFilters}>
+	                    Reset Filters
+	                  </Button>
+	                  <Button className="mt-2" variant="outline-secondary" onClick={() => void loadMedia()}>
+	                    Refresh Media
 	                  </Button>
 	                </Accordion.Body>
 	              </Accordion.Item>
@@ -2903,15 +2974,15 @@ const AdminDashboard = () => {
 	                          {mediaTableError}
 	                        </td>
 	                      </tr>
-			                    ) : mediaItems.length ? (
-			                      mediaItems.map((item, index) => {
+			                    ) : filteredMediaItems.length ? (
+			                      filteredMediaItems.map((item, index) => {
 			                        const sourceFilename = formatMediaSourceFilename(item.src);
                             const mediaId = toId(item?.id);
                             const toggleBusyKey = mediaId ? `media:${mediaId}` : "";
                             const isStatusBusy = toggleBusyKey ? Boolean(statusToggleBusy[toggleBusyKey]) : false;
                             const isSlideRow = Boolean(item?.is_slide);
                             const startsGallerySection =
-                              index > 0 && Boolean(mediaItems[index - 1]?.is_slide) && !isSlideRow;
+                              index > 0 && Boolean(filteredMediaItems[index - 1]?.is_slide) && !isSlideRow;
                             const isDraggingSameGroup = draggingMediaIsSlide === null || Boolean(draggingMediaIsSlide) === isSlideRow;
                             const canReorderItem = !mediaOrderSaving;
                             const isDropTarget =

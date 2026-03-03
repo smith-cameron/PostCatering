@@ -1,8 +1,9 @@
 ﻿import { useEffect, useMemo, useState } from "react";
-import { Alert, Button, Form, Modal, Spinner } from "react-bootstrap";
+import { Alert, Button, Form, InputGroup, Modal, Spinner } from "react-bootstrap";
 import { useSearchParams } from "react-router-dom";
 import useMenuConfig from "../hooks/useMenuConfig";
 import InquiryDesiredItemsSection from "./inquiry/InquiryDesiredItemsSection";
+import InquiryFieldLabel from "./inquiry/InquiryFieldLabel";
 import InquiryServicePlanSection from "./inquiry/InquiryServicePlanSection";
 import InquirySuccessModal from "./inquiry/InquirySuccessModal";
 import {
@@ -469,14 +470,13 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
 
   return (
     <>
-      <Modal show={modalOpen} onHide={handleCloseModal} centered size="lg">
+      <Modal show={modalOpen} onHide={handleCloseModal} centered size="lg" className="inquiry-modal">
         <Modal.Header closeButton>
           <Modal.Title>Send Catering Inquiry</Modal.Title>
         </Modal.Header>
 
         <Form noValidate onSubmit={onSubmit}>
           <Modal.Body>
-            <p className="mb-2 text-danger fw-semibold">* required</p>
             {menuLoading ? <Alert variant="info">Loading menu configuration...</Alert> : null}
             {menuError ? <Alert variant="danger">Menu configuration unavailable: {menuError}</Alert> : null}
             {errors.length ? (
@@ -488,9 +488,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
             ) : null}
 
             <Form.Group className="mb-3">
-              <Form.Label>
-                Full Name <span className="text-danger">*</span>
-              </Form.Label>
+              <InquiryFieldLabel required>Full Name</InquiryFieldLabel>
               <Form.Control
                 name="full_name"
                 value={form.full_name}
@@ -501,9 +499,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
             </Form.Group>
 
             <Form.Group className="mb-3">
-              <Form.Label>
-                Email <span className="text-danger">*</span>
-              </Form.Label>
+              <InquiryFieldLabel required>Email</InquiryFieldLabel>
               <Form.Control
                 type="email"
                 name="email"
@@ -515,9 +511,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
             </Form.Group>
 
             <Form.Group className="mb-3">
-              <Form.Label>
-                Phone <span className="text-danger">*</span>
-              </Form.Label>
+              <InquiryFieldLabel required>Phone</InquiryFieldLabel>
               <Form.Control
                 type="tel"
                 inputMode="tel"
@@ -534,70 +528,69 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
             </Form.Group>
 
             <Form.Group className="mb-3">
-              <Form.Label>Event Type</Form.Label>
+              <InquiryFieldLabel>Event Type</InquiryFieldLabel>
               <Form.Control name="event_type" value={form.event_type} onChange={onChange} />
             </Form.Group>
 
             <Form.Group className="mb-3">
-              <Form.Label>
-                Event Date <span className="text-danger">*</span>
-              </Form.Label>
-              <Form.Control
-                type="date"
-                min={minEventDateISO}
-                name="event_date"
-                value={form.event_date}
-                onChange={onChange}
-                isInvalid={Boolean(fieldErrors.event_date)}
-                required
-              />
-              <Form.Text className="text-muted">Event date must be at least one week in the future.</Form.Text>
+              <InquiryFieldLabel>Budget</InquiryFieldLabel>
+              <InputGroup>
+                <InputGroup.Text>$</InputGroup.Text>
+                <Form.Control
+                  name="budget"
+                  inputMode="numeric"
+                  value={form.budget}
+                  onChange={onChange}
+                  placeholder="e.g. 2,500-5,000"
+                />
+              </InputGroup>
             </Form.Group>
 
-            <Form.Group className="mb-3">
-              <Form.Label>
-                Guest Count <span className="text-danger">*</span>
-              </Form.Label>
-              <Form.Control
-                type="number"
-                min="1"
-                name="guest_count"
-                value={form.guest_count}
-                onChange={onChange}
-                isInvalid={Boolean(fieldErrors.guest_count)}
-                required
-              />
-            </Form.Group>
+            <div className="inquiry-key-fields mb-3">
+              <Form.Group className="inquiry-key-field">
+                <InquiryFieldLabel required>Event Date</InquiryFieldLabel>
+                <Form.Control
+                  type="date"
+                  min={minEventDateISO}
+                  name="event_date"
+                  value={form.event_date}
+                  onChange={onChange}
+                  isInvalid={Boolean(fieldErrors.event_date)}
+                  required
+                />
+                <Form.Text>Event date must be at least one week in the future.</Form.Text>
+              </Form.Group>
 
-            <Form.Group className="mb-3">
-              <Form.Label>Budget ($)</Form.Label>
-              <Form.Control
-                name="budget"
-                inputMode="numeric"
-                value={form.budget}
-                onChange={onChange}
-                placeholder="e.g. $2,500-$5,000"
-              />
-            </Form.Group>
+              <Form.Group className="inquiry-key-field inquiry-key-field-compact">
+                <InquiryFieldLabel required>Guest Count</InquiryFieldLabel>
+                <Form.Control
+                  type="number"
+                  min="1"
+                  name="guest_count"
+                  value={form.guest_count}
+                  onChange={onChange}
+                  isInvalid={Boolean(fieldErrors.guest_count)}
+                  required
+                />
+              </Form.Group>
 
-            <Form.Group className="mb-3">
-              <Form.Label>
-                Service Interest <span className="text-danger">*</span>
-              </Form.Label>
-              <Form.Select
-                name="service_interest"
-                value={form.service_interest}
-                onChange={onChange}
-                isInvalid={Boolean(fieldErrors.service_interest)}
-                required>
-                <option value="">Select a service</option>
-                {serviceOptions.map((service) => (
-                  <option key={service.key} value={service.key}>
-                    {service.label}
-                  </option>
-                ))}
-              </Form.Select>
-            </Form.Group>
+              <Form.Group className="inquiry-key-field inquiry-key-field-service">
+                <InquiryFieldLabel required>Service Interest</InquiryFieldLabel>
+                <Form.Select
+                  name="service_interest"
+                  value={form.service_interest}
+                  onChange={onChange}
+                  isInvalid={Boolean(fieldErrors.service_interest)}
+                  required>
+                  <option value="">Select a service</option>
+                  {serviceOptions.map((service) => (
+                    <option key={service.key} value={service.key}>
+                      {service.label}
+                    </option>
+                  ))}
+                </Form.Select>
+              </Form.Group>
+            </div>
 
             <InquiryServicePlanSection
               serviceInterest={form.service_interest}
@@ -624,7 +617,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
             />
 
             <Form.Group>
-              <Form.Label>Message</Form.Label>
+              <InquiryFieldLabel>Message</InquiryFieldLabel>
               <Form.Control as="textarea" rows={4} name="message" value={form.message} onChange={onChange} />
               <Form.Text className="text-muted">
                 Message is for special chef requests, dietary notes, service details, or anything not captured above.

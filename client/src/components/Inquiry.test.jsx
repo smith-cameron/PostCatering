@@ -120,7 +120,7 @@ describe("Inquiry", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /submit inquiry/i }));
 
-    const desiredItemsField = document.querySelector('.border-danger[aria-invalid="true"]');
+    const desiredItemsField = document.querySelector(".inquiry-desired-items-panel-invalid");
     expect(desiredItemsField).toBeTruthy();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
@@ -306,7 +306,7 @@ describe("Inquiry", () => {
 
     expect(saladTwo).not.toBeChecked();
     const sideSaladDetail = await screen.findByText("2 Side/Salad");
-    expect(sideSaladDetail).toHaveClass("text-danger");
+    expect(sideSaladDetail).toHaveClass("inquiry-selection-summary-item-highlighted");
     expect(screen.queryByText("Select exactly 2 total Side/Salad items.")).not.toBeInTheDocument();
 
     fireEvent.change(getField('input[name="full_name"]'), {
@@ -335,7 +335,7 @@ describe("Inquiry", () => {
     fireEvent.change(emailInput, { target: { value: "valid@example.com" } });
     expect(emailInput).not.toHaveClass("is-invalid");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByText("2 Side/Salad")).not.toHaveClass("text-danger");
+    expect(screen.getByText("2 Side/Salad")).not.toHaveClass("inquiry-selection-summary-item-highlighted");
     expect(screen.queryByText("Select exactly 2 total Side/Salad items.")).not.toBeInTheDocument();
   });
 
