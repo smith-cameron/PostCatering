@@ -1,4 +1,5 @@
 import { Form } from "react-bootstrap";
+import InquiryFieldLabel from "./InquiryFieldLabel";
 import {
   getPlanDisplayTitle,
   getPlanSectionDisplayTitle,
@@ -23,11 +24,8 @@ const InquiryServicePlanSection = ({
   );
 
   return (
-    <Form.Group className="mb-3">
-      <Form.Label>
-        {serviceInterest === "community" ? "Package / Tier " : "Formal Dinner Package "}
-        <span className="text-danger">*</span>
-      </Form.Label>
+    <Form.Group className="mb-3" controlId="inquiry-service-plan">
+      <InquiryFieldLabel required>{serviceInterest === "community" ? "Package / Tier" : "Formal Dinner Package"}</InquiryFieldLabel>
 
       <Form.Select value={servicePlanId} onChange={onChangeServicePlan} isInvalid={isInvalid} required>
         <option value="">Select an option</option>
@@ -59,23 +57,25 @@ const InquiryServicePlanSection = ({
       </Form.Select>
 
       {selectedServicePlan ? (
-        <div className="small text-muted mt-2">
-          <div className="fw-semibold mb-1">
+        <div className="inquiry-selection-summary mt-2">
+          <div className="inquiry-selection-summary-title">
             {selectedServicePlan.level === "package" ? "Package Includes" : "Tier Details"}
           </div>
-          <ul className="mb-0">
+          <ul className="inquiry-selection-summary-list mb-0">
             {displayedPlanDetails.map((detail) => {
               const detailKey = getSelectionCategoryKeyFromText(detail);
               const isHighlighted = Boolean(detailKey && highlightedDetailKeys.includes(detailKey));
               return (
-                <li key={detail} className={isHighlighted ? "text-danger fw-semibold" : undefined}>
+                <li
+                  key={detail}
+                  className={`inquiry-selection-summary-item${isHighlighted ? " inquiry-selection-summary-item-highlighted" : ""}`}>
                   {detail}
                 </li>
               );
             })}
           </ul>
           {serviceInterest === "community" && selectedServicePlan.level === "tier" ? (
-            <div className="mt-2">Special requests can be added in the Message field.</div>
+            <div className="inquiry-selection-summary-note">Special requests can be added in the Message field.</div>
           ) : null}
         </div>
       ) : null}

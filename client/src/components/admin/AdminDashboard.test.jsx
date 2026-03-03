@@ -71,6 +71,106 @@ describe("AdminDashboard", () => {
     });
   });
 
+  it("filters media locally and uses refresh only as a manual reload", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({
+            user: {
+              id: 1,
+              username: "admin",
+              display_name: "Admin",
+              access_tier: 1,
+              can_manage_admin_users: true,
+              is_active: true,
+            },
+          })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (String(url).startsWith("/api/admin/media?")) {
+        return Promise.resolve(
+          buildResponse({
+            media: [
+              {
+                id: 1,
+                title: "Hero Slide",
+                caption: "Front page image",
+                src: "/api/assets/slides/hero.jpg",
+                media_type: "image",
+                is_slide: true,
+                is_active: true,
+                display_order: 1,
+              },
+              {
+                id: 2,
+                title: "Gallery Poster",
+                caption: "Event poster",
+                src: "/api/assets/gallery/poster.jpg",
+                media_type: "image",
+                is_slide: false,
+                is_active: true,
+                display_order: 1,
+              },
+            ],
+          })
+        );
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Menu Operations");
+    fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
+    expect(await screen.findByText("Hero Slide")).toBeInTheDocument();
+    expect(screen.getByText("Gallery Poster")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Find Media" }));
+
+    const mediaSearch = screen.getByPlaceholderText("Search media");
+    fireEvent.change(mediaSearch, { target: { value: "hero" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("Hero Slide")).toBeInTheDocument();
+      expect(screen.queryByText("Gallery Poster")).not.toBeInTheDocument();
+    });
+    expect(screen.getByPlaceholderText("Search media")).toHaveValue("hero");
+    const getMediaRefreshRequests = () =>
+      globalThis.fetch.mock.calls
+        .map((call) => String(call[0]))
+        .filter((requestUrl) => requestUrl === "/api/admin/media?limit=800");
+    expect(getMediaRefreshRequests()).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset Filters" }));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Search media")).toHaveValue("");
+    });
+    expect(screen.getByText("Gallery Poster")).toBeInTheDocument();
+    expect(getMediaRefreshRequests()).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh Media" }));
+    await waitFor(() => {
+      expect(getMediaRefreshRequests()).toHaveLength(2);
+    });
+  });
+
   it("loads simplified menu endpoints instead of legacy reference/section endpoints", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
       if (url === "/api/admin/auth/me") {

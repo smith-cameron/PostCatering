@@ -59,8 +59,9 @@ describe("Landing", () => {
       expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     });
 
-    expect(screen.getByRole("button", { name: "About Us" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Monday Meal Program" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "To-Go / Take & Bake" })).toHaveAttribute("href", "/services/togo");
+    expect(screen.getByRole("button", { name: "Community/Crew Catering" })).toHaveAttribute("href", "/services/community");
+    expect(screen.getByRole("button", { name: "Formal Events" })).toHaveAttribute("href", "/services/formal");
   });
 
   it("renders only image slides that are active and marked for landing", async () => {
