@@ -50,9 +50,6 @@ class AdminEndpointTests(unittest.TestCase):
         response = self.client.get("/api/admin/menu/items")
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.get_json(), {"error": "Unauthorized"})
-        catalog_response = self.client.get("/api/admin/menu/catalog-items")
-        self.assertEqual(catalog_response.status_code, 401)
-        self.assertEqual(catalog_response.get_json(), {"error": "Unauthorized"})
         create_admin_response = self.client.post("/api/admin/auth/users", json={})
         self.assertEqual(create_admin_response.status_code, 401)
         self.assertEqual(create_admin_response.get_json(), {"error": "Unauthorized"})
@@ -61,10 +58,8 @@ class AdminEndpointTests(unittest.TestCase):
         for path in (
             "/api/admin/auth/profile",
             "/api/admin/auth/users",
-            "/api/admin/menu/reference-data",
-            "/api/admin/menu/catalog-items",
+            "/api/admin/menu/items",
             "/api/admin/menu/items/1",
-            "/api/admin/menu/sections/1",
             "/api/admin/media",
             "/api/admin/media/1",
             "/api/admin/audit",
@@ -91,25 +86,10 @@ class AdminEndpointTests(unittest.TestCase):
         self.assertEqual(body["items"][0]["item_name"], "Test Item")
         mock_list_items.assert_called_once()
 
-    @patch(
-        "flask_api.controllers.main_controller.AdminAuthService.get_user_by_id",
-        return_value={"id": 1, "username": "admin", "display_name": "Admin", "is_active": 1},
-    )
-    @patch("flask_api.controllers.main_controller.AdminMenuService.list_menu_items")
-    def test_admin_catalog_items_returns_data_when_authenticated(self, mock_list_items, _mock_get_user):
-        mock_list_items.return_value = [
-            {"id": 1, "item_name": "Catalog Item", "item_key": "catalog_item", "is_active": True}
-        ]
-        with self.client.session_transaction() as session:
-            session["admin_user_id"] = 1
-
-        response = self.client.get("/api/admin/menu/catalog-items?limit=10")
-        body = response.get_json()
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(body["items"]), 1)
-        self.assertEqual(body["items"][0]["item_name"], "Catalog Item")
-        mock_list_items.assert_called_once()
+    def test_admin_menu_create_requires_auth(self):
+        response = self.client.post("/api/admin/menu/items", json={"item_name": "Test Item"})
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.get_json(), {"error": "Unauthorized"})
 
     @patch(
         "flask_api.controllers.main_controller.AdminAuthService.get_user_by_id",

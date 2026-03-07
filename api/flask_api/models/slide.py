@@ -1,11 +1,6 @@
 from flask_api.config.mysqlconnection import query_db
 
 
-def _is_unknown_column_error(error):
-    message = str(error).lower()
-    return "unknown column" in message and "1054" in message
-
-
 class Slide:
     def __init__(
         self,
@@ -62,24 +57,7 @@ class Slide:
             AND is_slide = 1
           ORDER BY display_order ASC, id ASC;
         """
-        try:
-            rows = query_db(query)
-        except Exception as error:
-            if not _is_unknown_column_error(error):
-                raise
-            legacy_query = """
-              SELECT
-                id,
-                title,
-                caption,
-                image_url,
-                alt_text,
-                display_order
-              FROM slides
-              WHERE is_active = 1
-              ORDER BY display_order ASC, id ASC;
-            """
-            rows = query_db(legacy_query)
+        rows = query_db(query)
         return [
             cls(
                 slide_id=row["id"],
@@ -118,21 +96,4 @@ class Slide:
             display_order ASC,
             id DESC;
         """
-        try:
-            return query_db(query)
-        except Exception as error:
-            if not _is_unknown_column_error(error):
-                raise
-            legacy_query = """
-              SELECT
-                id,
-                title,
-                caption,
-                image_url,
-                alt_text,
-                display_order
-              FROM slides
-              WHERE is_active = 1
-              ORDER BY display_order ASC, id DESC;
-            """
-            return query_db(legacy_query)
+        return query_db(query)

@@ -10,13 +10,13 @@ from flask_api.services.menu_service import MenuService  # noqa: E402
 
 
 class MenuSimplifiedServiceTests(unittest.TestCase):
-    def test_general_group_mapping_splits_sides_and_salads(self):
+    def test_regular_group_inference_splits_sides_and_salads(self):
         self.assertEqual(
-            MenuService._general_group_from_legacy("sides_salads", "Caesar Salad", "sidesSalads"),
+            MenuService._infer_regular_group_key("sides_salads", "Caesar Salad", "sidesSalads"),
             "salad",
         )
         self.assertEqual(
-            MenuService._general_group_from_legacy("sides_salads", "Rice Pilaf", "sidesSalads"),
+            MenuService._infer_regular_group_key("sides_salads", "Rice Pilaf", "sidesSalads"),
             "side",
         )
 

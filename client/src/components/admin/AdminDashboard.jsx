@@ -346,22 +346,6 @@ const buildItemForm = (item) => {
         is_active: row?.is_active !== false,
       }))
     ),
-    section_row_assignments: withDisplayOrder(
-      (item?.section_row_assignments || []).map((row) => ({
-        section_id: toId(row.section_id),
-        value_1: String(row.value_1 ?? ""),
-        value_2: String(row.value_2 ?? ""),
-        display_order: row.display_order,
-        is_active: row?.is_active !== false,
-      }))
-    ),
-    tier_bullet_assignments: withDisplayOrder(
-      (item?.tier_bullet_assignments || []).map((row) => ({
-        tier_id: toId(row.tier_id),
-        display_order: row.display_order,
-        is_active: row?.is_active !== false,
-      }))
-    ),
   };
 };
 
@@ -736,7 +720,7 @@ const AdminDashboard = () => {
   const [menuTableError, setMenuTableError] = useState("");
   const [mediaTableError, setMediaTableError] = useState("");
 
-  const [referenceData, setReferenceData] = useState({ catalogs: [], option_groups: [], sections: [], tiers: [] });
+  const [referenceData, setReferenceData] = useState({ catalogs: [], option_groups: [] });
   const [itemFilters, setItemFilters] = useState(INITIAL_ITEM_FILTERS);
   const [menuItems, setMenuItems] = useState([]);
   const [selectedItemId, setSelectedItemId] = useState(null);
@@ -902,14 +886,12 @@ const AdminDashboard = () => {
         { id: 2, catalog_key: "formal", page_title: "Formal Menu", display_order: 2, is_active: true },
       ],
       option_groups: optionGroups,
-      sections: [],
-      tiers: [],
     });
   }, []);
 
   const loadMenuItems = useCallback(async () => {
     try {
-      const payload = await requestJson("/api/admin/menu/catalog-items?limit=500");
+      const payload = await requestJson("/api/admin/menu/items?limit=500");
       setMenuItems(payload.items || []);
       setMenuTableError("");
     } catch (error) {
@@ -1204,36 +1186,6 @@ const AdminDashboard = () => {
       throw new Error(validationMessages.join("\n"));
     }
 
-    const nonFormalSections = (referenceData.sections || []).filter(
-      (section) => section?.is_active && String(section?.catalog_key || "").toLowerCase() !== "formal"
-    );
-    const nonFormalTiers = (referenceData.tiers || []).filter(
-      (tier) => tier?.is_active && String(tier?.catalog_key || "").toLowerCase() !== "formal"
-    );
-
-    const sectionRowAssignments = isRegular
-      ? nonFormalSections.map((section, index) => {
-          const isToGoSection =
-            String(section?.catalog_key || "").toLowerCase() === "togo" ||
-            String(section?.section_key || "").toLowerCase().startsWith("togo_");
-          return {
-            section_id: Number(section.id),
-            value_1: isToGoSection ? trayHalfRaw : "",
-            value_2: isToGoSection ? trayFullRaw : "",
-            display_order: index + 1,
-            is_active: true,
-          };
-        })
-      : [];
-
-    const tierBulletAssignments = isRegular
-      ? nonFormalTiers.map((tier, index) => ({
-          tier_id: Number(tier.id),
-          display_order: index + 1,
-          is_active: true,
-        }))
-      : [];
-
     const payload = await requestJson("/api/admin/menu/items", {
       method: "POST",
       body: JSON.stringify({
@@ -1244,8 +1196,6 @@ const AdminDashboard = () => {
         tray_price_half: isRegular ? trayHalfRaw : null,
         tray_price_full: isRegular ? trayFullRaw : null,
         option_group_assignments: hasMenuType ? [{ group_id: groupId, display_order: 1, is_active: true }] : [],
-        section_row_assignments: sectionRowAssignments,
-        tier_bullet_assignments: tierBulletAssignments,
       }),
     });
     resetCreateItemForm();
@@ -1552,45 +1502,33 @@ const AdminDashboard = () => {
     await Promise.all([loadMedia(), refreshAuditIfAllowed()]);
   };
 
-  const handleMenuCreateSubmit = useCallback(
-    (event) => {
-      event.preventDefault();
-      if (createValidationLocked) return;
-      queueConfirm("Create menu item", buildCreateConfirmBody(), "Create", createItem, FORM_ERROR_CREATE_ITEM);
-    },
-    [createValidationLocked, buildCreateConfirmBody, createItem]
-  );
+  const handleMenuCreateSubmit = (event) => {
+    event.preventDefault();
+    if (createValidationLocked) return;
+    queueConfirm("Create menu item", buildCreateConfirmBody(), "Create", createItem, FORM_ERROR_CREATE_ITEM);
+  };
 
-  const handleMenuEditSubmit = useCallback(
-    (event) => {
-      event.preventDefault();
-      queueConfirm(buildUpdateConfirmTitle(), buildUpdateConfirmBody(), "Update", saveItem, FORM_ERROR_EDIT_ITEM);
-    },
-    [buildUpdateConfirmTitle, buildUpdateConfirmBody, saveItem]
-  );
+  const handleMenuEditSubmit = (event) => {
+    event.preventDefault();
+    queueConfirm(buildUpdateConfirmTitle(), buildUpdateConfirmBody(), "Update", saveItem, FORM_ERROR_EDIT_ITEM);
+  };
 
-  const handleMediaUploadSubmit = useCallback(
-    (event) => {
-      event.preventDefault();
-      if (uploadValidationLocked) return;
-      queueConfirm("Upload media", buildUploadMediaConfirmBody(), "Upload", uploadMedia, FORM_ERROR_UPLOAD_MEDIA);
-    },
-    [uploadValidationLocked, buildUploadMediaConfirmBody, uploadMedia]
-  );
+  const handleMediaUploadSubmit = (event) => {
+    event.preventDefault();
+    if (uploadValidationLocked) return;
+    queueConfirm("Upload media", buildUploadMediaConfirmBody(), "Upload", uploadMedia, FORM_ERROR_UPLOAD_MEDIA);
+  };
 
-  const handleMediaEditSubmit = useCallback(
-    (event) => {
-      event.preventDefault();
-      queueConfirm(
-        buildMediaUpdateConfirmTitle(),
-        buildMediaUpdateConfirmBody(),
-        "Save",
-        saveMedia,
-        FORM_ERROR_EDIT_MEDIA
-      );
-    },
-    [buildMediaUpdateConfirmTitle, buildMediaUpdateConfirmBody, saveMedia]
-  );
+  const handleMediaEditSubmit = (event) => {
+    event.preventDefault();
+    queueConfirm(
+      buildMediaUpdateConfirmTitle(),
+      buildMediaUpdateConfirmBody(),
+      "Save",
+      saveMedia,
+      FORM_ERROR_EDIT_MEDIA
+    );
+  };
 
   const toggleMenuItemStatusFromTable = async (item) => {
     const itemId = toId(item?.id);
