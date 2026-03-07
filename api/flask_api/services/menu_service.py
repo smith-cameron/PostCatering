@@ -267,7 +267,7 @@ class MenuService:
             return None
 
     @classmethod
-    def _general_group_from_legacy(cls, category, item_name, type_hint):
+    def _infer_regular_group_key(cls, category, item_name, type_hint):
         normalized_category = str(category or "").strip().lower().replace(" ", "_")
         normalized_type = str(type_hint or "").strip().lower().replace(" ", "_")
         normalized_name = str(item_name or "").strip().lower()
@@ -285,7 +285,7 @@ class MenuService:
         return "entree"
 
     @staticmethod
-    def _formal_group_from_legacy(course_type, section_id):
+    def _infer_formal_group_key(course_type, section_id):
         source = f"{course_type or ''} {section_id or ''}".lower()
         if "passed" in source:
             return "passed_appetizer"
@@ -324,7 +324,7 @@ class MenuService:
             for item_name in group.get("items", []) or []:
                 ensure_general(
                     item_name,
-                    cls._general_group_from_legacy(category, item_name, option_key),
+                    cls._infer_regular_group_key(category, item_name, option_key),
                 )
 
         togo_sections = ((menu or {}).get("togo") or {}).get("sections") or []
@@ -339,7 +339,7 @@ class MenuService:
                 full = cls._parse_price_decimal(row[2] if len(row) > 2 else None)
                 ensure_general(
                     name,
-                    group_key=cls._general_group_from_legacy(section.get("category"), name, section.get("sectionId")),
+                    group_key=cls._infer_regular_group_key(section.get("category"), name, section.get("sectionId")),
                     half=half,
                     full=full,
                 )
@@ -350,7 +350,7 @@ class MenuService:
                 continue
             if str(section.get("type") or "").strip().lower() != "tiers":
                 continue
-            group_key = cls._formal_group_from_legacy(section.get("courseType"), section.get("sectionId"))
+            group_key = cls._infer_formal_group_key(section.get("courseType"), section.get("sectionId"))
             for tier in section.get("tiers", []) or []:
                 if not isinstance(tier, dict):
                     continue
@@ -1074,130 +1074,3 @@ class MenuService:
             return {"source": "seed-file", **cls._normalize_menu_payload_for_api(fallback)}, 200
         return {"error": "Menu seed payload not found."}, 500
 
-    @classmethod
-    def upsert_non_formal_catalog_items(cls, payload):
-        body = payload or {}
-        rows = body.get("items") if isinstance(body.get("items"), list) else [body]
-        normalized_rows = [row for row in rows if isinstance(row, dict)]
-        if not normalized_rows:
-            return {"error": "No items supplied."}, 400
-
-        updated = []
-        with db_transaction() as connection:
-            type_ids, group_ids = cls._ensure_reference_tables(connection=connection)
-            regular_type_id = type_ids.get("regular")
-
-            for row in normalized_rows:
-                item_name = str(row.get("item_name") or row.get("name") or "").strip()
-                if not item_name:
-                    continue
-
-                group_key = cls._general_group_from_legacy(
-                    row.get("item_category") or row.get("category"),
-                    item_name,
-                    row.get("item_type") or row.get("type"),
-                )
-                group_id = group_ids.get(group_key)
-                if not group_id:
-                    continue
-
-                half_price = cls._parse_price_decimal(row.get("tray_price_half"))
-                full_price = cls._parse_price_decimal(row.get("tray_price_full"))
-                if half_price is None and full_price is not None:
-                    half_price = full_price
-                if full_price is None and half_price is not None:
-                    full_price = half_price
-
-                is_active = cls._to_bool(row.get("is_active"), default=True)
-
-                existing = query_db(
-                    """
-          SELECT id
-          FROM menu_items
-          WHERE LOWER(TRIM(item_name)) = LOWER(TRIM(%(item_name)s))
-          LIMIT 1;
-          """,
-                    {"item_name": item_name},
-                    fetch="one",
-                    connection=connection,
-                    auto_commit=False,
-                )
-
-                if existing:
-                    item_id = existing["id"]
-                    item_key = cls._generate_unique_item_key(
-                        item_name=item_name,
-                        provided_key=row.get("item_key") or row.get("key"),
-                        connection=connection,
-                        exclude_row_id=item_id,
-                    )
-                    query_db(
-                        """
-            UPDATE menu_items
-            SET
-              item_key = %(item_key)s,
-              item_name = %(item_name)s,
-              tray_price_half = %(tray_price_half)s,
-              tray_price_full = %(tray_price_full)s,
-              is_active = %(is_active)s,
-              updated_at = CURRENT_TIMESTAMP
-            WHERE id = %(id)s;
-            """,
-                        {
-                            "id": item_id,
-                            "item_key": item_key,
-                            "item_name": item_name,
-                            "tray_price_half": cls._serialize_price(half_price),
-                            "tray_price_full": cls._serialize_price(full_price),
-                            "is_active": 1 if is_active else 0,
-                        },
-                        fetch="none",
-                        connection=connection,
-                        auto_commit=False,
-                    )
-                else:
-                    item_key = cls._generate_unique_item_key(
-                        item_name=item_name,
-                        provided_key=row.get("item_key") or row.get("key"),
-                        connection=connection,
-                    )
-                    item_id = query_db(
-                        """
-            INSERT INTO menu_items (item_key, item_name, tray_price_half, tray_price_full, is_active)
-            VALUES (%(item_key)s, %(item_name)s, %(tray_price_half)s, %(tray_price_full)s, %(is_active)s);
-            """,
-                        {
-                            "item_key": item_key,
-                            "item_name": item_name,
-                            "tray_price_half": cls._serialize_price(half_price),
-                            "tray_price_full": cls._serialize_price(full_price),
-                            "is_active": 1 if is_active else 0,
-                        },
-                        fetch="none",
-                        connection=connection,
-                        auto_commit=False,
-                    )
-
-                if regular_type_id:
-                    query_db(
-                        """
-            INSERT INTO menu_item_type_groups (menu_item_id, menu_type_id, menu_group_id, is_active)
-            VALUES (%(menu_item_id)s, %(menu_type_id)s, %(menu_group_id)s, 1)
-            ON DUPLICATE KEY UPDATE
-              menu_group_id = VALUES(menu_group_id),
-              is_active = 1,
-              updated_at = CURRENT_TIMESTAMP;
-            """,
-                        {
-                            "menu_item_id": item_id,
-                            "menu_type_id": regular_type_id,
-                            "menu_group_id": group_id,
-                        },
-                        fetch="none",
-                        connection=connection,
-                        auto_commit=False,
-                    )
-
-                updated.append({"id": item_id, "item_name": item_name, "group_key": group_key})
-
-        return {"ok": True, "items": updated, "count": len(updated)}, 200

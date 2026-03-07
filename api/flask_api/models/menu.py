@@ -165,7 +165,6 @@ class Menu:
 
             min_select = row.get("min_select")
             max_select = row.get("max_select")
-            legacy_value = row.get("constraint_value")
 
             try:
                 min_select = int(min_select) if min_select is not None else None
@@ -175,25 +174,6 @@ class Menu:
                 max_select = int(max_select) if max_select is not None else None
             except (TypeError, ValueError):
                 max_select = None
-            try:
-                legacy_value = int(legacy_value) if legacy_value is not None else None
-            except (TypeError, ValueError):
-                legacy_value = None
-
-            if key.endswith("_min") and legacy_value is not None:
-                base_key = key[:-4]
-                constraints.setdefault(base_key, {"min": 0, "max": 0})["min"] = legacy_value
-                continue
-            if key.endswith("_max") and legacy_value is not None:
-                base_key = key[:-4]
-                constraints.setdefault(base_key, {"min": 0, "max": 0})["max"] = legacy_value
-                continue
-
-            if legacy_value is not None:
-                if min_select is None or (min_select == 0 and (max_select is None or max_select == 0)):
-                    min_select = legacy_value
-                if max_select is None or (max_select == 0 and (min_select is None or min_select == legacy_value)):
-                    max_select = legacy_value
 
             constraints[key] = {
                 "min": int(min_select or 0),

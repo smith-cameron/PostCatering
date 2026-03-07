@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Alert, Button, Modal } from "react-bootstrap";
 
 const ConfirmActionModal = ({
@@ -14,12 +14,15 @@ const ConfirmActionModal = ({
   onConfirm,
   busy = false,
 }) => {
-  const hasValidation = Boolean(validationMessage);
+  const validationMessages = (Array.isArray(validationMessage) ? validationMessage : String(validationMessage || "").split("\n"))
+    .map((message) => String(message || "").trim())
+    .filter(Boolean);
+  const hasValidation = validationMessages.length > 0;
   const canConfirm = !busy && !confirmDisabled;
   const canFix = !busy;
   const formRef = useRef(null);
 
-  const runPrimaryAction = () => {
+  const runPrimaryAction = useCallback(() => {
     if (hasValidation) {
       if (!canFix) return;
       onCancel?.();
@@ -27,7 +30,7 @@ const ConfirmActionModal = ({
     }
     if (!canConfirm) return;
     onConfirm?.();
-  };
+  }, [hasValidation, canFix, onCancel, canConfirm, onConfirm]);
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -59,7 +62,7 @@ const ConfirmActionModal = ({
 
     document.addEventListener("keydown", handleDocumentKeyDown);
     return () => document.removeEventListener("keydown", handleDocumentKeyDown);
-  }, [show, hasValidation, canFix, canConfirm, onCancel, onConfirm]);
+  }, [show, runPrimaryAction]);
 
   return (
     <Modal
@@ -73,9 +76,17 @@ const ConfirmActionModal = ({
         </Modal.Header>
         <Modal.Body>
           <div>{body}</div>
-          {validationMessage ? (
+          {hasValidation ? (
             <Alert variant="danger" className="mt-2 mb-0 py-2 small">
-              {validationMessage}
+              {validationMessages.length === 1 ? (
+                validationMessages[0]
+              ) : (
+                <ul className="mb-0 ps-3">
+                  {validationMessages.map((message, index) => (
+                    <li key={`${index}-${message}`}>{message}</li>
+                  ))}
+                </ul>
+              )}
             </Alert>
           ) : null}
         </Modal.Body>
@@ -87,7 +98,7 @@ const ConfirmActionModal = ({
             autoFocus={hasValidation}
             onClick={onCancel}
             disabled={busy}>
-            {validationMessage ? "Fix" : "Cancel"}
+            {hasValidation ? "Fix" : "Cancel"}
           </Button>
           <Button
             type="submit"
