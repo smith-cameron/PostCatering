@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Card, Form, Spinner } from "react-bootstrap";
+import { Alert, Button, Card, Form, InputGroup, Spinner } from "react-bootstrap";
 import { useLocation, useNavigate } from "react-router-dom";
+import PasswordVisibilityButton from "./PasswordVisibilityButton";
 import { requestJson } from "./adminApi";
 
 const AdminLogin = () => {
@@ -8,6 +9,7 @@ const AdminLogin = () => {
   const location = useLocation();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -83,13 +85,21 @@ const AdminLogin = () => {
 
             <Form.Group className="mb-4" controlId="adminPassword">
               <Form.Label>Password</Form.Label>
-              <Form.Control
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-              />
+              <InputGroup>
+                <Form.Control
+                  type={passwordVisible ? "text" : "password"}
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                />
+                <PasswordVisibilityButton
+                  visible={passwordVisible}
+                  label={passwordVisible ? "Hide password" : "Show password"}
+                  onToggle={() => setPasswordVisible((prev) => !prev)}
+                  disabled={submitting}
+                />
+              </InputGroup>
             </Form.Group>
 
             <Button className="btn-inquiry-action w-100" variant="secondary" type="submit" disabled={submitting}>

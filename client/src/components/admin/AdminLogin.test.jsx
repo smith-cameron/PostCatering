@@ -52,4 +52,28 @@ describe("AdminLogin", () => {
       expect(screen.getByText("Invalid username or password.")).toBeInTheDocument()
     );
   });
+
+  it("toggles password visibility on the login form", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(buildResponse({ error: "Unauthorized" }, false, 401));
+
+    render(
+      <MemoryRouter initialEntries={["/admin/login"]}>
+        <Routes>
+          <Route path="/admin/login" element={<AdminLogin />} />
+          <Route path="/admin" element={<div>Admin Home</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByRole("button", { name: "Sign In" })).toBeInTheDocument();
+
+    const passwordInput = screen.getByLabelText("Password");
+    expect(passwordInput).toHaveAttribute("type", "password");
+
+    fireEvent.click(screen.getByLabelText("Show password"));
+    expect(passwordInput).toHaveAttribute("type", "text");
+
+    fireEvent.click(screen.getByLabelText("Hide password"));
+    expect(passwordInput).toHaveAttribute("type", "password");
+  });
 });

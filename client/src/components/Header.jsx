@@ -80,7 +80,6 @@ const Header = ({ onOpenInquiry }) => {
         <NavbarText className="fs-5 fw-medium text-secondary opacity-75">
           Catering & Community Food Programs
         </NavbarText>
-
         <Navbar.Toggle className="site-header-toggle" aria-controls="basic-navbar-nav" />
         <Navbar.Collapse id="basic-navbar-nav" className="justify-content-end">
           <Nav className="ms-lg-auto site-header-nav">
