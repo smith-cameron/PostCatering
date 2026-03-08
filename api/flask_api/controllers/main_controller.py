@@ -532,7 +532,7 @@ def admin_media_reorder_slides(admin_user=None):
             action="reorder",
             entity_type="media",
             entity_id="slides",
-            change_summary="Reordered homepage slides",
+            change_summary="Reordered landing slides",
             before=[{"id": row.get("id"), "display_order": row.get("display_order")} for row in before],
             after=[{"id": row.get("id"), "display_order": row.get("display_order")} for row in after],
         )

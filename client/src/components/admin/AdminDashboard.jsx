@@ -648,7 +648,7 @@ const MEDIA_ITEM_FILTERS = [
         item?.src,
         formatMediaSourceFilename(item?.src),
         item?.media_type,
-        item?.is_slide ? "landing homepage slide" : "gallery",
+        item?.is_slide ? "landing slide" : "gallery",
         item?.is_active ? "active" : "inactive",
       ]
         .join(" ")
@@ -2264,7 +2264,7 @@ const AdminDashboard = () => {
             <Form.Check
               className="mb-2"
               type="switch"
-              label="Homepage Slide"
+              label="Landing Slide"
               checked={mediaForm.is_slide}
               onChange={(event) => {
                 setShowCreatedMediaHighlight(false);
@@ -2815,7 +2815,7 @@ const AdminDashboard = () => {
 	                <Form.Check
 	                  className="mb-2"
 	                  type="switch"
-	                  label="Homepage Slide"
+	                  label="Landing Slide"
 	                  checked={uploadForm.is_slide}
 	                  onChange={(event) => setUploadForm((prev) => ({ ...prev, is_slide: event.target.checked }))}
 	                />
@@ -2875,7 +2875,7 @@ const AdminDashboard = () => {
 	                    value={mediaFilters.is_slide}
 	                    onChange={(event) => setMediaFilters((prev) => ({ ...prev, is_slide: event.target.value }))}>
 	                    <option value="all">All slide flags</option>
-	                    <option value="true">Homepage Slide</option>
+	                    <option value="true">Landing Slide</option>
 	                    <option value="false">Gallery Only</option>
 	                  </Form.Select>
 	                  <Button className="mt-2 me-2" variant="outline-secondary" onClick={resetMediaFilters}>

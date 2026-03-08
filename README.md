@@ -1,7 +1,7 @@
 # American Legion Post 468 Catering Application
 
 Web application for American Legion Post 468 catering services and community food programs.
-This repository includes a React frontend, a Flask backend, and a MySQL data layer for menus, inquiries, and homepage slides.
+This repository includes a React frontend, a Flask backend, and a MySQL data layer for menus, inquiries, and landing slides.
 
 ## Mission And Program Context
 
@@ -272,7 +272,7 @@ ON DUPLICATE KEY UPDATE
   Health check including DB connectivity.
 
 - `GET /api/slides`
-  Returns active homepage slides.
+  Returns active landing slides.
 
 - `GET /api/assets/slides/<filename>`
   Serves slide assets from backend static storage.
@@ -302,7 +302,7 @@ ON DUPLICATE KEY UPDATE
   Updates menu item fields and option-group assignments.
 
 - `GET /api/admin/media`
-  Search/filter gallery/homepage media.
+  Search/filter gallery/landing media.
 
 - `POST /api/admin/media/upload`
   Uploads image/video assets and creates slide/gallery metadata records.
@@ -443,7 +443,7 @@ Content-Type: application/json
 }
 ```
 
-## Updating Homepage Photos
+## Updating Landing Photos
 
 Media metadata is database-first:
 - `GET /api/slides` and `GET /api/gallery` both read labels/text from MySQL `slides`.
@@ -471,7 +471,7 @@ python scripts/sync_gallery_media.py
 5. Verify in browser:
    - `GET /api/gallery` returns expected labels/text and ordering
    - `GET /api/slides` returns only rows where `is_slide = 1`
-   - Homepage carousel and `/showcase` reflect metadata updates
+   - Landing carousel and `/showcase` reflect metadata updates
 
 Example SQL update:
 
