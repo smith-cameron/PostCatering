@@ -149,59 +149,6 @@ class AdminMenuService:
         return amount
 
     @classmethod
-    def _build_option_group_row(cls, row, menu_type):
-        return {
-            "id": cls._encode_group_id(menu_type, row.get("id")),
-            "option_key": f"{menu_type}_{row.get('key')}",
-            "option_id": f"{menu_type}:{row.get('key')}",
-            "category": menu_type,
-            "title": row.get("name"),
-            "display_order": row.get("sort_order"),
-            "is_active": bool(row.get("is_active", 0)),
-            "menu_type": menu_type,
-            "group_key": row.get("key"),
-            "source_group_id": row.get("id"),
-        }
-
-    @classmethod
-    def get_reference_data(cls):
-        rows = query_db(
-            """
-      SELECT
-        g.id,
-        g.group_key AS `key`,
-        g.group_name AS name,
-        tg.display_order AS sort_order,
-        g.is_active,
-        t.type_key AS menu_type
-      FROM menu_type_groups tg
-      JOIN menu_types t ON t.id = tg.menu_type_id
-      JOIN menu_groups g ON g.id = tg.menu_group_id
-      ORDER BY t.sort_order ASC, tg.display_order ASC, g.id ASC;
-      """
-        )
-
-        option_groups = []
-        for row in rows:
-            option_groups.append(cls._build_option_group_row(row, row.get("menu_type")))
-
-        return {
-            "catalogs": [
-                {
-                    "id": 1,
-                    "catalog_key": "regular",
-                    "page_title": "Regular Menu",
-                    "display_order": 1,
-                    "is_active": True,
-                },
-                {"id": 2, "catalog_key": "formal", "page_title": "Formal Menu", "display_order": 2, "is_active": True},
-            ],
-            "option_groups": option_groups,
-            "sections": [],
-            "tiers": [],
-        }
-
-    @classmethod
     def list_menu_items(cls, search="", is_active=None, limit=250):
         normalized_limit = cls._to_int(limit, default=250, minimum=1, maximum=1000)
         normalized_search = str(search or "").strip().lower()
@@ -268,8 +215,6 @@ class AdminMenuService:
                     "tray_price_half": (cls._serialize_price(half_price) if normalized_type == "regular" else None),
                     "tray_price_full": (cls._serialize_price(full_price) if normalized_type == "regular" else None),
                     "option_group_count": 1 if row.get("group_id") else 0,
-                    "section_row_count": 0,
-                    "tier_bullet_count": 0,
                     "created_at": cls._to_iso(row.get("created_at")),
                     "updated_at": cls._to_iso(row.get("updated_at")),
                 }
@@ -294,8 +239,6 @@ class AdminMenuService:
             "tray_price_half": cls._serialize_price(raw_row.get("tray_price_half")),
             "tray_price_full": cls._serialize_price(raw_row.get("tray_price_full")),
             "option_group_assignments": [],
-            "section_row_assignments": [],
-            "tier_bullet_assignments": [],
         }
 
     @classmethod
@@ -464,8 +407,6 @@ class AdminMenuService:
         return {
             **response_item,
             "option_group_assignments": option_group_assignments,
-            "section_row_assignments": [],
-            "tier_bullet_assignments": [],
         }
 
     @classmethod
@@ -755,9 +696,8 @@ class AdminMenuService:
         if not item_name:
             return {"error": "item_name is required."}, 400
 
-        explicit_empty_type_selection = (
-            body.get("menu_type") in (None, "")
-            or (isinstance(body.get("menu_type"), (list, tuple, set)) and len(body.get("menu_type")) == 0)
+        explicit_empty_type_selection = body.get("menu_type") in (None, "") or (
+            isinstance(body.get("menu_type"), (list, tuple, set)) and len(body.get("menu_type")) == 0
         )
         type_keys = [] if explicit_empty_type_selection else cls._normalize_menu_type_request(body.get("menu_type"))
         requested_group_map = cls._extract_requested_group_map(
@@ -880,9 +820,13 @@ class AdminMenuService:
 
         next_is_active = cls._to_bool(body.get("is_active"), default=current["is_active"])
         existing_type_keys = cls._fetch_item_types(row_id)
-        explicit_empty_type_selection = isinstance(body.get("menu_type"), (list, tuple, set)) and len(body.get("menu_type")) == 0
+        explicit_empty_type_selection = (
+            isinstance(body.get("menu_type"), (list, tuple, set)) and len(body.get("menu_type")) == 0
+        )
         next_type_keys = (
-            [] if explicit_empty_type_selection else (
+            []
+            if explicit_empty_type_selection
+            else (
                 cls._normalize_menu_type_request(body.get("menu_type"))
                 if "menu_type" in body
                 else (existing_type_keys or [menu_type])
@@ -911,9 +855,7 @@ class AdminMenuService:
                 )
 
                 missing_type_keys = [
-                    type_key
-                    for type_key in next_type_keys
-                    if requested_group_map.get(type_key) in (None, "")
+                    type_key for type_key in next_type_keys if requested_group_map.get(type_key) in (None, "")
                 ]
                 if missing_type_keys and requested_group_map:
                     fallback_group = next(
@@ -958,7 +900,9 @@ class AdminMenuService:
                 str(body.get("item_type") if "item_type" in body else raw_row.get("item_type") or "").strip() or None
             )
             next_item_category = (
-                str(body.get("item_category") if "item_category" in body else raw_row.get("item_category") or "").strip()
+                str(
+                    body.get("item_category") if "item_category" in body else raw_row.get("item_category") or ""
+                ).strip()
                 or None
             )
             has_regular = "regular" in next_type_keys
@@ -1014,7 +958,9 @@ class AdminMenuService:
             updated = cls._build_unassigned_item_detail(menu_type, row_id, raw_row)
             return {"item": updated}, 200
 
-        response_type = menu_type if menu_type in next_type_keys else ("regular" if "regular" in next_type_keys else "formal")
+        response_type = (
+            menu_type if menu_type in next_type_keys else ("regular" if "regular" in next_type_keys else "formal")
+        )
         updated = cls.get_menu_item_detail(cls._encode_item_id(response_type, row_id))
         return {"item": updated}, 200
 
@@ -1046,15 +992,3 @@ class AdminMenuService:
             "deleted_item_id": item_id,
             "item_name": str(raw_row.get("item_name") or "").strip(),
         }, 200
-
-    @classmethod
-    def list_sections(cls, search="", catalog_key="", is_active=None, limit=250):
-        return []
-
-    @classmethod
-    def get_section_detail(cls, section_id):
-        return None
-
-    @classmethod
-    def update_section(cls, section_id, payload):
-        return {"error": "Section management is not available in the simplified menu schema."}, 404

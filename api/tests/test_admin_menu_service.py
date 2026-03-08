@@ -12,28 +12,6 @@ from flask_api.services.admin_menu_service import AdminMenuService  # noqa: E402
 
 class AdminMenuServiceTests(unittest.TestCase):
     @patch("flask_api.services.admin_menu_service.query_db")
-    def test_get_reference_data_uses_unified_group_tables(self, mock_query_db):
-        mock_query_db.return_value = [
-            {"id": 1, "key": "entree", "name": "Entree", "sort_order": 1, "is_active": 1, "menu_type": "regular"},
-            {"id": 2, "key": "entree", "name": "Entree", "sort_order": 1, "is_active": 1, "menu_type": "formal"},
-        ]
-
-        data = AdminMenuService.get_reference_data()
-
-        self.assertEqual(len(data["option_groups"]), 2)
-        self.assertEqual(data["sections"], [])
-        self.assertEqual(data["tiers"], [])
-        regular_group = data["option_groups"][0]
-        formal_group = data["option_groups"][1]
-        self.assertEqual(regular_group["category"], "regular")
-        self.assertEqual(formal_group["category"], "formal")
-        self.assertGreater(formal_group["id"], 1_000_000)
-
-        executed_queries = [call.args[0] for call in mock_query_db.call_args_list]
-        self.assertTrue(any("FROM menu_type_groups" in query for query in executed_queries))
-        self.assertTrue(any("JOIN menu_groups" in query for query in executed_queries))
-
-    @patch("flask_api.services.admin_menu_service.query_db")
     def test_list_menu_items_reads_unified_item_and_type_tables(self, mock_query_db):
         mock_query_db.return_value = [
             {
@@ -149,8 +127,6 @@ class AdminMenuServiceTests(unittest.TestCase):
         self.assertEqual(len(detail["option_group_assignments"]), 1)
         self.assertEqual(detail["option_group_assignments"][0]["group_title"], "Entree")
         self.assertEqual(detail["option_group_assignments"][0]["menu_type"], "regular")
-        self.assertEqual(detail["section_row_assignments"], [])
-        self.assertEqual(detail["tier_bullet_assignments"], [])
         self.assertEqual(detail["tray_price_half"], "75.00")
 
     @patch("flask_api.services.admin_menu_service.AdminMenuService._fetch_item_assignments")
@@ -202,10 +178,7 @@ class AdminMenuServiceTests(unittest.TestCase):
         self.assertIsNotNone(detail)
         self.assertEqual(detail["menu_types"], ["regular", "formal"])
         self.assertEqual(len(detail["option_group_assignments"]), 2)
-        by_type = {
-            assignment["menu_type"]: assignment
-            for assignment in detail["option_group_assignments"]
-        }
+        by_type = {assignment["menu_type"]: assignment for assignment in detail["option_group_assignments"]}
         self.assertEqual(by_type["regular"]["group_title"], "Side")
         self.assertEqual(by_type["regular"]["group_id"], 2)
         self.assertEqual(by_type["formal"]["group_title"], "Starter")
@@ -213,7 +186,9 @@ class AdminMenuServiceTests(unittest.TestCase):
 
     @patch("flask_api.services.admin_menu_service.AdminMenuService._fetch_raw_item_row")
     @patch("flask_api.services.admin_menu_service.AdminMenuService._fetch_item_row")
-    def test_get_menu_item_detail_returns_unassigned_item_when_no_type_links(self, mock_fetch_item_row, mock_fetch_raw_item_row):
+    def test_get_menu_item_detail_returns_unassigned_item_when_no_type_links(
+        self, mock_fetch_item_row, mock_fetch_raw_item_row
+    ):
         mock_fetch_item_row.return_value = None
         mock_fetch_raw_item_row.return_value = {
             "id": 5,
@@ -289,7 +264,9 @@ class AdminMenuServiceTests(unittest.TestCase):
 
     @patch("flask_api.services.admin_menu_service.AdminMenuService._has_global_item_name_conflict")
     @patch("flask_api.services.admin_menu_service.db_transaction")
-    def test_create_menu_item_duplicate_name_returns_specific_error(self, mock_db_transaction, mock_has_global_conflict):
+    def test_create_menu_item_duplicate_name_returns_specific_error(
+        self, mock_db_transaction, mock_has_global_conflict
+    ):
         mock_has_global_conflict.return_value = True
 
         context_manager = MagicMock()

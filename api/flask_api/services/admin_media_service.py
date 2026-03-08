@@ -340,14 +340,10 @@ class AdminMediaService:
             return {"error": "Media item not found."}, 404
 
         resolved_title = (
-            str((payload or {}).get("title") or "").strip()
-            if "title" in (payload or {})
-            else existing["title"]
+            str((payload or {}).get("title") or "").strip() if "title" in (payload or {}) else existing["title"]
         )
         resolved_caption = (
-            str((payload or {}).get("caption") or "").strip()
-            if "caption" in (payload or {})
-            else existing["caption"]
+            str((payload or {}).get("caption") or "").strip() if "caption" in (payload or {}) else existing["caption"]
         )
         if not resolved_title:
             return {"error": "Title is required."}, 400
@@ -355,7 +351,6 @@ class AdminMediaService:
             return {"error": "Caption is required."}, 400
 
         with db_transaction() as connection:
-            is_slide_explicit = "is_slide" in (payload or {})
             display_order_explicit = "display_order" in (payload or {})
             next_is_slide = cls._to_bool((payload or {}).get("is_slide"), default=existing["is_slide"])
             moved_from_slide_to_gallery = existing["is_slide"] and not next_is_slide

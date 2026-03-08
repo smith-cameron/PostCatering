@@ -1,7 +1,7 @@
 # American Legion Post 468 Catering Application
 
 Web application for American Legion Post 468 catering services and community food programs.
-This repository includes a React frontend, a Flask backend, and a MySQL data layer for menus, inquiries, and homepage slides.
+This repository includes a React frontend, a Flask backend, and a MySQL data layer for menus, inquiries, and landing slides.
 
 ## Mission And Program Context
 
@@ -79,7 +79,7 @@ Generated/runtime folders such as `api/venv`, `client/node_modules`, and `client
 cd api
 python -m venv venv
 .\venv\Scripts\Activate.ps1
-pip install flask pymysql python-dotenv
+pip install -r requirements-dev.txt
 Copy-Item .env.example .env
 ```
 
@@ -173,10 +173,11 @@ Current frontend coverage includes:
 Install and enable hooks from the repository root:
 
 ```powershell
-python -m pip install pre-commit
-python -m pre_commit install
-python -m pre_commit run --all-files
+.\api\venv\Scripts\python.exe -m pre_commit install --install-hooks
+.\api\venv\Scripts\python.exe -m pre_commit run --all-files
 ```
+
+`api/requirements-dev.txt` includes `pre-commit`, so installing backend dev dependencies into `api/venv` keeps the generated hook and its Python interpreter aligned.
 
 Configured hooks:
 - Python lint/fix with `ruff` (API files)
@@ -272,7 +273,7 @@ ON DUPLICATE KEY UPDATE
   Health check including DB connectivity.
 
 - `GET /api/slides`
-  Returns active homepage slides.
+  Returns active landing slides.
 
 - `GET /api/assets/slides/<filename>`
   Serves slide assets from backend static storage.
@@ -289,32 +290,20 @@ ON DUPLICATE KEY UPDATE
 - `GET /api/admin/auth/me`
   Returns current authenticated admin user.
 
-- `GET /api/admin/menu/reference-data`
-  Returns menu reference entities for admin editors (catalogs, sections, tiers, option groups).
-
 - `GET /api/admin/menu/items`
   Search/filter menu items for admin maintenance.
 
 - `GET /api/admin/menu/items/<id>`
-  Returns menu item details + assignment rows.
+  Returns menu item details + option-group assignment rows.
 
 - `POST /api/admin/menu/items`
-  Creates a menu item with optional assignment payloads.
+  Creates a menu item with option-group assignments.
 
 - `PATCH /api/admin/menu/items/<id>`
-  Updates menu item fields, assignment rows, and ordering.
-
-- `GET /api/admin/menu/sections`
-  Search/filter menu sections.
-
-- `GET /api/admin/menu/sections/<id>`
-  Returns section metadata, constraints, include groups, and tiers.
-
-- `PATCH /api/admin/menu/sections/<id>`
-  Updates section metadata, pricing, inclusion rules, tier constraints, and display order.
+  Updates menu item fields and option-group assignments.
 
 - `GET /api/admin/media`
-  Search/filter gallery/homepage media.
+  Search/filter gallery/landing media.
 
 - `POST /api/admin/media/upload`
   Uploads image/video assets and creates slide/gallery metadata records.
@@ -330,9 +319,6 @@ ON DUPLICATE KEY UPDATE
 
 - `POST /api/admin/menu/sync`
   Protected endpoint for schema apply/reset/seed operations. Requires `MENU_ADMIN_TOKEN` in header.
-
-- `POST /api/admin/menu/items`
-  Protected endpoint for simplified non-formal catalog upserts (name/type/category/active/tray prices). Requires `MENU_ADMIN_TOKEN`.
 
 ## API Naming Conventions
 
@@ -435,7 +421,6 @@ What each table does
 
 Compatibility notes:
 - Existing public endpoints (`/api/menu/general/*`, `/api/menu/formal/*`, `/api/menus`) preserve current display behavior.
-- Existing admin endpoints remain compatible while now reading/writing per-type group assignments.
 - Migration `api/sql/migrations/20260222_menu_unified_item_model.sql` backfills assignments and removes stale split/transitional tables.
 
 CLI maintenance task:
@@ -459,28 +444,7 @@ Content-Type: application/json
 }
 ```
 
-Simplified non-formal item upsert example:
-
-```http
-POST /api/admin/menu/items
-X-Menu-Admin-Token: <MENU_ADMIN_TOKEN>
-Content-Type: application/json
-
-{
-  "items": [
-    {
-      "name": "Jerk Chicken",
-      "item_type": "signature_proteins",
-      "item_category": "entree",
-      "is_active": true,
-      "tray_price_half": "$75",
-      "tray_price_full": "$140"
-    }
-  ]
-}
-```
-
-## Updating Homepage Photos
+## Updating Landing Photos
 
 Media metadata is database-first:
 - `GET /api/slides` and `GET /api/gallery` both read labels/text from MySQL `slides`.
@@ -508,7 +472,7 @@ python scripts/sync_gallery_media.py
 5. Verify in browser:
    - `GET /api/gallery` returns expected labels/text and ordering
    - `GET /api/slides` returns only rows where `is_slide = 1`
-   - Homepage carousel and `/showcase` reflect metadata updates
+   - Landing carousel and `/showcase` reflect metadata updates
 
 Example SQL update:
 
@@ -586,11 +550,6 @@ Audit snapshot from March 1, 2026:
 - Seed or create the `menu_config` row for `inquiry_email_content`. Current DB keys are only `FORMAL_PLAN_OPTIONS`, `MENU`, and `MENU_OPTIONS`, so the DB-first inquiry email copy described in this README is not populated yet.
 - Remove or normalize the two inactive orphan `menu_items` rows with no `menu_item_type_groups` assignment (`id` 75 `ygkygkjghjk`, `id` 76 `efhsrhsh`). These look like stray test/manual entries and currently fail the “every item has a typed assignment” expectation.
 - Replace placeholder slide metadata. The current DB still has 29 `slides` rows using placeholder title/caption values, which means gallery/landing content is structurally valid but not fully curated.
-- Revisit legacy compatibility code once backward-compat support is no longer needed:
-  - `api/flask_api/models/slide.py` still carries unknown-column fallbacks for pre-`is_slide` / pre-`media_type` `slides` schemas.
-  - `api/flask_api/models/menu.py` still normalizes legacy `constraint_value` shapes even though the legacy menu graph tables have been dropped.
-  - `api/flask_api/services/menu_service.py` still contains legacy mapping helpers (`_general_group_from_legacy`, `_formal_group_from_legacy`) plus the backward-compatible token upsert path on `POST /api/admin/menu/items`.
-- Clarify or split the overloaded `POST /api/admin/menu/items` behavior in docs/code ownership. It currently serves both authenticated admin item creation and legacy token-based non-formal upserts, which increases maintenance ambiguity.
 - Resolve current frontend lint warnings: `client/src/components/admin/AdminDashboard.jsx` has four `react-hooks/exhaustive-deps` warnings around `createItem`, `saveItem`, `uploadMedia`, and `saveMedia`; `client/src/components/admin/ConfirmActionModal.jsx` has one missing dependency warning for `runPrimaryAction`.
 
 ## Program And Menu Reference (Current Data)

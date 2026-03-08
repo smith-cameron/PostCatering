@@ -3,8 +3,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from pymysql.err import OperationalError
-
 API_ROOT = Path(__file__).resolve().parents[1]
 if str(API_ROOT) not in sys.path:
     sys.path.insert(0, str(API_ROOT))
@@ -44,30 +42,6 @@ class SlideModelTests(unittest.TestCase):
         self.assertEqual(len(slides), 1)
         self.assertTrue(slides[0]["is_slide"])
         self.assertEqual(slides[0]["media_type"], "image")
-
-    @patch("flask_api.models.slide.query_db")
-    def test_get_active_falls_back_when_media_columns_are_missing(self, mock_query_db):
-        mock_query_db.side_effect = [
-            OperationalError(1054, "Unknown column 'media_type' in 'field list'"),
-            [
-                {
-                    "id": 1,
-                    "title": "Legacy slide",
-                    "caption": "Legacy caption",
-                    "image_url": "/api/assets/slides/legacy.jpg",
-                    "alt_text": "Legacy",
-                    "display_order": 1,
-                }
-            ],
-        ]
-
-        slides = Slide.get_active_dicts()
-
-        self.assertEqual(len(slides), 1)
-        self.assertEqual(slides[0]["id"], 1)
-        self.assertTrue(slides[0]["is_slide"])
-        self.assertEqual(slides[0]["media_type"], "image")
-        self.assertEqual(mock_query_db.call_count, 2)
 
     @patch("flask_api.models.slide.query_db")
     def test_get_active_dicts_returns_database_metadata_without_runtime_overrides(self, mock_query_db):

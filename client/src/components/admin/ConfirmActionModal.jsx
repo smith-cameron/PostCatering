@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Alert, Button, Modal } from "react-bootstrap";
 
 const ConfirmActionModal = ({
@@ -22,7 +22,7 @@ const ConfirmActionModal = ({
   const canFix = !busy;
   const formRef = useRef(null);
 
-  const runPrimaryAction = () => {
+  const runPrimaryAction = useCallback(() => {
     if (hasValidation) {
       if (!canFix) return;
       onCancel?.();
@@ -30,7 +30,7 @@ const ConfirmActionModal = ({
     }
     if (!canConfirm) return;
     onConfirm?.();
-  };
+  }, [hasValidation, canFix, onCancel, canConfirm, onConfirm]);
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -62,7 +62,7 @@ const ConfirmActionModal = ({
 
     document.addEventListener("keydown", handleDocumentKeyDown);
     return () => document.removeEventListener("keydown", handleDocumentKeyDown);
-  }, [show, hasValidation, canFix, canConfirm, onCancel, onConfirm]);
+  }, [show, runPrimaryAction]);
 
   return (
     <Modal
