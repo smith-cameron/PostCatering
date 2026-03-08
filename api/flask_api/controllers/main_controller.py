@@ -337,25 +337,13 @@ def admin_auth_user_detail(user_id, admin_user=None):
     return jsonify(response_body), status_code
 
 
-@app.route("/api/admin/menu/reference-data", methods=["GET", "OPTIONS"])
-@_require_admin_auth
-def admin_menu_reference_data(admin_user=None):
-    if request.method == "OPTIONS":
-        return ("", 204)
-
-    data = AdminMenuService.get_reference_data()
-    return jsonify(data), 200
-
-
 @app.route("/api/admin/menu/items", methods=["GET", "POST", "OPTIONS"])
-def admin_menu_items():
+@_require_admin_auth
+def admin_menu_items(admin_user=None):
     if request.method == "OPTIONS":
         return ("", 204)
 
     if request.method == "GET":
-        admin_user = _resolve_session_admin_user()
-        if not admin_user:
-            return jsonify({"error": "Unauthorized"}), 401
         items = AdminMenuService.list_menu_items(
             search=request.args.get("search", ""),
             is_active=request.args.get("is_active"),
@@ -365,43 +353,18 @@ def admin_menu_items():
 
     body = request.get_json(silent=True) or {}
 
-    # Prefer authenticated admin session for dashboard create workflow.
-    admin_user = _resolve_session_admin_user()
-    if admin_user:
-        response_body, status_code = AdminMenuService.create_menu_item(body)
-        if status_code < 400:
-            AdminAuditService.log_change(
-                admin_user_id=admin_user["id"],
-                action="create",
-                entity_type="menu_item",
-                entity_id=response_body.get("item", {}).get("id"),
-                change_summary=f"Created menu item '{response_body.get('item', {}).get('item_name', '')}'",
-                before=None,
-                after=response_body.get("item"),
-            )
-        return jsonify(response_body), status_code
-
-    # Backward-compatible token flow for non-formal shared catalog upserts.
-    auth_error, status_code = _require_admin_token()
-    if auth_error:
-        return jsonify(auth_error), status_code
-
-    response_body, status_code = MenuService.upsert_non_formal_catalog_items(body)
+    response_body, status_code = AdminMenuService.create_menu_item(body)
+    if status_code < 400:
+        AdminAuditService.log_change(
+            admin_user_id=admin_user["id"],
+            action="create",
+            entity_type="menu_item",
+            entity_id=response_body.get("item", {}).get("id"),
+            change_summary=f"Created menu item '{response_body.get('item', {}).get('item_name', '')}'",
+            before=None,
+            after=response_body.get("item"),
+        )
     return jsonify(response_body), status_code
-
-
-@app.route("/api/admin/menu/catalog-items", methods=["GET", "OPTIONS"])
-@_require_admin_auth
-def admin_menu_catalog_items(admin_user=None):
-    if request.method == "OPTIONS":
-        return ("", 204)
-
-    items = AdminMenuService.list_menu_items(
-        search=request.args.get("search", ""),
-        is_active=request.args.get("is_active"),
-        limit=request.args.get("limit", 250),
-    )
-    return jsonify({"items": items}), 200
 
 
 @app.route("/api/admin/menu/items/<int:item_id>", methods=["GET", "PATCH", "DELETE", "OPTIONS"])
@@ -443,52 +406,6 @@ def admin_menu_item_detail(item_id, admin_user=None):
             entity_type="menu_item",
             entity_id=item_id,
             change_summary=f"Updated menu item '{after.get('item_name', '')}'",
-            before=before,
-            after=after,
-        )
-    return jsonify(response_body), status_code
-
-
-@app.route("/api/admin/menu/sections", methods=["GET", "OPTIONS"])
-@_require_admin_auth
-def admin_menu_sections(admin_user=None):
-    if request.method == "OPTIONS":
-        return ("", 204)
-
-    sections = AdminMenuService.list_sections(
-        search=request.args.get("search", ""),
-        catalog_key=request.args.get("catalog_key", ""),
-        is_active=request.args.get("is_active"),
-        limit=request.args.get("limit", 250),
-    )
-    return jsonify({"sections": sections}), 200
-
-
-@app.route("/api/admin/menu/sections/<int:section_id>", methods=["GET", "PATCH", "OPTIONS"])
-@_require_admin_auth
-def admin_menu_section_detail(section_id, admin_user=None):
-    if request.method == "OPTIONS":
-        return ("", 204)
-
-    if request.method == "GET":
-        section = AdminMenuService.get_section_detail(section_id)
-        if not section:
-            return jsonify({"error": "Section not found."}), 404
-        return jsonify({"section": section}), 200
-
-    before = AdminMenuService.get_section_detail(section_id)
-    if not before:
-        return jsonify({"error": "Section not found."}), 404
-
-    response_body, status_code = AdminMenuService.update_section(section_id, request.get_json(silent=True) or {})
-    if status_code < 400:
-        after = response_body.get("section")
-        AdminAuditService.log_change(
-            admin_user_id=admin_user["id"],
-            action="update",
-            entity_type="menu_section",
-            entity_id=section_id,
-            change_summary=f"Updated section '{after.get('title', '')}'",
             before=before,
             after=after,
         )
@@ -615,7 +532,7 @@ def admin_media_reorder_slides(admin_user=None):
             action="reorder",
             entity_type="media",
             entity_id="slides",
-            change_summary="Reordered homepage slides",
+            change_summary="Reordered landing slides",
             before=[{"id": row.get("id"), "display_order": row.get("display_order")} for row in before],
             after=[{"id": row.get("id"), "display_order": row.get("display_order")} for row in after],
         )

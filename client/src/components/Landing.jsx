@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button, Carousel } from "react-bootstrap";
 import { Link } from "react-router-dom";
-import AboutUsModal from "./modals/AboutUsModal";
-import MondayMealModal from "./modals/MondayMealModal";
 
 const normalizeSortNumber = (value, fallback) => {
   const parsed = Number(value);
@@ -58,10 +56,6 @@ const normalizeLandingSlides = (slides) => {
 };
 
 const Landing = () => {
-  const [activeModal, setActiveModal] = useState(null);
-  const handleCloseModal = () => setActiveModal(null);
-  const handleShowModal = (modalName) => setActiveModal(modalName);
-
   const [slides, setSlides] = useState([]);
 
   useEffect(() => {
@@ -107,25 +101,30 @@ const Landing = () => {
       </p>
       <div className="landing-info-actions my-4 px-3">
         <Button
+          as={Link}
+          to="/services/togo"
           className="fw-semibold btn-inquiry-action landing-info-action"
           variant="secondary"
-          onClick={() => handleShowModal("aboutUs")}
         >
-          About Us
+          To-Go / Take & Bake
         </Button>
         <Button
+          as={Link}
+          to="/services/community"
           className="fw-semibold btn-inquiry-action landing-info-action"
           variant="secondary"
-          onClick={() => handleShowModal("mmp")}
         >
-          Monday Meal Program
+          Community/Crew Catering
+        </Button>
+        <Button
+          as={Link}
+          to="/services/formal"
+          className="fw-semibold btn-inquiry-action landing-info-action"
+          variant="secondary"
+        >
+          Formal Events
         </Button>
       </div>
-      <AboutUsModal
-        show={activeModal === "aboutUs"}
-        onHide={handleCloseModal}
-      />
-      <MondayMealModal show={activeModal === "mmp"} onHide={handleCloseModal} />
       <Carousel>
         {slides.map((slide) => (
           <Carousel.Item key={slide.id ?? slide.src} className="carousel-item">

@@ -1,160 +1,118 @@
+import { Fragment } from "react";
 import { Accordion } from "react-bootstrap";
-import MenuTable from "./MenuTable";
-import {
-  getCommunityPackageBullets,
-  normalizeCommunityTierConstraints,
-  normalizeMenuText,
-  normalizeMenuTitle,
-  splitItemsBySaladName,
-  toCommunityTierBullet,
-} from "./serviceMenuUtils";
+import MenuSectionBlocks from "./MenuSectionBlocks";
+import { buildMenuSections, normalizeMenuTitle } from "./serviceMenuUtils";
 
-const isSaladName = (value) => String(value || "").toLowerCase().includes("salad");
+const flattenUntitledGroups = (blocks = []) =>
+  blocks.flatMap((block) => {
+    if (block?.type === "group" && !block.title && block.blocks?.length) {
+      return flattenUntitledGroups(block.blocks);
+    }
+    return [block];
+  });
 
-const CatalogSectionsAccordion = ({ menuKey, data, menuOptions }) => (
-  <Accordion key={menuKey} defaultActiveKey={data.sections?.length ? "0" : undefined} alwaysOpen={false}>
-    {data.sections.map((section, index) => (
-      <Accordion.Item eventKey={String(index)} key={section.title ?? index}>
-        <Accordion.Header>{normalizeMenuTitle(section.title)}</Accordion.Header>
-        <Accordion.Body>
-          {section.type === "package" ? (
-            <>
-              {section.price ? (
-                <p className="mb-2">
-                  <strong>{normalizeMenuText(section.price)}</strong>
-                </p>
-              ) : null}
-              {menuKey === "community" ? (
-                <ul className="mb-0">
-                  {getCommunityPackageBullets(section).map((bullet) => (
-                    <li key={bullet}>{normalizeMenuText(bullet)}</li>
-                  ))}
-                </ul>
-              ) : menuKey !== "formal" ? (
-                <p className="mb-0">{normalizeMenuText(section.description)}</p>
-              ) : null}
-            </>
-          ) : null}
+const stripBlockTitle = (block) => ({
+  ...block,
+  title: undefined,
+});
 
-          {section.type === "tiers" ? (
-            <>
-              {section.tiers.map((tier) => (
-                <div key={tier.tierTitle} className="mb-3">
-                  <h4 className="h6 mb-1 menu-section-title">{tier.tierTitle}</h4>
-                  {tier.price ? (
-                    <p className="mb-2">
-                      <strong>{normalizeMenuText(tier.price)}</strong>
-                    </p>
-                  ) : null}
-                  <ul className="mb-0">
-                    {(menuKey === "community"
-                      ? (() => {
-                          const limits = normalizeCommunityTierConstraints(section.sectionId, tier.tierTitle, tier.constraints);
-                          return [
-                            toCommunityTierBullet("Entrees/Protiens", limits.entree),
-                            toCommunityTierBullet("Sides", limits.sides),
-                            toCommunityTierBullet("Salads", limits.salads),
-                            !limits.sides && !limits.salads ? toCommunityTierBullet("Sides/Salads", limits.sides_salads) : null,
-                            "Bread",
-                          ].filter(Boolean);
-                        })()
-                      : tier.bullets
-                    ).map((bullet) => (
-                      <li key={bullet}>{normalizeMenuText(bullet)}</li>
-                    ))}
-                  </ul>
+const toAccordionItems = (sections = []) =>
+  sections.flatMap((section, sectionIndex) => {
+    const normalizedBlocks = flattenUntitledGroups(section.blocks);
+    const introBlocks = [];
+    const candidateBlocks = [];
+
+    normalizedBlocks.forEach((block) => {
+      if (!candidateBlocks.length && block?.type === "text" && !block.title) {
+        introBlocks.push(block);
+        return;
+      }
+
+      candidateBlocks.push(block);
+    });
+
+    const shouldPromoteBlocks =
+      candidateBlocks.length > 0 && candidateBlocks.every((block) => Boolean(block?.title));
+
+    if (!shouldPromoteBlocks) {
+      return [
+        {
+          id: section.id || `menu-section-${sectionIndex}`,
+          title: section.title,
+          sectionKind: section.sectionKind,
+          contextTitle: "",
+          contextBlocks: [],
+          blocks: normalizedBlocks,
+        },
+      ];
+    }
+
+    return candidateBlocks.map((block, blockIndex) => ({
+      id: `${section.id || `menu-section-${sectionIndex}`}-${block.key || blockIndex}`,
+      title: block.title,
+      sectionKind: section.sectionKind,
+      contextTitle: section.title,
+      contextBlocks: blockIndex === 0 ? introBlocks : [],
+      blocks: [stripBlockTitle(block)],
+    }));
+  });
+
+const CatalogSectionsAccordion = ({
+  menuKey,
+  data,
+  menuOptions,
+  approvedFormalPlans,
+  formalMenuBlocks,
+  sections,
+}) => {
+  const resolvedSections =
+    sections ||
+    buildMenuSections({
+      menuKey,
+      data,
+      menuOptions,
+      approvedFormalPlans,
+      formalMenuBlocks,
+    });
+  const accordionItems = toAccordionItems(resolvedSections);
+
+  return (
+    <Accordion
+      key={menuKey}
+      className="menu-sections-accordion"
+      alwaysOpen={false}
+    >
+      {accordionItems.map((item, index) => {
+        const previousItem = accordionItems[index - 1];
+        const showMenuBreak =
+          item.sectionKind === "menu" &&
+          previousItem?.sectionKind &&
+          previousItem.sectionKind !== item.sectionKind;
+
+        return (
+          <Fragment key={item.id ?? index}>
+            {showMenuBreak ? (
+              <div className="menu-group-break" aria-hidden="true">
+                <span className="menu-group-break-label">Menu Selections</span>
+              </div>
+            ) : null}
+            <Accordion.Item eventKey={String(index)}>
+              <Accordion.Header>{normalizeMenuTitle(item.title)}</Accordion.Header>
+              <Accordion.Body>
+                {item.contextTitle ? (
+                  <p className="menu-item-context-label mb-3">{normalizeMenuTitle(item.contextTitle)}</p>
+                ) : null}
+                {item.contextBlocks.length ? <MenuSectionBlocks blocks={item.contextBlocks} /> : null}
+                <div className={item.contextBlocks.length && item.blocks.length ? "mt-3" : undefined}>
+                  <MenuSectionBlocks blocks={item.blocks} />
                 </div>
-              ))}
-            </>
-          ) : null}
-
-          {section.type === "includeMenu" ? (
-            <>
-              {section.note ? <p className="mb-3">{normalizeMenuText(section.note)}</p> : null}
-
-              {section.includeKeys.map((key) => {
-                const block = menuOptions[key];
-                if (!block) return null;
-                if (block.category === "sides_salads") {
-                  const { sides, salads } = splitItemsBySaladName(block.items || []);
-                  return (
-                    <div key={key} className="mb-3">
-                      <h4 className="h6 mb-2 menu-section-title">{normalizeMenuText(block.title)}</h4>
-                      {sides.length ? (
-                        <>
-                          <h5 className="h6 mb-2">Sides</h5>
-                          <ul className="mb-2">
-                            {sides.map((item) => (
-                              <li key={item}>{normalizeMenuText(item)}</li>
-                            ))}
-                          </ul>
-                        </>
-                      ) : null}
-                      {salads.length ? (
-                        <>
-                          <h5 className="h6 mb-2">Salads</h5>
-                          <ul className="mb-0">
-                            {salads.map((item) => (
-                              <li key={item}>{normalizeMenuText(item)}</li>
-                            ))}
-                          </ul>
-                        </>
-                      ) : null}
-                    </div>
-                  );
-                }
-
-                return (
-                  <div key={key} className="mb-3">
-                    <h4 className="h6 mb-2 menu-section-title">{normalizeMenuText(block.title)}</h4>
-                    <ul className="mb-0">
-                      {block.items.map((item) => (
-                        <li key={item}>{normalizeMenuText(item)}</li>
-                      ))}
-                    </ul>
-                  </div>
-                );
-              })}
-            </>
-          ) : null}
-
-          {!section.type ? (
-            menuKey === "togo" && section.sectionId === "togo_sides_salads" ? (
-              (() => {
-                const normalizedColumns = (section.columns || []).map((column, columnIndex) =>
-                  columnIndex === 0 ? "" : normalizeMenuText(column)
-                );
-                const normalizedRows = (section.rows || []).map((row) => row.map((cell) => normalizeMenuText(cell)));
-                const sideRows = normalizedRows.filter((row) => !isSaladName(row[0]));
-                const saladRows = normalizedRows.filter((row) => isSaladName(row[0]));
-                return (
-                  <>
-                    {sideRows.length ? (
-                      <div className="mb-3">
-                        <h4 className="h6 mb-2 menu-section-title">Sides</h4>
-                        <MenuTable columns={normalizedColumns} rows={sideRows} />
-                      </div>
-                    ) : null}
-                    {saladRows.length ? (
-                      <div>
-                        <h4 className="h6 mb-2 menu-section-title">Salads</h4>
-                        <MenuTable columns={normalizedColumns} rows={saladRows} />
-                      </div>
-                    ) : null}
-                  </>
-                );
-              })()
-            ) : (
-              <MenuTable
-                columns={(section.columns || []).map((column) => normalizeMenuText(column))}
-                rows={(section.rows || []).map((row) => row.map((cell) => normalizeMenuText(cell)))}
-              />
-            )
-          ) : null}
-        </Accordion.Body>
-      </Accordion.Item>
-    ))}
-  </Accordion>
-);
+              </Accordion.Body>
+            </Accordion.Item>
+          </Fragment>
+        );
+      })}
+    </Accordion>
+  );
+};
 
 export default CatalogSectionsAccordion;

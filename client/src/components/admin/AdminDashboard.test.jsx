@@ -35,7 +35,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (String(url).startsWith("/api/admin/media?")) {
@@ -71,6 +71,106 @@ describe("AdminDashboard", () => {
     });
   });
 
+  it("filters media locally and uses refresh only as a manual reload", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({
+            user: {
+              id: 1,
+              username: "admin",
+              display_name: "Admin",
+              access_tier: 1,
+              can_manage_admin_users: true,
+              is_active: true,
+            },
+          })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      if (String(url).startsWith("/api/admin/media?")) {
+        return Promise.resolve(
+          buildResponse({
+            media: [
+              {
+                id: 1,
+                title: "Hero Slide",
+                caption: "Front page image",
+                src: "/api/assets/slides/hero.jpg",
+                media_type: "image",
+                is_slide: true,
+                is_active: true,
+                display_order: 1,
+              },
+              {
+                id: 2,
+                title: "Gallery Poster",
+                caption: "Event poster",
+                src: "/api/assets/gallery/poster.jpg",
+                media_type: "image",
+                is_slide: false,
+                is_active: true,
+                display_order: 1,
+              },
+            ],
+          })
+        );
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/*" element={<AdminDashboard />} />
+          <Route path="/admin/login" element={<div>Login</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Menu Operations");
+    fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
+    expect(await screen.findByText("Hero Slide")).toBeInTheDocument();
+    expect(screen.getByText("Gallery Poster")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Find Media" }));
+
+    const mediaSearch = screen.getByPlaceholderText("Search media");
+    fireEvent.change(mediaSearch, { target: { value: "hero" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("Hero Slide")).toBeInTheDocument();
+      expect(screen.queryByText("Gallery Poster")).not.toBeInTheDocument();
+    });
+    expect(screen.getByPlaceholderText("Search media")).toHaveValue("hero");
+    const getMediaRefreshRequests = () =>
+      globalThis.fetch.mock.calls
+        .map((call) => String(call[0]))
+        .filter((requestUrl) => requestUrl === "/api/admin/media?limit=800");
+    expect(getMediaRefreshRequests()).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset Filters" }));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Search media")).toHaveValue("");
+    });
+    expect(screen.getByText("Gallery Poster")).toBeInTheDocument();
+    expect(getMediaRefreshRequests()).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh Media" }));
+    await waitFor(() => {
+      expect(getMediaRefreshRequests()).toHaveLength(2);
+    });
+  });
+
   it("loads simplified menu endpoints instead of legacy reference/section endpoints", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
       if (url === "/api/admin/auth/me") {
@@ -84,7 +184,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [{ id: 11, key: "entrees", name: "Entrees", is_active: true }] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       return Promise.resolve(buildResponse({}, false));
@@ -103,7 +203,7 @@ describe("AdminDashboard", () => {
     const requests = globalThis.fetch.mock.calls.map((call) => String(call[0]));
     expect(requests).toContain("/api/menu/general/groups");
     expect(requests).toContain("/api/menu/formal/groups");
-    expect(requests.some((requestUrl) => requestUrl.startsWith("/api/admin/menu/catalog-items?"))).toBe(true);
+    expect(requests.some((requestUrl) => requestUrl.startsWith("/api/admin/menu/items?"))).toBe(true);
     expect(requests.some((requestUrl) => requestUrl.startsWith("/api/admin/menu/reference-data"))).toBe(false);
     expect(requests.some((requestUrl) => requestUrl.startsWith("/api/admin/menu/sections?"))).toBe(false);
   });
@@ -121,7 +221,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (url === "/api/admin/audit?limit=200") {
@@ -208,7 +308,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (url === "/api/admin/audit?limit=200") {
@@ -304,7 +404,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (url === "/api/admin/audit?limit=200") {
@@ -426,7 +526,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (url === "/api/admin/audit?limit=200") {
@@ -503,7 +603,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (url === "/api/admin/audit?limit=200") {
@@ -571,7 +671,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (url === "/api/admin/audit?limit=200") {
@@ -626,7 +726,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (url === "/api/admin/audit?limit=200") {
@@ -666,7 +766,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (String(url).startsWith("/api/admin/media?")) {
@@ -703,7 +803,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(
           buildResponse({
             items: [
@@ -732,8 +832,6 @@ describe("AdminDashboard", () => {
               tray_price_full: "140",
               is_active: true,
               option_group_assignments: [{ menu_type: "regular", group_id: 10, display_order: 1, is_active: true }],
-              section_row_assignments: [],
-              tier_bullet_assignments: [],
             },
           })
         );
@@ -804,7 +902,7 @@ describe("AdminDashboard", () => {
           })
         );
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (url === "/api/admin/audit?limit=200") {
@@ -819,8 +917,6 @@ describe("AdminDashboard", () => {
               item_key: "jerk_chicken",
               is_active: true,
               option_group_assignments: [],
-              section_row_assignments: [],
-              tier_bullet_assignments: [],
             },
           })
         );
@@ -877,8 +973,6 @@ describe("AdminDashboard", () => {
       expect(payload.tray_price_full).toBe("140.00");
       expect(payload.item_key).toBeUndefined();
       expect(payload.option_group_assignments).toHaveLength(1);
-      expect(payload.section_row_assignments).toHaveLength(0);
-      expect(payload.tier_bullet_assignments).toHaveLength(0);
     });
 
     fireEvent.change(screen.getByLabelText("Menu Type"), { target: { value: "formal" } });
@@ -913,7 +1007,7 @@ describe("AdminDashboard", () => {
           })
         );
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (url === "/api/admin/audit?limit=200") {
@@ -932,8 +1026,6 @@ describe("AdminDashboard", () => {
               tray_price_full: null,
               is_active: false,
               option_group_assignments: [],
-              section_row_assignments: [],
-              tier_bullet_assignments: [],
             },
           })
         );
@@ -990,7 +1082,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (url === "/api/admin/audit?limit=200") {
@@ -1009,8 +1101,6 @@ describe("AdminDashboard", () => {
               tray_price_full: null,
               is_active: false,
               option_group_assignments: [],
-              section_row_assignments: [],
-              tier_bullet_assignments: [],
             },
           })
         );
@@ -1067,7 +1157,7 @@ describe("AdminDashboard", () => {
           })
         );
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (url === "/api/admin/audit?limit=200") {
@@ -1143,7 +1233,7 @@ describe("AdminDashboard", () => {
           })
         );
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (url === "/api/admin/audit?limit=200") {
@@ -1201,7 +1291,7 @@ describe("AdminDashboard", () => {
           })
         );
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (url === "/api/admin/audit?limit=200") {
@@ -1273,7 +1363,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (String(url).startsWith("/api/admin/media?")) {
@@ -1332,7 +1422,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (String(url).startsWith("/api/admin/media?")) {
@@ -1407,7 +1497,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (String(url).startsWith("/api/admin/media?")) {
@@ -1473,7 +1563,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (String(url).startsWith("/api/admin/media?")) {
@@ -1544,7 +1634,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (String(url).startsWith("/api/admin/media?")) {
@@ -1649,7 +1739,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (String(url).startsWith("/api/admin/media?")) {
@@ -1711,7 +1801,7 @@ describe("AdminDashboard", () => {
     });
   });
 
-  it("reorders homepage slides from the media table via drag and drop", async () => {
+  it("reorders landing slides from the media table via drag and drop", async () => {
     let mediaRows = [
       {
         id: 11,
@@ -1757,7 +1847,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (String(url).startsWith("/api/admin/media?")) {
@@ -1830,7 +1920,7 @@ describe("AdminDashboard", () => {
     });
   });
 
-  it("reorders gallery rows separately from homepage slides", async () => {
+  it("reorders gallery rows separately from landing slides", async () => {
     let mediaRows = [
       {
         id: 11,
@@ -1872,7 +1962,7 @@ describe("AdminDashboard", () => {
       }
       if (url === "/api/menu/general/groups") return Promise.resolve(buildResponse({ groups: [] }));
       if (url === "/api/menu/formal/groups") return Promise.resolve(buildResponse({ groups: [] }));
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) return Promise.resolve(buildResponse({ items: [] }));
+      if (String(url).startsWith("/api/admin/menu/items?")) return Promise.resolve(buildResponse({ items: [] }));
       if (String(url).startsWith("/api/admin/media?")) return Promise.resolve(buildResponse({ media: mediaRows }));
       if (url === "/api/admin/media/reorder" && options?.method === "PATCH") {
         const payload = JSON.parse(options.body || "{}");
@@ -1960,7 +2050,7 @@ describe("AdminDashboard", () => {
           })
         );
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(buildResponse({ items: [] }));
       }
       if (url === "/api/admin/audit?limit=200") {
@@ -2039,7 +2129,7 @@ describe("AdminDashboard", () => {
           })
         );
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(
           buildResponse({
             items: [
@@ -2079,8 +2169,6 @@ describe("AdminDashboard", () => {
                 { menu_type: "regular", group_id: 10, display_order: 1, is_active: true },
                 { menu_type: "formal", group_id: 1000011, display_order: 2, is_active: true },
               ],
-              section_row_assignments: [],
-              tier_bullet_assignments: [],
             },
           })
         );
@@ -2101,8 +2189,6 @@ describe("AdminDashboard", () => {
                 { menu_type: "regular", group_id: 10, display_order: 1, is_active: true },
                 { menu_type: "formal", group_id: 1000011, display_order: 2, is_active: true },
               ],
-              section_row_assignments: [],
-              tier_bullet_assignments: [],
             },
           })
         );
@@ -2185,7 +2271,7 @@ describe("AdminDashboard", () => {
           })
         );
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         if (itemWasDeactivated) {
           return Promise.resolve(
             buildResponse({
@@ -2231,8 +2317,6 @@ describe("AdminDashboard", () => {
               tray_price_full: "140",
               is_active: true,
               option_group_assignments: [{ menu_type: "regular", group_id: 10, display_order: 1, is_active: true }],
-              section_row_assignments: [],
-              tier_bullet_assignments: [],
             },
           })
         );
@@ -2251,8 +2335,6 @@ describe("AdminDashboard", () => {
               tray_price_full: "140",
               is_active: false,
               option_group_assignments: [],
-              section_row_assignments: [],
-              tier_bullet_assignments: [],
             },
           })
         );
@@ -2321,7 +2403,7 @@ describe("AdminDashboard", () => {
           })
         );
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         if (itemDeleted) {
           return Promise.resolve(buildResponse({ items: [] }));
         }
@@ -2353,8 +2435,6 @@ describe("AdminDashboard", () => {
               tray_price_full: "140",
               is_active: true,
               option_group_assignments: [{ menu_type: "regular", group_id: 10, display_order: 1, is_active: true }],
-              section_row_assignments: [],
-              tier_bullet_assignments: [],
             },
           })
         );
@@ -2410,7 +2490,7 @@ describe("AdminDashboard", () => {
       if (url === "/api/menu/formal/groups") {
         return Promise.resolve(buildResponse({ groups: [] }));
       }
-      if (String(url).startsWith("/api/admin/menu/catalog-items?")) {
+      if (String(url).startsWith("/api/admin/menu/items?")) {
         return Promise.resolve(
           buildResponse({
             items: [
@@ -2484,8 +2564,3 @@ describe("AdminDashboard", () => {
     expect(screen.queryByText("Rice")).not.toBeInTheDocument();
   });
 });
-
-
-
-
-

@@ -152,5 +152,76 @@ describe("CatalogSectionsAccordion", () => {
 
     expect(screen.getByText("2 Entrees/Protiens")).toBeInTheDocument();
     expect(screen.getByText("2-3 Entrees/Protiens")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tier 1: Casual Buffet" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tier 2: Elevated Buffet / Family-Style" })).toBeInTheDocument();
+  });
+
+  it("renders normalized sections through the shared block renderer", () => {
+    render(
+      <CatalogSectionsAccordion
+        menuKey="formal"
+        sections={[
+          {
+            id: "formal-packages",
+            title: "Formal Dinner Packages",
+            blocks: [
+              {
+                key: "plan-1",
+                type: "list",
+                title: "Chef's Choice",
+                price: "$38 / person",
+                items: ["2 Passed Appetizers", "1 Starter"],
+              },
+              {
+                key: "menu-options",
+                type: "group",
+                title: "Menu Options",
+                blocks: [
+                  {
+                    key: "menu-options-entrees",
+                    type: "list",
+                    title: "Entrees",
+                    items: ["Braised Short Rib"],
+                  },
+                ],
+              },
+            ],
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "Chef's Choice" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Menu Options" })).toBeInTheDocument();
+    expect(screen.getByText("$38 / person")).toBeInTheDocument();
+    expect(screen.getAllByText("Formal Dinner Packages")).toHaveLength(2);
+  });
+
+  it("renders formal packages and menu blocks as separate top-level accordion items", () => {
+    render(
+      <CatalogSectionsAccordion
+        menuKey="formal"
+        approvedFormalPlans={[
+          {
+            id: "formal:3-course",
+            title: "3-Course Service",
+            price: "$38 / person",
+          },
+        ]}
+        formalMenuBlocks={[
+          {
+            key: "formal-entrees",
+            title: "Entrees",
+            items: ["Braised Short Rib"],
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "3-Course Service" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Entrees" })).toBeInTheDocument();
+    expect(screen.getByText("Formal Dinner Packages")).toBeInTheDocument();
+    expect(screen.getByText("Menu Options")).toBeInTheDocument();
+    expect(screen.getByText("Menu Selections")).toBeInTheDocument();
   });
 });

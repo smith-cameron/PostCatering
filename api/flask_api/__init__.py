@@ -30,3 +30,8 @@ def add_cors_headers(response):
 @app.teardown_appcontext
 def teardown_db_connection(exception):
     close_request_connection(exception=exception)
+
+
+# Register route decorators on app import so python api/server.py and tests
+# load the same endpoint set without requiring a separate controller import.
+import flask_api.controllers.main_controller  # noqa: E402,F401

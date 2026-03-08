@@ -4,7 +4,6 @@ import { Button } from "react-bootstrap";
 import useMenuConfig from "../hooks/useMenuConfig";
 import Context from "../context";
 import CatalogSectionsAccordion from "./service-menu/CatalogSectionsAccordion";
-import FormalMenuAccordion from "./service-menu/FormalMenuAccordion";
 import { normalizeMenuText, normalizeMenuTitle } from "./service-menu/serviceMenuUtils";
 import useServiceMenuData from "./service-menu/useServiceMenuData";
 
@@ -12,9 +11,10 @@ const ServiceMenu = () => {
   const { menuKey } = useParams();
   const { openInquiryModal } = useContext(Context);
   const { menu, menuOptions, formalPlanOptions, loading, error } = useMenuConfig();
-  const { data, approvedFormalPlans, formalMenuBlocks } = useServiceMenuData({
+  const { data, sections } = useServiceMenuData({
     menuKey,
     menu,
+    menuOptions,
     formalPlanOptions,
   });
 
@@ -62,15 +62,11 @@ const ServiceMenu = () => {
         </section>
       ))}
 
-      {menuKey === "formal" ? (
-        <FormalMenuAccordion menuKey={menuKey} approvedFormalPlans={approvedFormalPlans} formalMenuBlocks={formalMenuBlocks} />
-      ) : (
-        <CatalogSectionsAccordion menuKey={menuKey} data={data} menuOptions={menuOptions} />
-      )}
+      <CatalogSectionsAccordion menuKey={menuKey} sections={sections} />
 
       <div className="mt-3">
         <Button className="btn-inquiry-action" variant="secondary" onClick={() => openInquiryModal(menuKey)}>
-          Request Inquiry About This Menu
+          Inquire About This Menu
         </Button>
       </div>
     </main>
