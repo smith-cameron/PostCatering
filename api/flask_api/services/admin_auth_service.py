@@ -41,14 +41,10 @@ class AdminAuthService:
     def _has_delegated_admin_user_management(cls, user_row):
         if not user_row:
             return False
-        return (
-            cls._normalize_access_tier(
-                user_row.get("access_tier"),
-                default=cls.ACCESS_TIER_MANAGER,
-            )
-            == cls.ACCESS_TIER_MANAGER
-            and bool(user_row.get("can_manage_admin_users", 0))
-        )
+        return cls._normalize_access_tier(
+            user_row.get("access_tier"),
+            default=cls.ACCESS_TIER_MANAGER,
+        ) == cls.ACCESS_TIER_MANAGER and bool(user_row.get("can_manage_admin_users", 0))
 
     @classmethod
     def _resolve_user_management_actor(cls, requesting_admin_user_id):
@@ -335,10 +331,13 @@ class AdminAuthService:
         if auth_error:
             return auth_error, status_code
 
-        actor_is_owner = cls._normalize_access_tier(
-            actor.get("access_tier"),
-            default=cls.ACCESS_TIER_MANAGER,
-        ) == cls.ACCESS_TIER_OWNER
+        actor_is_owner = (
+            cls._normalize_access_tier(
+                actor.get("access_tier"),
+                default=cls.ACCESS_TIER_MANAGER,
+            )
+            == cls.ACCESS_TIER_OWNER
+        )
         requested_username = cls._normalize_username(body.get("username"))
         requested_display_name = str(body.get("display_name") or "").strip() or None
         requested_password = str(body.get("password") or "")
@@ -454,10 +453,13 @@ class AdminAuthService:
         if auth_error:
             return auth_error, status_code
 
-        actor_is_owner = cls._normalize_access_tier(
-            actor.get("access_tier"),
-            default=cls.ACCESS_TIER_MANAGER,
-        ) == cls.ACCESS_TIER_OWNER
+        actor_is_owner = (
+            cls._normalize_access_tier(
+                actor.get("access_tier"),
+                default=cls.ACCESS_TIER_MANAGER,
+            )
+            == cls.ACCESS_TIER_OWNER
+        )
 
         rows = query_db(
             """

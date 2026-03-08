@@ -1801,7 +1801,7 @@ describe("AdminDashboard", () => {
     });
   });
 
-  it("reorders homepage slides from the media table via drag and drop", async () => {
+  it("reorders landing slides from the media table via drag and drop", async () => {
     let mediaRows = [
       {
         id: 11,
@@ -1920,7 +1920,7 @@ describe("AdminDashboard", () => {
     });
   });
 
-  it("reorders gallery rows separately from homepage slides", async () => {
+  it("reorders gallery rows separately from landing slides", async () => {
     let mediaRows = [
       {
         id: 11,

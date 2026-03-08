@@ -760,7 +760,9 @@ class MenuService:
         payload = {"type_key": str(type_key or "").strip().lower()}
 
         if active_only:
-            conditions.extend(["i.is_active = 1", "mitg.is_active = 1", "t.is_active = 1", "g.is_active = 1", "tg.is_active = 1"])
+            conditions.extend(
+                ["i.is_active = 1", "mitg.is_active = 1", "t.is_active = 1", "g.is_active = 1", "tg.is_active = 1"]
+            )
         if str(group_key or "").strip():
             payload["group_key"] = str(group_key).strip().lower()
             conditions.append("g.group_key = %(group_key)s")
@@ -1073,4 +1075,3 @@ class MenuService:
         if fallback:
             return {"source": "seed-file", **cls._normalize_menu_payload_for_api(fallback)}, 200
         return {"error": "Menu seed payload not found."}, 500
-

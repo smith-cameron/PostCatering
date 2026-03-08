@@ -696,9 +696,8 @@ class AdminMenuService:
         if not item_name:
             return {"error": "item_name is required."}, 400
 
-        explicit_empty_type_selection = (
-            body.get("menu_type") in (None, "")
-            or (isinstance(body.get("menu_type"), (list, tuple, set)) and len(body.get("menu_type")) == 0)
+        explicit_empty_type_selection = body.get("menu_type") in (None, "") or (
+            isinstance(body.get("menu_type"), (list, tuple, set)) and len(body.get("menu_type")) == 0
         )
         type_keys = [] if explicit_empty_type_selection else cls._normalize_menu_type_request(body.get("menu_type"))
         requested_group_map = cls._extract_requested_group_map(
@@ -821,9 +820,13 @@ class AdminMenuService:
 
         next_is_active = cls._to_bool(body.get("is_active"), default=current["is_active"])
         existing_type_keys = cls._fetch_item_types(row_id)
-        explicit_empty_type_selection = isinstance(body.get("menu_type"), (list, tuple, set)) and len(body.get("menu_type")) == 0
+        explicit_empty_type_selection = (
+            isinstance(body.get("menu_type"), (list, tuple, set)) and len(body.get("menu_type")) == 0
+        )
         next_type_keys = (
-            [] if explicit_empty_type_selection else (
+            []
+            if explicit_empty_type_selection
+            else (
                 cls._normalize_menu_type_request(body.get("menu_type"))
                 if "menu_type" in body
                 else (existing_type_keys or [menu_type])
@@ -852,9 +855,7 @@ class AdminMenuService:
                 )
 
                 missing_type_keys = [
-                    type_key
-                    for type_key in next_type_keys
-                    if requested_group_map.get(type_key) in (None, "")
+                    type_key for type_key in next_type_keys if requested_group_map.get(type_key) in (None, "")
                 ]
                 if missing_type_keys and requested_group_map:
                     fallback_group = next(
@@ -899,7 +900,9 @@ class AdminMenuService:
                 str(body.get("item_type") if "item_type" in body else raw_row.get("item_type") or "").strip() or None
             )
             next_item_category = (
-                str(body.get("item_category") if "item_category" in body else raw_row.get("item_category") or "").strip()
+                str(
+                    body.get("item_category") if "item_category" in body else raw_row.get("item_category") or ""
+                ).strip()
                 or None
             )
             has_regular = "regular" in next_type_keys
@@ -955,7 +958,9 @@ class AdminMenuService:
             updated = cls._build_unassigned_item_detail(menu_type, row_id, raw_row)
             return {"item": updated}, 200
 
-        response_type = menu_type if menu_type in next_type_keys else ("regular" if "regular" in next_type_keys else "formal")
+        response_type = (
+            menu_type if menu_type in next_type_keys else ("regular" if "regular" in next_type_keys else "formal")
+        )
         updated = cls.get_menu_item_detail(cls._encode_item_id(response_type, row_id))
         return {"item": updated}, 200
 
@@ -987,4 +992,3 @@ class AdminMenuService:
             "deleted_item_id": item_id,
             "item_name": str(raw_row.get("item_name") or "").strip(),
         }, 200
-
