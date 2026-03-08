@@ -491,9 +491,18 @@ describe("AdminDashboard", () => {
 
     const dialogsAfterOpen = await screen.findAllByRole("dialog");
     const manageDialog = dialogsAfterOpen[dialogsAfterOpen.length - 1];
-    const managerCell = await within(manageDialog).findByText("Manager");
-    const managerRow = managerCell.closest("tr");
-    expect(managerRow).not.toBeNull();
+    const getManagerRow = () => {
+      const managerCell = within(manageDialog).getByText("Manager");
+      const row = managerCell.closest("tr");
+      expect(row).not.toBeNull();
+      return row;
+    };
+
+    let managerRow = await waitFor(() => {
+      const row = getManagerRow();
+      expect(within(row).getByRole("combobox", { name: /Access tier for Manager/i })).toBeEnabled();
+      return row;
+    });
 
     fireEvent.change(within(managerRow).getByRole("combobox", { name: /Access tier for Manager/i }), {
       target: { value: "1" },
@@ -508,6 +517,12 @@ describe("AdminDashboard", () => {
       expect(Boolean(tierPatchCall)).toBe(true);
     });
 
+    managerRow = await waitFor(() => {
+      const row = getManagerRow();
+      expect(within(row).getByRole("button", { name: /Set active Manager/i })).toBeEnabled();
+      return row;
+    });
+
     fireEvent.click(within(managerRow).getByRole("button", { name: /Set active Manager/i }));
     await waitFor(() => {
       const activePatchCall = globalThis.fetch.mock.calls.find(
@@ -517,6 +532,12 @@ describe("AdminDashboard", () => {
           String(call[1]?.body || "").includes("\"is_active\":true")
       );
       expect(Boolean(activePatchCall)).toBe(true);
+    });
+
+    managerRow = await waitFor(() => {
+      const row = getManagerRow();
+      expect(within(row).getByRole("button", { name: "Delete Manager" })).toBeEnabled();
+      return row;
     });
 
     fireEvent.click(within(managerRow).getByRole("button", { name: "Delete Manager" }));
