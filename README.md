@@ -79,7 +79,7 @@ Generated/runtime folders such as `api/venv`, `client/node_modules`, and `client
 cd api
 python -m venv venv
 .\venv\Scripts\Activate.ps1
-pip install flask pymysql python-dotenv
+pip install -r requirements-dev.txt
 Copy-Item .env.example .env
 ```
 
@@ -173,10 +173,11 @@ Current frontend coverage includes:
 Install and enable hooks from the repository root:
 
 ```powershell
-python -m pip install pre-commit
-python -m pre_commit install
-python -m pre_commit run --all-files
+.\api\venv\Scripts\python.exe -m pre_commit install --install-hooks
+.\api\venv\Scripts\python.exe -m pre_commit run --all-files
 ```
+
+`api/requirements-dev.txt` includes `pre-commit`, so installing backend dev dependencies into `api/venv` keeps the generated hook and its Python interpreter aligned.
 
 Configured hooks:
 - Python lint/fix with `ruff` (API files)

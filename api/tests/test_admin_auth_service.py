@@ -101,7 +101,7 @@ class AdminAuthServiceTests(unittest.TestCase):
                     "password": "new-password-123",
                     "confirm_password": "new-password-123",
                     "is_active": True,
-                }
+                },
             )
 
         self.assertEqual(status_code, 201)
