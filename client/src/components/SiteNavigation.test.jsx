@@ -6,6 +6,22 @@ import Footer from "./Footer";
 import Header from "./Header";
 
 describe("Site navigation links", () => {
+  it("toggles the shared site theme from the footer", () => {
+    const toggleTheme = vi.fn();
+
+    render(
+      <Context.Provider
+        value={{ openInquiryModal: vi.fn(), isDarkTheme: false, toggleTheme }}>
+        <MemoryRouter>
+          <Footer />
+        </MemoryRouter>
+      </Context.Provider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /switch to dark mode/i }));
+    expect(toggleTheme).toHaveBeenCalledTimes(1);
+  });
+
   it("places inquiry directly after the menu links and before the divider items in the header services dropdown", () => {
     render(
       <MemoryRouter>

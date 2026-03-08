@@ -5,18 +5,23 @@ import Context from "../context";
 import ContactUsModal from "./modals/ContactUsModal";
 
 const Footer = () => {
-  const { openInquiryModal } = useContext(Context);
+  const { openInquiryModal, isDarkTheme, toggleTheme } = useContext(Context);
   const [showContactModal, setShowContactModal] = useState(false);
-  const currentYear = new Date().getFullYear();
 
   return (
     <footer className="site-footer bg-body-secondary border-top">
       <Container
         fluid
         className="py-3 d-flex flex-column flex-md-row align-items-center justify-content-between gap-2">
-        <p className="mb-0 small text-secondary">
-          &copy; {currentYear} American Legion Post 468
-        </p>
+        <button
+          type="button"
+          className="site-theme-toggle"
+          aria-label={`Switch to ${isDarkTheme ? "light" : "dark"} mode`}
+          aria-pressed={isDarkTheme}
+          onClick={() => toggleTheme?.()}>
+          <span className="site-theme-toggle-label">Theme</span>
+          <span className="site-theme-toggle-value">{isDarkTheme ? "Dark" : "Light"}</span>
+        </button>
 
         <Nav as="ul" className="site-footer-nav align-items-center">
           <Nav.Item as="li">
