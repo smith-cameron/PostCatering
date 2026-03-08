@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import Context from "../../context";
 import AdminDashboard from "./AdminDashboard";
 
 const buildResponse = (body, ok = true) => ({
@@ -206,6 +207,43 @@ describe("AdminDashboard", () => {
     expect(requests.some((requestUrl) => requestUrl.startsWith("/api/admin/menu/items?"))).toBe(true);
     expect(requests.some((requestUrl) => requestUrl.startsWith("/api/admin/menu/reference-data"))).toBe(false);
     expect(requests.some((requestUrl) => requestUrl.startsWith("/api/admin/menu/sections?"))).toBe(false);
+  });
+
+  it("uses the shared theme setter for the dark mode switch", async () => {
+    const setThemeMode = vi.fn();
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (url === "/api/menu/formal/groups") {
+        return Promise.resolve(buildResponse({ groups: [] }));
+      }
+      if (String(url).startsWith("/api/admin/menu/items?")) {
+        return Promise.resolve(buildResponse({ items: [] }));
+      }
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    render(
+      <Context.Provider value={{ isDarkTheme: false, setThemeMode }}>
+        <MemoryRouter initialEntries={["/admin"]}>
+          <Routes>
+            <Route path="/admin/*" element={<AdminDashboard />} />
+            <Route path="/admin/login" element={<div>Login</div>} />
+          </Routes>
+        </MemoryRouter>
+      </Context.Provider>
+    );
+
+    await screen.findByText("Menu Operations");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Dark Mode" }));
+    expect(setThemeMode).toHaveBeenCalledWith("dark");
   });
 
   it("edits admin profile from header and requires current password for password changes", async () => {

@@ -5,6 +5,10 @@ const Context = createContext({
   inquiryPresetService: "",
   openInquiryModal: () => {},
   closeInquiryModal: () => {},
+  themeMode: "light",
+  isDarkTheme: false,
+  setThemeMode: () => {},
+  toggleTheme: () => {},
 });
 
 export default Context;
