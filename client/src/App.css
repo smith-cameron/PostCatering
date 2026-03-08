@@ -22,6 +22,11 @@
   --app-form-label-weight: 600;
   --app-form-help-size: 0.82rem;
   --font-base: "Trebuchet MS", "Segoe UI", Arial, sans-serif;
+  --oxblood-color: #6e2c2c;
+  --oxblood-color-rgb: 110, 44, 44;
+  --oxblood-hover-color: #5f2424;
+  --oxblood-active-color: #501d1d;
+  --oxblood-contrast-color: #f8f2e9;
 }
 
 :root,
@@ -703,6 +708,35 @@ button {
 .admin-dashboard .form-select.is-invalid {
   background-color: var(--app-form-invalid-bg);
   border-color: var(--app-form-invalid-border);
+}
+
+.modal .form-control.is-invalid,
+.admin-login-card .form-control.is-invalid,
+.admin-dashboard .form-control.is-invalid {
+  padding-right: var(--app-form-padding-x);
+  background-image: none;
+}
+
+.modal .form-select.is-invalid,
+.admin-login-card .form-select.is-invalid,
+.admin-dashboard .form-select.is-invalid {
+  --bs-form-select-bg-icon: none;
+  padding-right: calc(var(--app-form-padding-x) + 1.35rem);
+  background-position: right var(--app-form-padding-x) center;
+  background-size: 16px 12px;
+}
+
+.modal .form-select.is-invalid:not([multiple]):not([size]),
+.modal .form-select.is-invalid:not([multiple])[size="1"],
+.admin-login-card .form-select.is-invalid:not([multiple]):not([size]),
+.admin-login-card .form-select.is-invalid:not([multiple])[size="1"],
+.admin-dashboard .form-select.is-invalid:not([multiple]):not([size]),
+.admin-dashboard .form-select.is-invalid:not([multiple])[size="1"] {
+  --bs-form-select-bg-icon: none;
+  padding-right: calc(var(--app-form-padding-x) + 1.35rem);
+  background-image: var(--bs-form-select-bg-img);
+  background-position: right var(--app-form-padding-x) center;
+  background-size: 16px 12px;
 }
 
 .modal .form-control.is-invalid:focus,
@@ -1413,8 +1447,42 @@ button {
   box-shadow: none;
 }
 
-.admin-dashboard.admin-dashboard-dark .btn-outline-secondary,
-.admin-dashboard.admin-dashboard-dark .btn-outline-danger {
+.admin-dashboard .btn-danger,
+.admin-confirm-modal .btn-danger,
+.admin-manage-users-modal .btn-danger {
+  --bs-btn-color: var(--oxblood-contrast-color);
+  --bs-btn-bg: var(--oxblood-color);
+  --bs-btn-border-color: var(--oxblood-color);
+  --bs-btn-hover-color: var(--oxblood-contrast-color);
+  --bs-btn-hover-bg: var(--oxblood-hover-color);
+  --bs-btn-hover-border-color: var(--oxblood-hover-color);
+  --bs-btn-focus-shadow-rgb: var(--oxblood-color-rgb);
+  --bs-btn-active-color: var(--oxblood-contrast-color);
+  --bs-btn-active-bg: var(--oxblood-active-color);
+  --bs-btn-active-border-color: var(--oxblood-active-color);
+  --bs-btn-disabled-color: var(--oxblood-contrast-color);
+  --bs-btn-disabled-bg: var(--oxblood-color);
+  --bs-btn-disabled-border-color: var(--oxblood-color);
+}
+
+.admin-dashboard .btn-outline-danger,
+.admin-confirm-modal .btn-outline-danger,
+.admin-manage-users-modal .btn-outline-danger {
+  --bs-btn-color: var(--oxblood-color);
+  --bs-btn-border-color: var(--oxblood-color);
+  --bs-btn-hover-color: var(--oxblood-contrast-color);
+  --bs-btn-hover-bg: var(--oxblood-color);
+  --bs-btn-hover-border-color: var(--oxblood-color);
+  --bs-btn-focus-shadow-rgb: var(--oxblood-color-rgb);
+  --bs-btn-active-color: var(--oxblood-contrast-color);
+  --bs-btn-active-bg: var(--oxblood-hover-color);
+  --bs-btn-active-border-color: var(--oxblood-hover-color);
+  --bs-btn-disabled-color: rgba(var(--oxblood-color-rgb), 0.55);
+  --bs-btn-disabled-bg: transparent;
+  --bs-btn-disabled-border-color: rgba(var(--oxblood-color-rgb), 0.45);
+}
+
+.admin-dashboard.admin-dashboard-dark .btn-outline-secondary {
   background-color: transparent;
   color: var(--admin-text);
   border-color: var(--admin-border);
@@ -1479,17 +1547,23 @@ button {
   border-color: rgba(var(--accent-color-rgb), 0.52);
 }
 
-.admin-dashboard.admin-dashboard-dark .btn-outline-danger {
-  background-color: transparent;
-  color: #e7b0a8;
-  border-color: rgba(var(--danger-color-rgb), 0.58);
+.admin-dashboard.admin-dashboard-dark .btn-outline-danger,
+.admin-confirm-modal-dark .btn-outline-danger,
+.admin-manage-users-modal.admin-confirm-modal-dark .btn-outline-danger {
+  background-color: rgba(var(--oxblood-color-rgb), 0.14);
+  color: var(--oxblood-contrast-color);
+  border-color: rgba(var(--oxblood-color-rgb), 0.82);
 }
 
 .admin-dashboard.admin-dashboard-dark .btn-outline-danger:hover,
-.admin-dashboard.admin-dashboard-dark .btn-outline-danger:focus {
-  background-color: rgba(var(--danger-color-rgb), 0.22);
-  color: var(--text-strong-color);
-  border-color: rgba(var(--danger-color-rgb), 0.82);
+.admin-dashboard.admin-dashboard-dark .btn-outline-danger:focus,
+.admin-confirm-modal-dark .btn-outline-danger:hover,
+.admin-confirm-modal-dark .btn-outline-danger:focus,
+.admin-manage-users-modal.admin-confirm-modal-dark .btn-outline-danger:hover,
+.admin-manage-users-modal.admin-confirm-modal-dark .btn-outline-danger:focus {
+  background-color: var(--oxblood-color);
+  color: var(--oxblood-contrast-color);
+  border-color: var(--oxblood-color);
 }
 
 .admin-dashboard.admin-dashboard-dark .alert-success {
