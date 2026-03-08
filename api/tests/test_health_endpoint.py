@@ -11,6 +11,9 @@ from flask_api import app  # noqa: E402
 
 
 class HealthEndpointTests(unittest.TestCase):
+    def test_health_route_is_registered_on_app_import(self):
+        self.assertIn("/api/health", {rule.rule for rule in app.url_map.iter_rules()})
+
     def setUp(self):
         self.client = app.test_client()
 
