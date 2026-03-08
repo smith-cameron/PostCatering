@@ -1,8 +1,10 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Accordion, Alert, Badge, Button, Card, Col, Form, InputGroup, Modal, Nav, Row, Spinner, Table } from "react-bootstrap";
 import { Navigate, useNavigate } from "react-router-dom";
+import Context from "../../context";
 import ConfirmActionModal from "./ConfirmActionModal";
 import ConfirmReviewList from "./ConfirmReviewList";
+import PasswordVisibilityButton from "./PasswordVisibilityButton";
 import { requestJson, requestWithFormData } from "./adminApi";
 
 const TAB_MENU = "menu";
@@ -106,33 +108,6 @@ const INITIAL_MEDIA_FILTERS = {
   is_active: "all",
   is_slide: "all",
 };
-
-const PasswordVisibilityButton = ({ visible, label, onToggle, disabled = false }) => (
-  <Button
-    type="button"
-    variant="outline-secondary"
-    className="admin-password-visibility-toggle"
-    aria-label={label}
-    title={label}
-    onClick={onToggle}
-    disabled={disabled}>
-    <svg
-      aria-hidden="true"
-      xmlns="http://www.w3.org/2000/svg"
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-      strokeLinejoin="round">
-      <path d="M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8Z" />
-      <circle cx="8" cy="8" r="2.2" />
-      {visible ? <path d="M2 2l12 12" /> : null}
-    </svg>
-  </Button>
-);
 
 const mapCreateValidationErrors = (message) => {
   const normalized = String(message || "").toLowerCase();
@@ -690,6 +665,7 @@ const MEDIA_ITEM_FILTERS = [
 ];
 
 const AdminDashboard = () => {
+  const { isDarkTheme, setThemeMode } = useContext(Context);
   const navigate = useNavigate();
   const [sessionLoading, setSessionLoading] = useState(true);
   const [authError, setAuthError] = useState("");
@@ -764,13 +740,6 @@ const AdminDashboard = () => {
     errorTarget: null,
   });
   const [confirmBusy, setConfirmBusy] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    if (typeof window === "undefined") return false;
-    const persistedTheme = window.localStorage.getItem("admin_dashboard_theme");
-    if (persistedTheme === "dark") return true;
-    if (persistedTheme === "light") return false;
-    return false;
-  });
   const [isMobileLayout, setIsMobileLayout] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth <= MOBILE_LAYOUT_MAX_WIDTH : false
   );
@@ -1051,11 +1020,6 @@ const AdminDashboard = () => {
       setShowManageAdminsModal(false);
     }
   }, [canManageAdminUsers, showCreateAdminModal, showManageAdminsModal]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem("admin_dashboard_theme", isDarkMode ? "dark" : "light");
-  }, [isDarkMode]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -2322,8 +2286,8 @@ const AdminDashboard = () => {
 
   return (
     <main
-      className={`container-fluid py-4 admin-dashboard ${isDarkMode ? "admin-dashboard-dark" : ""}`}
-      data-bs-theme={isDarkMode ? "dark" : "light"}>
+      className={`container-fluid py-4 admin-dashboard ${isDarkTheme ? "admin-dashboard-dark" : ""}`}
+      data-bs-theme={isDarkTheme ? "dark" : "light"}>
       <header className="admin-header mb-3">
         <div className="admin-header-main">
           <h2 className="h4 mb-1">Admin Dashboard</h2>
@@ -2349,8 +2313,8 @@ const AdminDashboard = () => {
             type="switch"
             id="admin-dark-mode-toggle"
             label="Dark Mode"
-            checked={isDarkMode}
-            onChange={(event) => setIsDarkMode(event.target.checked)}
+            checked={isDarkTheme}
+            onChange={(event) => setThemeMode?.(event.target.checked ? "dark" : "light")}
           />
         </div>
         <div className="admin-header-actions">
@@ -3124,7 +3088,7 @@ const AdminDashboard = () => {
         show={showProfileModal}
         onHide={closeProfileEditor}
         centered
-        className={`admin-profile-modal ${isDarkMode ? "admin-confirm-modal-dark" : ""}`.trim()}>
+        className={`admin-profile-modal ${isDarkTheme ? "admin-confirm-modal-dark" : ""}`.trim()}>
         <Modal.Header closeButton>
           <Modal.Title>Edit Admin Profile</Modal.Title>
         </Modal.Header>
@@ -3263,7 +3227,7 @@ const AdminDashboard = () => {
         show={showCreateAdminModal}
         onHide={closeCreateAdminModal}
         centered
-        className={`admin-create-user-modal ${isDarkMode ? "admin-confirm-modal-dark" : ""}`.trim()}>
+        className={`admin-create-user-modal ${isDarkTheme ? "admin-confirm-modal-dark" : ""}`.trim()}>
         <Modal.Header closeButton>
           <Modal.Title>Create Admin Account</Modal.Title>
         </Modal.Header>
@@ -3464,7 +3428,7 @@ const AdminDashboard = () => {
         onHide={closeManageAdminsModal}
         centered
         size="lg"
-        className={`admin-manage-users-modal ${isDarkMode ? "admin-confirm-modal-dark" : ""}`.trim()}>
+        className={`admin-manage-users-modal ${isDarkTheme ? "admin-confirm-modal-dark" : ""}`.trim()}>
         <Modal.Header closeButton>
           <Modal.Title>Manage Admin Accounts</Modal.Title>
         </Modal.Header>
@@ -3635,7 +3599,7 @@ const AdminDashboard = () => {
           (confirmState.errorTarget === FORM_ERROR_CREATE_ITEM && createValidationLocked) ||
           (confirmState.errorTarget === FORM_ERROR_UPLOAD_MEDIA && uploadValidationLocked)
         }
-        darkMode={isDarkMode}
+        darkMode={isDarkTheme}
         busy={confirmBusy}
         onCancel={() =>
           setConfirmState((prev) => ({
