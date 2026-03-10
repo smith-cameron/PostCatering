@@ -2,7 +2,7 @@ import { Button, Modal } from "react-bootstrap";
 
 const InfoModal = ({ show, onHide, title, subtitle, children }) => {
   return (
-    <Modal show={show} onHide={onHide} className="info-modal">
+    <Modal show={show} onHide={onHide} className="info-modal inquiry-modal">
       <Modal.Header closeButton>
         <div>
           <Modal.Title>{title}</Modal.Title>

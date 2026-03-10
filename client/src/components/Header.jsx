@@ -24,15 +24,15 @@ const Header = ({ onOpenInquiry }) => {
 
   const serviceItems = (
     <>
-      <NavDropdown.Item as={Link} to="/services/togo">
+      <NavDropdown.Item as={Link} to="/services/togo" className="site-header-service-item">
         To-Go & Take-and-Bake Trays
       </NavDropdown.Item>
 
-      <NavDropdown.Item as={Link} to="/services/community">
+      <NavDropdown.Item as={Link} to="/services/community" className="site-header-service-item">
         Community & Crew Catering
       </NavDropdown.Item>
 
-      <NavDropdown.Item as={Link} to="/services/formal">
+      <NavDropdown.Item as={Link} to="/services/formal" className="site-header-service-item">
         Formal Events Catering
       </NavDropdown.Item>
 
@@ -61,7 +61,7 @@ const Header = ({ onOpenInquiry }) => {
       </NavDropdown.Item>
 
       <NavDropdown.Item as={Link} to="/showcase">
-        Photo Showcase
+        Photos
       </NavDropdown.Item>
 
       <NavDropdown.Item
@@ -85,15 +85,21 @@ const Header = ({ onOpenInquiry }) => {
           <Nav className="ms-lg-auto site-header-nav">
             {isMobile ? (
               <>
-                <Nav.Link as={Link} to="/services/togo">
+                <Nav.Link as={Link} to="/services/togo" className="site-header-action-link site-header-service-item">
                   To-Go & Take-and-Bake Trays
                 </Nav.Link>
 
-                <Nav.Link as={Link} to="/services/community">
+                <Nav.Link
+                  as={Link}
+                  to="/services/community"
+                  className="site-header-action-link site-header-service-item">
                   Community & Crew Catering
                 </Nav.Link>
 
-                <Nav.Link as={Link} to="/services/formal">
+                <Nav.Link
+                  as={Link}
+                  to="/services/formal"
+                  className="site-header-action-link site-header-service-item">
                   Formal Events Catering
                 </Nav.Link>
 

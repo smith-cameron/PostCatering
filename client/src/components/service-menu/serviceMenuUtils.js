@@ -51,7 +51,8 @@ export const getCommunityPackageBullets = (section) => {
 
   const proteinMatch = section.title?.match(/\(([^)]+)\)/);
   if (section.sectionId === "community_taco_bar") {
-    bullets.push(proteinMatch?.[1] ? `Taco Bar Proteins: ${proteinMatch[1]}` : "Taco Bar Proteins");
+    void proteinMatch;
+    bullets.push("Chicken, Carne Asada, or Pork");
   }
 
   if (withoutIncludes.includes("+")) {

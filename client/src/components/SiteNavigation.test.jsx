@@ -32,12 +32,18 @@ describe("Site navigation links", () => {
     fireEvent.click(screen.getByRole("button", { name: /services/i }));
     const aboutItem = screen.getByRole("button", { name: "About Us" });
     const mondayMealItem = screen.getByRole("button", { name: "Monday Meal Program" });
-    const photoShowcaseItem = screen.getByRole("link", { name: "Photo Showcase" });
+    const photoShowcaseItem = screen.getByRole("link", { name: "Photos" });
     const inquiryItem = screen.getByRole("button", { name: /send catering inquiry/i });
     const contactItem = screen.getByRole("button", { name: /contact us/i });
+    const toGoItem = screen.getByRole("link", { name: /to-go & take-and-bake trays/i });
+    const communityItem = screen.getByRole("link", { name: /community & crew catering/i });
+    const formalItem = screen.getByRole("link", { name: /formal events catering/i });
 
     expect(photoShowcaseItem).toHaveAttribute("href", "/showcase");
     expect(screen.queryByRole("link", { name: /^showcase$/i })).not.toBeInTheDocument();
+    expect(toGoItem).toHaveClass("site-header-service-item");
+    expect(communityItem).toHaveClass("site-header-service-item");
+    expect(formalItem).toHaveClass("site-header-service-item");
     expect(inquiryItem).toHaveClass("site-header-inquiry-item");
     expect(inquiryItem.compareDocumentPosition(aboutItem) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(aboutItem.compareDocumentPosition(mondayMealItem) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

@@ -94,7 +94,7 @@ describe("CatalogSectionsAccordion", () => {
     expect(screen.queryByText(/choose/i)).not.toBeInTheDocument();
   });
 
-  it("renders taco bar with a taco protein bullet", () => {
+  it("renders taco bar with an explicit protein list", () => {
     render(
       <CatalogSectionsAccordion
         menuKey="community"
@@ -112,7 +112,7 @@ describe("CatalogSectionsAccordion", () => {
       />
     );
 
-    expect(screen.getByText("Taco Bar Proteins")).toBeInTheDocument();
+    expect(screen.getByText("Chicken, Carne Asada, or Pork")).toBeInTheDocument();
   });
 
   it("renders community tier entree label as in inquiry copy", () => {
@@ -221,7 +221,7 @@ describe("CatalogSectionsAccordion", () => {
     expect(screen.getByRole("button", { name: "3-Course Service" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Entrees" })).toBeInTheDocument();
     expect(screen.getByText("Formal Dinner Packages")).toBeInTheDocument();
-    expect(screen.getByText("Menu Options")).toBeInTheDocument();
+    expect(screen.queryByText("Menu Options")).not.toBeInTheDocument();
     expect(screen.getByText("Menu Selections")).toBeInTheDocument();
   });
 });

@@ -2,7 +2,7 @@ import { Button, Modal } from "react-bootstrap";
 
 const ContactUsModal = ({ show, onHide }) => {
   return (
-    <Modal show={show} onHide={onHide} centered>
+    <Modal show={show} onHide={onHide} centered className="inquiry-modal">
       <Modal.Header closeButton>
         <Modal.Title>Contact Us</Modal.Title>
       </Modal.Header>

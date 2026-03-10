@@ -84,6 +84,7 @@ const CatalogSectionsAccordion = ({
     >
       {accordionItems.map((item, index) => {
         const previousItem = accordionItems[index - 1];
+        const normalizedContextTitle = normalizeMenuTitle(item.contextTitle);
         const showMenuBreak =
           item.sectionKind === "menu" &&
           previousItem?.sectionKind &&
@@ -99,8 +100,8 @@ const CatalogSectionsAccordion = ({
             <Accordion.Item eventKey={String(index)}>
               <Accordion.Header>{normalizeMenuTitle(item.title)}</Accordion.Header>
               <Accordion.Body>
-                {item.contextTitle ? (
-                  <p className="menu-item-context-label mb-3">{normalizeMenuTitle(item.contextTitle)}</p>
+                {normalizedContextTitle && normalizedContextTitle !== "Menu Options" ? (
+                  <p className="menu-item-context-label mb-3">{normalizedContextTitle}</p>
                 ) : null}
                 {item.contextBlocks.length ? <MenuSectionBlocks blocks={item.contextBlocks} /> : null}
                 <div className={item.contextBlocks.length && item.blocks.length ? "mt-3" : undefined}>
