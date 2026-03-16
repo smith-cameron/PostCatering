@@ -26,8 +26,8 @@ class ApiEndpointIntegrationTests(unittest.TestCase):
         self.assertIn("menu_options", body)
         self.assertIn("formal_plan_options", body)
         self.assertIn("menu", body)
-        self.assertIn("community", body["menu"])
-        self.assertIn("page_title", body["menu"]["community"])
+        self.assertIn("catering", body["menu"])
+        self.assertIn("page_title", body["menu"]["catering"])
 
     def test_admin_menu_sync_returns_403_when_token_not_configured(self):
         with patch.dict("os.environ", {"MENU_ADMIN_TOKEN": ""}, clear=False):
@@ -269,7 +269,7 @@ class ApiEndpointIntegrationTests(unittest.TestCase):
             "event_date": (date.today() + timedelta(days=14)).isoformat(),
             "guest_count": 50,
             "budget": "$2,500-$5,000",
-            "service_interest": "Community Catering",
+            "service_interest": "Catering Packages",
             "service_selection": {},
             "desired_menu_items": [{"name": "Jerk Chicken", "category": "entree"}],
             "message": "Please include setup.",

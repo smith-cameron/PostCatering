@@ -31,23 +31,33 @@ const MENU_RESPONSE = {
         },
       ],
     },
-    community: {
-      page_title: "Community Catering",
+    catering: {
+      page_title: "Catering Packages",
       sections: [
         {
-          section_id: "community_homestyle",
-          type: "package",
-          title: "Hearty Homestyle Packages",
-          description: "Choose 1 protein + 2 side/salad + bread",
+          section_id: "catering_packages",
+          type: "packages",
+          title: "Catering Packages",
+          packages: [
+            {
+              plan_id: "catering:homestyle",
+              title: "Hearty Homestyle Packages",
+              details: ["Bread"],
+              constraints: {
+                entree_signature_protein: { min: 1, max: 1 },
+                sides_salads: { min: 2, max: 2 },
+              },
+            },
+          ],
         },
         {
-          section_id: "community_entrees",
+          section_id: "catering_entrees",
           type: "includeMenu",
           title: "Entrees",
           include_keys: ["entrees"],
         },
         {
-          section_id: "community_sides_salads",
+          section_id: "catering_sides_salads",
           type: "includeMenu",
           title: "Sides & Salads",
           include_keys: ["sides_salads"],
@@ -281,7 +291,7 @@ describe("Inquiry", () => {
     });
 
     fireEvent.change(getField('select[name="service_interest"]'), {
-      target: { value: "community" },
+      target: { value: "catering" },
     });
 
     const homestyleOption = screen.getByRole("option", { name: "Hearty Homestyle Packages" });
@@ -290,7 +300,7 @@ describe("Inquiry", () => {
       throw new Error("Package selection control is missing.");
     }
     fireEvent.change(packageSelect, {
-      target: { value: "package:Hearty Homestyle Packages" },
+      target: { value: "catering:homestyle" },
     });
 
     const sideItem = await screen.findByLabelText("Green Beans");
@@ -305,7 +315,7 @@ describe("Inquiry", () => {
     fireEvent.click(saladTwo);
 
     expect(saladTwo).not.toBeChecked();
-    const sideSaladDetail = await screen.findByText("2 Side/Salad");
+    const sideSaladDetail = await screen.findByText("2 Sides/Salads");
     expect(sideSaladDetail).toHaveClass("inquiry-selection-summary-item-highlighted");
     expect(screen.queryByText("Select exactly 2 total Side/Salad items.")).not.toBeInTheDocument();
 
@@ -335,7 +345,7 @@ describe("Inquiry", () => {
     fireEvent.change(emailInput, { target: { value: "valid@example.com" } });
     expect(emailInput).not.toHaveClass("is-invalid");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByText("2 Side/Salad")).not.toHaveClass("inquiry-selection-summary-item-highlighted");
+    expect(screen.getByText("2 Sides/Salads")).not.toHaveClass("inquiry-selection-summary-item-highlighted");
     expect(screen.queryByText("Select exactly 2 total Side/Salad items.")).not.toBeInTheDocument();
   });
 
@@ -386,7 +396,7 @@ describe("Inquiry", () => {
       target: { value: "25" },
     });
     fireEvent.change(getField('select[name="service_interest"]'), {
-      target: { value: "community" },
+      target: { value: "catering" },
     });
 
     const homestyleOption = screen.getByRole("option", { name: "Hearty Homestyle Packages" });
@@ -395,7 +405,7 @@ describe("Inquiry", () => {
       throw new Error("Package selection control is missing.");
     }
     fireEvent.change(packageSelect, {
-      target: { value: "package:Hearty Homestyle Packages" },
+      target: { value: "catering:homestyle" },
     });
 
     fireEvent.click(await screen.findByLabelText("Jerk Chicken"));

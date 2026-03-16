@@ -1,4 +1,11 @@
+import {
+  buildCateringConstraintDetails,
+  filterGeneratedPackageDetails,
+  normalizePackageConstraintMap,
+} from "../../utils/servicePackageUtils";
+
 export const normalizeMenuText = (value) => value;
+const getPlanId = (plan) => String(plan?.planId || plan?.id || "").trim();
 
 const normalizeMenuItemNameForMatch = (value) => String(normalizeMenuText(value) || "").trim().toLowerCase();
 
@@ -39,80 +46,39 @@ export const normalizeMenuTitle = (value) => {
     .trim();
 };
 
-export const getCommunityPackageBullets = (section) => {
-  if (section?.sectionId === "community_homestyle") {
-    return ["1 Entree/Protein", "2 Sides", "Bread"];
+const getSelectionGroupBullet = (group) => {
+  const title = String(group?.title || group?.groupTitle || "").trim();
+  const optionLabels = (group?.options || [])
+    .map((option) => String(option?.label || option?.optionLabel || "").trim())
+    .filter(Boolean);
+  if (title && optionLabels.length) {
+    return `${title}: ${optionLabels.join(", ")}`;
   }
-
-  if (!section?.description) return [];
-  const trimmed = section.description.trim();
-  const withoutIncludes = trimmed.replace(/^includes\s*/i, "");
-  const bullets = [];
-
-  const proteinMatch = section.title?.match(/\(([^)]+)\)/);
-  if (section.sectionId === "community_taco_bar") {
-    bullets.push(proteinMatch?.[1] ? `Taco Bar Proteins: ${proteinMatch[1]}` : "Taco Bar Proteins");
-  }
-
-  if (withoutIncludes.includes("+")) {
-    return bullets.concat(
-      withoutIncludes
-        .split("+")
-        .map((item) => item.trim())
-        .map((item) => {
-          const lower = item.toLowerCase();
-          if (lower.startsWith("choose")) return `Choose ${item.slice(6).trim().replace(/^./, (m) => m.toUpperCase())}`;
-          if (/^\d+\s+/.test(lower)) return `Choose ${item.replace(/^./, (m) => m.toUpperCase())}`;
-          return item.replace(/^./, (m) => m.toUpperCase());
-        })
-        .filter(Boolean)
-    );
-  }
-
-  if (withoutIncludes.includes(",")) {
-    return bullets.concat(
-      withoutIncludes
-        .split(",")
-        .map((item) => item.trim())
-        .map((item) => item.replace(/^./, (m) => m.toUpperCase()))
-        .filter(Boolean)
-    );
-  }
-
-  return bullets.concat([normalizeMenuText(trimmed)]);
+  if (title) return title;
+  return "";
 };
 
-export const normalizeCommunityTierConstraints = (sectionId, tierTitle, constraints) => {
+export const getCateringPackageBullets = (section) => {
+  const selectionMode = section?.selectionMode || section?.selection_mode || "menu_groups";
+  const selectionGroupBullets = (section?.selectionGroups || []).map((group) => getSelectionGroupBullet(group)).filter(Boolean);
+  const fixedDetails = filterGeneratedPackageDetails(section?.details, {
+    catalogKey: "catering",
+    selectionMode,
+  });
+  const generatedDetails =
+    selectionMode === "menu_groups" ? buildCateringConstraintDetails(section?.constraints) : [];
+  if (generatedDetails.length || fixedDetails.length) {
+    return [...generatedDetails, ...fixedDetails, ...selectionGroupBullets].filter(
+      (item, index, rows) => rows.indexOf(item) === index
+    );
+  }
+  return selectionGroupBullets;
+};
+
+export const normalizeCateringPackageConstraints = (sectionId, tierTitle, constraints) => {
   void sectionId;
   void tierTitle;
-  if (!constraints || typeof constraints !== "object") return {};
-
-  const normalizedConstraints = Object.entries(constraints).reduce((acc, [key, value]) => {
-    if (typeof value === "number") {
-      acc[key] = { min: value, max: value };
-    } else if (value && typeof value === "object") {
-      acc[key] = value;
-    }
-    return acc;
-  }, {});
-
-  if (normalizedConstraints.sides_salads && !normalizedConstraints.sides && !normalizedConstraints.salads) {
-    normalizedConstraints.sides = normalizedConstraints.sides_salads;
-    delete normalizedConstraints.sides_salads;
-  }
-  return normalizedConstraints;
-};
-
-export const toCommunityTierBullet = (label, limits) => {
-  if (!limits?.max) return null;
-  const min = limits?.min || 0;
-  const max = limits.max;
-  if (min && min === max) {
-    const singularLabel = max === 1 ? label.replace(/s$/i, "") : label;
-    return `${max} ${singularLabel}`;
-  }
-  if (min && min < max) return `${min}-${max} ${label}`;
-  return `${max} ${label}`;
+  return normalizePackageConstraintMap(constraints, "catering");
 };
 
 export const getFormalCourseLabel = (courseType) => {
@@ -127,16 +93,20 @@ export const getFormalCourseLabel = (courseType) => {
 
 export const getFormalPlanDetails = (plan) => {
   if (!plan) return [];
-  if (plan.id === "formal:3-course") {
+  if (Array.isArray(plan.details) && plan.details.length) {
+    return plan.details;
+  }
+  if (getPlanId(plan) === "formal:3-course") {
     return ["2 Passed Appetizers", "1 Starter", "1 or 2 Entrees", "Bread"];
   }
-  if (plan.id === "formal:2-course") {
+  if (getPlanId(plan) === "formal:2-course") {
     return ["1 Starter", "1 Entree", "Bread"];
   }
   return plan.details || [];
 };
 
-export const getApprovedFormalPlans = (plans) => (plans || []).filter((plan) => plan.id !== "formal:2-course");
+export const getApprovedFormalPlans = (plans) =>
+  (plans || []).filter((plan) => plan && plan.isActive !== false);
 
 export const getFormalMenuBlocks = (sections) =>
   (sections || [])
@@ -148,15 +118,15 @@ export const getFormalMenuBlocks = (sections) =>
     }))
     .filter((block) => block.items.length);
 
-const getCommunityTierBullets = (section, tier) => {
-  const limits = normalizeCommunityTierConstraints(section.sectionId, tier.tierTitle, tier.constraints);
-  return [
-    toCommunityTierBullet("Entrees/Protiens", limits.entree),
-    toCommunityTierBullet("Sides", limits.sides),
-    toCommunityTierBullet("Salads", limits.salads),
-    !limits.sides && !limits.salads ? toCommunityTierBullet("Sides/Salads", limits.sides_salads) : null,
-    "Bread",
-  ].filter(Boolean);
+const getCateringPackageConstraintBullets = (section, tier) => {
+  const selectionMode = tier?.selectionMode || tier?.selection_mode || "menu_groups";
+  const fixedDetails = filterGeneratedPackageDetails(
+    Array.isArray(tier?.bullets) ? tier.bullets : tier?.details,
+    { catalogKey: "catering", selectionMode }
+  );
+  const limits = normalizeCateringPackageConstraints(section.sectionId, tier.tierTitle, tier.constraints);
+  const generatedDetails = selectionMode === "menu_groups" ? buildCateringConstraintDetails(limits) : [];
+  return [...generatedDetails, ...fixedDetails].filter((item, index, rows) => rows.indexOf(item) === index);
 };
 
 const normalizeTableColumns = (columns = [], blankFirstColumn = false) =>
@@ -164,9 +134,79 @@ const normalizeTableColumns = (columns = [], blankFirstColumn = false) =>
 
 const normalizeTableRows = (rows = []) => rows.map((row) => row.map((cell) => normalizeMenuText(cell)));
 
-const buildStandardSectionBlocks = (menuKey, section, menuOptions, excludedItemNames) => {
+const getSectionPackages = (section) => {
+  if (!section || typeof section !== "object") return [];
+
+  if (section.type === "packages" && Array.isArray(section.packages)) {
+    return section.packages
+      .filter((pkg) => pkg && typeof pkg === "object")
+      .map((pkg) => ({
+        title: pkg.title || section.title || "",
+        price: pkg.price || "",
+        details: Array.isArray(pkg.details) ? pkg.details : [],
+        constraints: pkg.constraints || null,
+        selectionGroups: Array.isArray(pkg.selectionGroups) ? pkg.selectionGroups : [],
+      }));
+  }
+
   if (section.type === "package") {
-    const packageBullets = menuKey === "community" ? getCommunityPackageBullets(section) : [];
+    return [
+      {
+        title: section.title || "",
+        price: section.price || "",
+        details: Array.isArray(section.details) ? section.details : [],
+        constraints: section.constraints || null,
+        selectionGroups: Array.isArray(section.selectionGroups) ? section.selectionGroups : [],
+      },
+    ];
+  }
+
+  if (section.type === "tiers" && Array.isArray(section.tiers)) {
+    return section.tiers.map((tier) => ({
+      title: tier.tierTitle || "",
+      price: tier.price || "",
+      details: Array.isArray(tier.bullets) ? tier.bullets : [],
+      constraints: tier.constraints || null,
+      selectionGroups: Array.isArray(tier.selectionGroups) ? tier.selectionGroups : [],
+    }));
+  }
+
+  return [];
+};
+
+const buildStandardSectionBlocks = (menuKey, section, menuOptions, excludedItemNames) => {
+  if (section.type === "packages") {
+    const packages = getSectionPackages(section);
+    return packages.map((pkg, packageIndex) => {
+      const packageLikeSection = {
+        sectionId: section.sectionId,
+        title: pkg.title,
+        details: pkg.details,
+        constraints: pkg.constraints,
+        selectionGroups: pkg.selectionGroups,
+      };
+      const packageBullets = menuKey === "catering" ? getCateringPackageBullets(packageLikeSection) : pkg.details;
+      const shouldShowTitle = packages.length > 1 || pkg.title !== section.title;
+      return packageBullets.length
+        ? {
+            key: `${section.sectionId || section.title}-package-${packageIndex}`,
+            type: "list",
+            title: shouldShowTitle ? pkg.title : null,
+            price: pkg.price,
+            items: packageBullets,
+          }
+        : {
+            key: `${section.sectionId || section.title}-package-${packageIndex}`,
+            type: "text",
+            title: shouldShowTitle ? pkg.title : null,
+            price: pkg.price,
+            text: pkg.note || section.note || null,
+          };
+    });
+  }
+
+  if (section.type === "package") {
+    const packageBullets = menuKey === "catering" ? getCateringPackageBullets(section) : [];
 
     return [
       packageBullets.length
@@ -180,7 +220,7 @@ const buildStandardSectionBlocks = (menuKey, section, menuOptions, excludedItemN
             key: `${section.sectionId || section.title}-package`,
             type: "text",
             price: section.price,
-            text: section.description,
+            text: section.note || null,
           },
     ];
   }
@@ -191,7 +231,7 @@ const buildStandardSectionBlocks = (menuKey, section, menuOptions, excludedItemN
       type: "list",
       title: tier.tierTitle,
       price: tier.price,
-      items: menuKey === "community" ? getCommunityTierBullets(section, tier) : tier.bullets || [],
+      items: menuKey === "catering" ? getCateringPackageConstraintBullets(section, tier) : tier.bullets || [],
     }));
   }
 

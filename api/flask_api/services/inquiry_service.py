@@ -32,15 +32,13 @@ class InquiryService:
         if not isinstance(service_selection, dict):
             return ""
 
-        level = str(service_selection.get("level") or "").strip().title()
         title = str(service_selection.get("title") or "").strip()
         price = str(service_selection.get("price") or "").strip()
 
         if not title:
             return ""
 
-        label = f"{level}: {title}" if level else title
-        return f"{label} ({price})" if price else label
+        return f"{title} ({price})" if price else title
 
     @staticmethod
     def _format_desired_items(desired_menu_items):

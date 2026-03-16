@@ -35,7 +35,7 @@ describe("CatalogSectionsAccordion", () => {
   it("does not render tray prices in non-To-Go include sections", () => {
     render(
       <CatalogSectionsAccordion
-        menuKey="community"
+        menuKey="catering"
         data={{
           sections: [
             {
@@ -70,18 +70,18 @@ describe("CatalogSectionsAccordion", () => {
   it("renders homestyle package copy without choose phrasing", () => {
     render(
       <CatalogSectionsAccordion
-        menuKey="community"
+        menuKey="catering"
         data={{
           sections: [
             {
-              sectionId: "community_homestyle",
+              sectionId: "catering_packages",
               type: "package",
               title: "Hearty Homestyle Packages",
-              description: "Choose 1 protein + 2 sides + bread",
               constraints: {
-                entree: { min: 1, max: 1 },
-                sides: { min: 2, max: 2 },
+                entree_signature_protein: { min: 1, max: 1 },
+                sides_salads: { min: 2, max: 2 },
               },
+              details: ["Bread"],
             },
           ],
         }}
@@ -89,22 +89,28 @@ describe("CatalogSectionsAccordion", () => {
       />
     );
 
-    expect(screen.getByText("1 Entree/Protein")).toBeInTheDocument();
-    expect(screen.getByText("2 Sides")).toBeInTheDocument();
+    expect(screen.getByText("1 Entree/Signature Protein")).toBeInTheDocument();
+    expect(screen.getByText("2 Sides/Salads")).toBeInTheDocument();
     expect(screen.queryByText(/choose/i)).not.toBeInTheDocument();
   });
 
   it("renders taco bar with a taco protein bullet", () => {
     render(
       <CatalogSectionsAccordion
-        menuKey="community"
+        menuKey="catering"
         data={{
           sections: [
             {
-              sectionId: "community_taco_bar",
+              sectionId: "catering_packages",
               type: "package",
               title: "Taco Bar",
-              description: "Includes Spanish rice, refried beans, tortillas, toppings",
+              details: ["Spanish rice", "Refried beans", "Tortillas", "Toppings"],
+              selectionGroups: [
+                {
+                  title: "Taco Bar Proteins",
+                  options: [{ label: "Chicken" }],
+                },
+              ],
             },
           ],
         }}
@@ -112,34 +118,34 @@ describe("CatalogSectionsAccordion", () => {
       />
     );
 
-    expect(screen.getByText("Taco Bar Proteins")).toBeInTheDocument();
+    expect(screen.getByText("Taco Bar Proteins: Chicken")).toBeInTheDocument();
   });
 
-  it("renders community tier entree label as in inquiry copy", () => {
+  it("renders catering package entree label as in inquiry copy", () => {
     render(
       <CatalogSectionsAccordion
-        menuKey="community"
+        menuKey="catering"
         data={{
           sections: [
             {
-              sectionId: "community_buffet_tiers",
-              type: "tiers",
+              sectionId: "catering_packages",
+              type: "packages",
               title: "Event Catering - Buffet Style",
-              tiers: [
+              packages: [
                 {
-                  tierTitle: "Tier 1: Casual Buffet",
+                  title: "Tier 1: Casual Buffet",
+                  details: ["Bread"],
                   constraints: {
-                    entree: { min: 2, max: 2 },
-                    sides: { min: 2, max: 2 },
-                    salads: { min: 1, max: 1 },
+                    entree_signature_protein: { min: 2, max: 2 },
+                    sides_salads: { min: 3, max: 3 },
                   },
                 },
                 {
-                  tierTitle: "Tier 2: Elevated Buffet / Family-Style",
+                  title: "Tier 2: Elevated Buffet / Family-Style",
+                  details: ["Bread"],
                   constraints: {
-                    entree: { min: 2, max: 3 },
-                    sides: { min: 3, max: 3 },
-                    salads: { min: 2, max: 2 },
+                    entree_signature_protein: { min: 2, max: 3 },
+                    sides_salads: { min: 5, max: 5 },
                   },
                 },
               ],
@@ -150,8 +156,10 @@ describe("CatalogSectionsAccordion", () => {
       />
     );
 
-    expect(screen.getByText("2 Entrees/Protiens")).toBeInTheDocument();
-    expect(screen.getByText("2-3 Entrees/Protiens")).toBeInTheDocument();
+    expect(screen.getByText("2 Entrees/Signature Proteins")).toBeInTheDocument();
+    expect(screen.getByText("2-3 Entrees/Signature Proteins")).toBeInTheDocument();
+    expect(screen.getByText("3 Sides/Salads")).toBeInTheDocument();
+    expect(screen.getByText("5 Sides/Salads")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Tier 1: Casual Buffet" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Tier 2: Elevated Buffet / Family-Style" })).toBeInTheDocument();
   });

@@ -28,7 +28,7 @@ const Header = ({ onOpenInquiry }) => {
         To-Go & Take-and-Bake Trays
       </NavDropdown.Item>
 
-      <NavDropdown.Item as={Link} to="/services/community">
+      <NavDropdown.Item as={Link} to="/services/catering">
         Community & Crew Catering
       </NavDropdown.Item>
 
@@ -89,7 +89,7 @@ const Header = ({ onOpenInquiry }) => {
                   To-Go & Take-and-Bake Trays
                 </Nav.Link>
 
-                <Nav.Link as={Link} to="/services/community">
+                <Nav.Link as={Link} to="/services/catering">
                   Community & Crew Catering
                 </Nav.Link>
 
