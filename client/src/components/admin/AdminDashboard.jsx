@@ -664,12 +664,19 @@ const MEDIA_ITEM_FILTERS = [
   },
 ];
 
-const AdminDashboard = () => {
+const AdminDashboard = ({
+  embedded = false,
+  forcedTab = null,
+  adminUser: externalAdminUser = null,
+  sessionLoading: externalSessionLoading,
+  onAdminUserChange = null,
+}) => {
   const { isDarkTheme, setThemeMode } = useContext(Context);
   const navigate = useNavigate();
-  const [sessionLoading, setSessionLoading] = useState(true);
+  const hasExternalSession = typeof externalSessionLoading === "boolean";
+  const [internalSessionLoading, setInternalSessionLoading] = useState(hasExternalSession ? externalSessionLoading : true);
   const [authError, setAuthError] = useState("");
-  const [adminUser, setAdminUser] = useState(null);
+  const [sessionAdminUser, setSessionAdminUser] = useState(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileForm, setProfileForm] = useState(INITIAL_PROFILE_FORM);
   const [profileFieldErrors, setProfileFieldErrors] = useState(EMPTY_PROFILE_FIELD_ERRORS);
@@ -690,7 +697,7 @@ const AdminDashboard = () => {
     INITIAL_CREATE_ADMIN_PASSWORD_VISIBILITY
   );
 
-  const [activeTab, setActiveTab] = useState(TAB_MENU);
+  const [activeTab, setActiveTab] = useState(forcedTab || TAB_MENU);
   const [formErrors, setFormErrors] = useState(EMPTY_FORM_ERRORS);
   const [, setBusy] = useState(false);
   const [menuTableError, setMenuTableError] = useState("");
@@ -746,6 +753,16 @@ const AdminDashboard = () => {
   const editCardRef = useRef(null);
   const mediaEditCardRef = useRef(null);
   const uploadFileInputRef = useRef(null);
+  const sessionLoading = hasExternalSession ? externalSessionLoading : internalSessionLoading;
+  const adminUser = externalAdminUser || sessionAdminUser;
+  const setAdminUser = useCallback(
+    (nextUser) => {
+      setSessionAdminUser(nextUser);
+      onAdminUserChange?.(nextUser);
+    },
+    [onAdminUserChange]
+  );
+  const currentTab = forcedTab || activeTab;
   const adminAccessTier = toAccessTier(adminUser?.access_tier, ACCESS_TIER_MANAGER);
   const isOwnerSession = adminAccessTier === ACCESS_TIER_OWNER;
   const canAccessDashboardSettings = adminAccessTier === ACCESS_TIER_OWNER || adminAccessTier === ACCESS_TIER_MANAGER;
@@ -840,6 +857,11 @@ const AdminDashboard = () => {
     [uploadForm]
   );
 
+  useEffect(() => {
+    if (!forcedTab) return;
+    setActiveTab(forcedTab);
+  }, [forcedTab]);
+
   const loadReferenceData = useCallback(async () => {
     const [generalPayload, formalPayload] = await Promise.all([
       requestJson("/api/menu/general/groups"),
@@ -930,6 +952,7 @@ const AdminDashboard = () => {
   );
 
   useEffect(() => {
+    if (hasExternalSession) return undefined;
     let mounted = true;
     const hydrateSession = async () => {
       try {
@@ -940,17 +963,18 @@ const AdminDashboard = () => {
         if (!mounted) return;
         setAuthError("unauthorized");
       } finally {
-        if (mounted) setSessionLoading(false);
+        if (mounted) setInternalSessionLoading(false);
       }
     };
     hydrateSession();
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [hasExternalSession, setAdminUser]);
 
   useEffect(() => {
     if (!adminUser) return;
+    if (embedded && currentTab !== TAB_MENU) return;
     const loadInitial = async () => {
       try {
         setBusy(true);
@@ -962,12 +986,12 @@ const AdminDashboard = () => {
       }
     };
     loadInitial();
-  }, [adminUser, loadReferenceData, loadMenuItems]);
+  }, [adminUser, currentTab, embedded, loadReferenceData, loadMenuItems]);
 
   useEffect(() => {
     if (!adminUser) return;
-    const needsMediaLoad = activeTab === TAB_MEDIA && !hasLoadedMediaTab;
-    const needsAuditLoad = canAccessDashboardSettings && activeTab === TAB_AUDIT && !hasLoadedAuditTab;
+    const needsMediaLoad = currentTab === TAB_MEDIA && !hasLoadedMediaTab;
+    const needsAuditLoad = canAccessDashboardSettings && currentTab === TAB_AUDIT && !hasLoadedAuditTab;
     if (!needsMediaLoad && !needsAuditLoad) return;
 
     let mounted = true;
@@ -996,9 +1020,10 @@ const AdminDashboard = () => {
     return () => {
       mounted = false;
     };
-  }, [activeTab, adminUser, canAccessDashboardSettings, hasLoadedAuditTab, hasLoadedMediaTab, loadAudit, loadMedia]);
+  }, [adminUser, canAccessDashboardSettings, currentTab, hasLoadedAuditTab, hasLoadedMediaTab, loadAudit, loadMedia]);
 
   useEffect(() => {
+    if (forcedTab) return;
     if (canAccessDashboardSettings) return;
     if (activeTab === TAB_AUDIT) {
       setActiveTab(TAB_MENU);
@@ -1009,7 +1034,7 @@ const AdminDashboard = () => {
     if (showManageAdminsModal) {
       setShowManageAdminsModal(false);
     }
-  }, [activeTab, canAccessDashboardSettings, showCreateAdminModal, showManageAdminsModal]);
+  }, [activeTab, canAccessDashboardSettings, forcedTab, showCreateAdminModal, showManageAdminsModal]);
 
   useEffect(() => {
     if (canManageAdminUsers) return;
@@ -1777,7 +1802,7 @@ const AdminDashboard = () => {
         await Promise.all([loadManagedAdminUsers(), refreshAuditIfAllowed()]);
       } else {
         setShowManageAdminsModal(false);
-        if (activeTab === TAB_AUDIT) setActiveTab(TAB_MENU);
+        if (currentTab === TAB_AUDIT && !forcedTab) setActiveTab(TAB_MENU);
       }
     } catch (error) {
       setManageAdminsError(error.message || "Failed to update admin status.");
@@ -1813,7 +1838,7 @@ const AdminDashboard = () => {
         await Promise.all([loadManagedAdminUsers(), refreshAuditIfAllowed()]);
       } else {
         setShowManageAdminsModal(false);
-        if (activeTab === TAB_AUDIT) setActiveTab(TAB_MENU);
+        if (currentTab === TAB_AUDIT && !forcedTab) setActiveTab(TAB_MENU);
       }
     } catch (error) {
       setManageAdminsError(error.message || "Failed to update admin tier.");
@@ -2284,11 +2309,22 @@ const AdminDashboard = () => {
     return <Navigate to="/admin/login" replace />;
   }
 
+  if (!adminUser) {
+    return embedded ? null : <Navigate to="/admin/login" replace />;
+  }
+
+  const Shell = embedded ? Fragment : "main";
+  const shellProps = embedded
+    ? {}
+    : {
+        className: `container-fluid py-4 admin-dashboard ${isDarkTheme ? "admin-dashboard-dark" : ""}`,
+        "data-bs-theme": isDarkTheme ? "dark" : "light",
+      };
+
   return (
-    <main
-      className={`container-fluid py-4 admin-dashboard ${isDarkTheme ? "admin-dashboard-dark" : ""}`}
-      data-bs-theme={isDarkTheme ? "dark" : "light"}>
-      <header className="admin-header mb-3">
+    <Shell {...shellProps}>
+      {!embedded ? (
+        <header className="admin-header mb-3">
         <div className="admin-header-main">
           <h2 className="h4 mb-1">Admin Dashboard</h2>
           <p className="text-secondary mb-0">
@@ -2318,36 +2354,42 @@ const AdminDashboard = () => {
           />
         </div>
         <div className="admin-header-actions">
+          <Button variant="outline-secondary" className="me-2" onClick={() => navigate("/admin/service-packages")}>
+            Service Packages
+          </Button>
           <Button variant="outline-danger" onClick={logout}>
             Sign Out
           </Button>
         </div>
-      </header>
+        </header>
+      ) : null}
 
-      <Nav variant="tabs" activeKey={activeTab} onSelect={(key) => setActiveTab(key || TAB_MENU)} className="mb-3" role="tablist">
+      {!embedded ? (
+        <Nav variant="tabs" activeKey={currentTab} onSelect={(key) => setActiveTab(key || TAB_MENU)} className="mb-3" role="tablist">
         <Nav.Item>
-          <Nav.Link eventKey={TAB_MENU} role="tab" aria-label="Menu Operations" aria-selected={activeTab === TAB_MENU}>
+          <Nav.Link eventKey={TAB_MENU} role="tab" aria-label="Menu Operations" aria-selected={currentTab === TAB_MENU}>
             <span className="admin-tab-label-full">Menu Operations</span>
             <span className="admin-tab-label-short">Menu</span>
           </Nav.Link>
         </Nav.Item>
         <Nav.Item>
-          <Nav.Link eventKey={TAB_MEDIA} role="tab" aria-label="Media Manager" aria-selected={activeTab === TAB_MEDIA}>
+          <Nav.Link eventKey={TAB_MEDIA} role="tab" aria-label="Media Manager" aria-selected={currentTab === TAB_MEDIA}>
             <span className="admin-tab-label-full">Media Manager</span>
             <span className="admin-tab-label-short">Media</span>
           </Nav.Link>
         </Nav.Item>
         {canAccessDashboardSettings ? (
           <Nav.Item>
-            <Nav.Link eventKey={TAB_AUDIT} role="tab" aria-label="Dashboard Settings" aria-selected={activeTab === TAB_AUDIT}>
+            <Nav.Link eventKey={TAB_AUDIT} role="tab" aria-label="Dashboard Settings" aria-selected={currentTab === TAB_AUDIT}>
               <span className="admin-tab-label-full">Dashboard Settings</span>
               <span className="admin-tab-label-short">Settings</span>
             </Nav.Link>
           </Nav.Item>
         ) : null}
-      </Nav>
+        </Nav>
+      ) : null}
 
-      {activeTab === TAB_MENU ? (
+      {currentTab === TAB_MENU ? (
 	        <Row className="g-3">
 	          <Col lg={4}>
 	            <Card className="mb-3">
@@ -2726,7 +2768,7 @@ const AdminDashboard = () => {
         </Row>
       ) : null}
 
-	      {activeTab === TAB_MEDIA ? (
+	      {currentTab === TAB_MEDIA ? (
 	        <Row className="g-3">
 	          <Col lg={4}>
 	            <Card className="mb-3">
@@ -3040,7 +3082,7 @@ const AdminDashboard = () => {
         </Row>
       ) : null}
 
-      {canAccessDashboardSettings && activeTab === TAB_AUDIT ? (
+      {canAccessDashboardSettings && currentTab === TAB_AUDIT ? (
         <>
           {canManageAdminUsers ? (
             <div className="d-flex flex-wrap justify-content-start gap-2 mb-3">
@@ -3613,7 +3655,7 @@ const AdminDashboard = () => {
         }
         onConfirm={runConfirmedAction}
       />
-    </main>
+    </Shell>
   );
 };
 

@@ -1,7 +1,19 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { useEffect, useState } from "react";
 import Context from "./context";
-import { AdminDashboard, AdminLogin, Wrapper, Landing, NotFound, ServiceMenu, ShowcaseGallery } from "./imports";
+import {
+  AdminLayout,
+  AdminLogin,
+  AdminMediaPage,
+  AdminMenuItemsPage,
+  AdminServicePackagesPage,
+  AdminSettingsPage,
+  Wrapper,
+  Landing,
+  NotFound,
+  ServiceMenu,
+  ShowcaseGallery,
+} from "./imports";
 import "./App.css";
 
 const THEME_STORAGE_KEY = "post_catering_theme";
@@ -73,7 +85,15 @@ function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/admin/login" element={<AdminLogin />} />
-            <Route path="/admin/*" element={<AdminDashboard />} />
+            <Route path="/admin/service-plans" element={<Navigate to="/admin/service-packages" replace />} />
+            <Route path="/admin" element={<AdminLayout />}>
+              <Route index element={<Navigate to="menu-items" replace />} />
+              <Route path="menu-items" element={<AdminMenuItemsPage />} />
+              <Route path="service-packages" element={<AdminServicePackagesPage />} />
+              <Route path="media" element={<AdminMediaPage />} />
+              <Route path="settings" element={<AdminSettingsPage />} />
+              <Route path="*" element={<Navigate to="menu-items" replace />} />
+            </Route>
             <Route path="/" element={<Wrapper />}>
               <Route index element={<Landing />} />
               <Route path="services/:menuKey" element={<ServiceMenu />} />

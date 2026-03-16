@@ -1205,6 +1205,7 @@ button {
   background: var(--surface-alt-color);
 }
 
+.admin-order-cell,
 .admin-media-order-cell {
   width: 84px;
   text-align: center;
@@ -1212,6 +1213,7 @@ button {
   vertical-align: middle;
 }
 
+.admin-order-chip,
 .admin-media-order-chip {
   display: inline-block;
   min-width: 2rem;
@@ -1263,14 +1265,17 @@ button {
   border-top: 2px solid rgba(var(--highlight-color-rgb), 0.38);
 }
 
+.admin-table-row-draggable,
 .admin-media-row-draggable {
   cursor: grab;
 }
 
+.admin-table-row-dragging,
 .admin-media-row-dragging {
   opacity: 0.6;
 }
 
+.admin-table-row-drop-target > td,
 .admin-media-row-drop-target > td {
   box-shadow: inset 0 -2px 0 0 var(--highlight-color);
 }
