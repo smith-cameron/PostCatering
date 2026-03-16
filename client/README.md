@@ -17,6 +17,12 @@ Frontend defaults to `http://localhost:5173` and proxies `/api` to `http://local
 - `/` home/landing page with carousel slides from `GET /api/slides`
 - `/services/:menuKey` dynamic service menu pages
 - `/showcase` photo/video gallery page with modal viewer
+- `/admin/menu-items` routed admin dashboard tab for menu item maintenance
+- `/admin/service-packages` routed admin dashboard tab for catering/formal package maintenance
+- `/admin/media` routed admin dashboard tab for landing/gallery media
+- `/admin/settings` routed admin dashboard tab for audit/admin-user settings
+
+Admin routes share one dashboard shell (`AdminLayout`) and render the page body per route inside that layout.
 
 ## Showcase Gallery
 
@@ -62,3 +68,6 @@ Current component tests include:
 - `src/components/ShowcaseGallery.test.jsx`
 - `src/components/SiteNavigation.test.jsx`
 - `src/components/Inquiry.test.jsx`
+- `src/components/admin/AdminLayout.test.jsx`
+- `src/components/admin/AdminDashboard.test.jsx`
+- `src/components/admin/AdminServicePlansPage.test.jsx`
