@@ -4,6 +4,64 @@ import re
 
 class Menu:
     PRICE_TOKEN_REGEX = re.compile(r"\$?\s*([0-9][0-9,]*(?:\.\d{1,2})?)\s*([kK])?\+?")
+    LEGACY_SERVICE_PLAN_CONSTRAINTS = {
+        "formal:2-course": {
+            "starter": {"min": 1, "max": 1},
+            "entree": {"min": 1, "max": 1},
+        },
+        "formal:3-course": {
+            "passed": {"min": 2, "max": 2},
+            "starter": {"min": 1, "max": 1},
+            "entree": {"min": 1, "max": 2},
+        },
+        "catering:taco_bar": {
+            "signature_protein": {"min": 1, "max": 1},
+        },
+        "catering:homestyle": {
+            "entree_signature_protein": {"min": 1, "max": 1},
+            "sides_salads": {"min": 2, "max": 2},
+        },
+        "catering:buffet_tier_1": {
+            "entree_signature_protein": {"min": 2, "max": 2},
+            "sides_salads": {"min": 3, "max": 3},
+        },
+        "catering:buffet_tier_2": {
+            "entree_signature_protein": {"min": 2, "max": 3},
+            "sides_salads": {"min": 5, "max": 5},
+        },
+    }
+    CATERING_CONSTRAINT_KEY_ALIASES = {
+        "entree_signature_protein": "entree_signature_protein",
+        "entree_signature_proteins": "entree_signature_protein",
+        "entrees_signature_protein": "entree_signature_protein",
+        "entrees_signature_proteins": "entree_signature_protein",
+        "entree": "entree",
+        "entrees": "entree",
+        "protein": "signature_protein",
+        "proteins": "signature_protein",
+        "signature_protein": "signature_protein",
+        "signature_proteins": "signature_protein",
+        "side": "sides",
+        "sides": "sides",
+        "salad": "salads",
+        "salads": "salads",
+        "sides_salads": "sides_salads",
+    }
+    FORMAL_CONSTRAINT_KEY_ALIASES = {
+        "passed": "passed",
+        "passed_appetizer": "passed",
+        "passed_appetizers": "passed",
+        "starter": "starter",
+        "starters": "starter",
+        "entree": "entree",
+        "entrees": "entree",
+        "side": "side",
+        "sides": "side",
+    }
+    CATERING_BUFFET_SECTION_KEYS = (
+        "catering_packages",
+        "catering_buffet_packages",
+    )
 
     @staticmethod
     def _coerce_price_number(value):
@@ -155,50 +213,62 @@ class Menu:
                 "unit": normalized["price_unit"],
             }
 
-    @staticmethod
-    def _normalize_tier_constraints(rows):
-        constraints = {}
-        for row in rows:
-            key = str(row.get("constraint_key") or "").strip()
-            if not key:
-                continue
-
-            min_select = row.get("min_select")
-            max_select = row.get("max_select")
-
-            try:
-                min_select = int(min_select) if min_select is not None else None
-            except (TypeError, ValueError):
-                min_select = None
-            try:
-                max_select = int(max_select) if max_select is not None else None
-            except (TypeError, ValueError):
-                max_select = None
-
-            constraints[key] = {
-                "min": int(min_select or 0),
-                "max": int(max_select or 0),
-            }
-
-        return constraints
+    @classmethod
+    def _get_service_selection_catalog(cls, service_selection):
+        if not isinstance(service_selection, dict):
+            return ""
+        plan_id = str(service_selection.get("id") or "").strip().lower()
+        section_key = str(service_selection.get("sectionId") or "").strip().lower()
+        if plan_id.startswith("formal:") or section_key.startswith("formal"):
+            return "formal"
+        if plan_id.startswith("catering:") or section_key.startswith("catering"):
+            return "catering"
+        return ""
 
     @classmethod
-    def _normalize_payload_constraints(cls, constraints):
+    def _canonicalize_payload_constraint_key(cls, key, service_selection=None):
+        normalized_key = re.sub(r"[^a-z0-9]+", "_", str(key or "").strip().lower()).strip("_")
+        if not normalized_key:
+            return ""
+        catalog_key = cls._get_service_selection_catalog(service_selection)
+        if catalog_key == "formal":
+            return cls.FORMAL_CONSTRAINT_KEY_ALIASES.get(normalized_key, normalized_key)
+        if catalog_key == "catering":
+            return cls.CATERING_CONSTRAINT_KEY_ALIASES.get(normalized_key, normalized_key)
+        return normalized_key
+
+    @classmethod
+    def _normalize_payload_constraints(cls, constraints, service_selection=None):
         if not isinstance(constraints, dict):
             return {}
 
         normalized = {}
         for key, value in constraints.items():
+            normalized_key = cls._canonicalize_payload_constraint_key(key, service_selection=service_selection)
+            if not normalized_key:
+                continue
             if isinstance(value, int):
-                normalized[str(key)] = {"min": value, "max": value}
+                min_value = value
+                max_value = value
             elif isinstance(value, dict):
                 min_value = value.get("min")
                 max_value = value.get("max")
-                if isinstance(min_value, int) or isinstance(max_value, int):
-                    normalized[str(key)] = {
-                        "min": min_value or 0,
-                        "max": max_value or 0,
-                    }
+                if not isinstance(min_value, int) and not isinstance(max_value, int):
+                    continue
+            else:
+                continue
+
+            min_total = int(min_value or 0)
+            max_total = int(max_value or 0)
+            existing = normalized.get(normalized_key)
+            if existing:
+                existing["min"] = int(existing.get("min", 0)) + min_total
+                existing["max"] = int(existing.get("max", 0)) + max_total
+            else:
+                normalized[normalized_key] = {
+                    "min": min_total,
+                    "max": max_total,
+                }
 
         return normalized
 
@@ -207,38 +277,38 @@ class Menu:
         if not isinstance(service_selection, dict):
             return {}
 
+        payload_constraints = cls._normalize_payload_constraints(
+            service_selection.get("constraints"),
+            service_selection=service_selection,
+        )
+        if payload_constraints:
+            return payload_constraints
+
         plan_id = str(service_selection.get("id") or "").strip()
-        level = str(service_selection.get("level") or "").strip().lower()
         section_key = str(service_selection.get("sectionId") or "").strip()
         title = str(service_selection.get("title") or "").strip()
-
-        if plan_id == "formal:2-course":
-            return {"starter": {"min": 1, "max": 1}, "entree": {"min": 1, "max": 1}}
-        if plan_id == "formal:3-course":
-            return {
-                "passed": {"min": 2, "max": 2},
-                "starter": {"min": 1, "max": 1},
-                "entree": {"min": 1, "max": 2},
-            }
+        legacy_constraints = cls.LEGACY_SERVICE_PLAN_CONSTRAINTS.get(plan_id)
+        if legacy_constraints:
+            return {key: dict(value) for key, value in legacy_constraints.items()}
 
         normalized_title = title.lower()
-        if section_key == "community_buffet_tiers" and level == "tier":
+        if "hearty homestyle" in normalized_title:
+            return {"entree_signature_protein": {"min": 1, "max": 1}, "sides_salads": {"min": 2, "max": 2}}
+        if "taco bar" in normalized_title:
+            return {"signature_protein": {"min": 1, "max": 1}}
+        if section_key in cls.CATERING_BUFFET_SECTION_KEYS:
             if "tier 1" in normalized_title:
                 return {
-                    "entree": {"min": 2, "max": 2},
-                    "sides": {"min": 2, "max": 2},
-                    "salads": {"min": 1, "max": 1},
+                    "entree_signature_protein": {"min": 2, "max": 2},
+                    "sides_salads": {"min": 3, "max": 3},
                 }
             if "tier 2" in normalized_title:
                 return {
-                    "entree": {"min": 2, "max": 3},
-                    "sides": {"min": 3, "max": 3},
-                    "salads": {"min": 2, "max": 2},
+                    "entree_signature_protein": {"min": 2, "max": 3},
+                    "sides_salads": {"min": 5, "max": 5},
                 }
 
-        if section_key == "community_homestyle" and level == "package":
-            return {"entree": {"min": 1, "max": 1}, "sides_salads": {"min": 2, "max": 2}}
-        if section_key == "community_taco_bar" and level == "package":
-            return {"entree": {"min": 1, "max": 1}}
-
-        return cls._normalize_payload_constraints(service_selection.get("constraints"))
+        return cls._normalize_payload_constraints(
+            service_selection.get("constraints"),
+            service_selection=service_selection,
+        )

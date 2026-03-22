@@ -1,13 +1,41 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
 import Context from "../../context";
-import AdminDashboard from "./AdminDashboard";
+import AdminLayout from "./AdminLayout";
+import AdminMediaPage from "./AdminMediaPage";
+import AdminMenuItemsPage from "./AdminMenuItemsPage";
+import AdminServicePackagesPage from "./AdminServicePackagesPage";
+import AdminSettingsPage from "./AdminSettingsPage";
 
 const buildResponse = (body, ok = true) => ({
   ok,
   json: async () => body,
 });
+
+const DEFAULT_CONTEXT = {
+  isDarkTheme: false,
+  setThemeMode: vi.fn(),
+};
+
+const renderAdminRoutes = ({ contextValue = {} } = {}) =>
+  render(
+    <Context.Provider value={{ ...DEFAULT_CONTEXT, ...contextValue }}>
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Routes>
+          <Route path="/admin/login" element={<div>Login</div>} />
+          <Route path="/admin" element={<AdminLayout />}>
+            <Route index element={<Navigate to="menu-items" replace />} />
+            <Route path="menu-items" element={<AdminMenuItemsPage />} />
+            <Route path="service-packages" element={<AdminServicePackagesPage />} />
+            <Route path="media" element={<AdminMediaPage />} />
+            <Route path="settings" element={<AdminSettingsPage />} />
+            <Route path="*" element={<Navigate to="menu-items" replace />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </Context.Provider>
+  );
 
 describe("AdminDashboard", () => {
   afterEach(() => {
@@ -48,14 +76,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Menu Operations");
     fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
@@ -128,14 +149,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Menu Operations");
     fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
@@ -191,14 +205,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Create Menu Item");
     const requests = globalThis.fetch.mock.calls.map((call) => String(call[0]));
@@ -209,7 +216,7 @@ describe("AdminDashboard", () => {
     expect(requests.some((requestUrl) => requestUrl.startsWith("/api/admin/menu/sections?"))).toBe(false);
   });
 
-  it("uses the shared theme setter for the dark mode switch", async () => {
+  it("uses the shared theme setter for the theme toggle", async () => {
     const setThemeMode = vi.fn();
 
     vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
@@ -230,19 +237,10 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <Context.Provider value={{ isDarkTheme: false, setThemeMode }}>
-        <MemoryRouter initialEntries={["/admin"]}>
-          <Routes>
-            <Route path="/admin/*" element={<AdminDashboard />} />
-            <Route path="/admin/login" element={<div>Login</div>} />
-          </Routes>
-        </MemoryRouter>
-      </Context.Provider>
-    );
+    renderAdminRoutes({ contextValue: { isDarkTheme: false, setThemeMode } });
 
     await screen.findByText("Menu Operations");
-    fireEvent.click(screen.getByRole("checkbox", { name: "Dark Mode" }));
+    fireEvent.click(screen.getByRole("button", { name: "Switch to dark mode" }));
     expect(setThemeMode).toHaveBeenCalledWith("dark");
   });
 
@@ -281,14 +279,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Signed in as");
     fireEvent.click(screen.getByLabelText("Edit admin profile"));
@@ -369,14 +360,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Menu Operations");
     fireEvent.click(screen.getByRole("tab", { name: "Dashboard Settings" }));
@@ -384,6 +368,10 @@ describe("AdminDashboard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add New Admin Account" }));
 
     await screen.findByText("Create Admin Account");
+    expect(screen.queryByText(/tier 0 owner/i)).not.toBeInTheDocument();
+    expect(screen.getByText("tier 1 manager or tier 2 operator")).toBeInTheDocument();
+    const accessTierSelect = screen.getByLabelText("Access Tier");
+    expect(within(accessTierSelect).queryByRole("option", { name: /tier 0/i })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
     fireEvent.click(screen.getByLabelText("Show password"));
     expect(screen.getByLabelText("Password")).toHaveAttribute("type", "text");
@@ -475,14 +463,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Menu Operations");
     fireEvent.click(screen.getByRole("tab", { name: "Dashboard Settings" }));
@@ -597,14 +578,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Menu Operations");
     fireEvent.click(screen.getByRole("tab", { name: "Dashboard Settings" }));
@@ -674,14 +648,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Menu Operations");
     fireEvent.click(screen.getByRole("tab", { name: "Dashboard Settings" }));
@@ -693,6 +660,8 @@ describe("AdminDashboard", () => {
     const ownerCell = await within(manageDialog).findByText("Owner Two");
     const ownerRow = ownerCell.closest("tr");
     expect(ownerRow).not.toBeNull();
+    expect(within(ownerRow).getByRole("combobox", { name: /Access tier for Owner Two/i })).toHaveTextContent("Protected");
+    expect(within(ownerRow).queryByText(/tier 0/i)).not.toBeInTheDocument();
     expect(within(ownerRow).queryByRole("button", { name: /Set .* Owner Two/i })).not.toBeInTheDocument();
     expect(within(ownerRow).queryByRole("button", { name: "Delete Owner Two" })).not.toBeInTheDocument();
   });
@@ -742,14 +711,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Menu Operations");
     fireEvent.click(screen.getByRole("tab", { name: "Dashboard Settings" }));
@@ -794,14 +756,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Menu Operations");
     fireEvent.click(screen.getByRole("tab", { name: "Dashboard Settings" }));
@@ -834,14 +789,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Menu Operations");
     expect(screen.getByRole("tab", { name: "Menu Operations" })).toBeInTheDocument();
@@ -919,14 +867,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Jerk Chicken");
     fireEvent.click(screen.getByText("Jerk Chicken"));
@@ -983,14 +924,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Create Menu Item");
     expect(screen.queryByLabelText("Group")).not.toBeInTheDocument();
@@ -1092,14 +1026,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Create Menu Item");
     fireEvent.change(screen.getByLabelText("Item Name"), { target: { value: "No Type Item" } });
@@ -1167,14 +1094,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Create Menu Item");
     fireEvent.change(screen.getByLabelText("Item Name"), { target: { value: "Enter Submit Item" } });
@@ -1225,14 +1145,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Create Menu Item");
     fireEvent.change(screen.getByLabelText("Item Name"), { target: { value: "Validation Item" } });
@@ -1301,14 +1214,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Create Menu Item");
     fireEvent.change(screen.getByLabelText("Menu Type"), { target: { value: "regular" } });
@@ -1359,14 +1265,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Create Menu Item");
     const createCard = screen.getByText("Create Menu Item").closest(".card");
@@ -1434,14 +1333,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Menu Operations");
     fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
@@ -1509,14 +1401,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Menu Operations");
     fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
@@ -1568,14 +1453,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Menu Operations");
     fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
@@ -1634,14 +1512,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Menu Operations");
     fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
@@ -1736,14 +1607,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Menu Operations");
     fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
@@ -1763,11 +1627,11 @@ describe("AdminDashboard", () => {
     const confirmDialog = await screen.findByRole("dialog");
     expect(within(confirmDialog).getByText("Update Hero Updated?")).toBeInTheDocument();
     expect(within(confirmDialog).queryByText("Apply media metadata changes?")).not.toBeInTheDocument();
-    expect(within(confirmDialog).getByText(/Title:/i)).toBeInTheDocument();
+    expect(within(confirmDialog).getByText(/^Title$/)).toBeInTheDocument();
     expect(within(confirmDialog).getByText("Hero Updated")).toBeInTheDocument();
-    expect(within(confirmDialog).getByText(/Active:/i)).toBeInTheDocument();
+    expect(within(confirmDialog).getByText(/^Active$/)).toBeInTheDocument();
     expect(within(confirmDialog).getByText("No")).toBeInTheDocument();
-    expect(within(confirmDialog).queryByText(/Caption:/i)).not.toBeInTheDocument();
+    expect(within(confirmDialog).queryByText(/^Caption$/)).not.toBeInTheDocument();
 
     fireEvent.click(within(confirmDialog).getByRole("button", { name: "Save" }));
 
@@ -1831,14 +1695,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Menu Operations");
     fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
@@ -1934,14 +1791,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Menu Operations");
     fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
@@ -2043,14 +1893,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Menu Operations");
     fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
@@ -2121,14 +1964,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Create Menu Item");
     const itemNameInput = screen.getByLabelText("Item Name");
@@ -2258,14 +2094,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Jerk Chicken");
     fireEvent.click(screen.getByText("Jerk Chicken"));
@@ -2404,14 +2233,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Jerk Chicken");
     fireEvent.click(screen.getByText("Jerk Chicken"));
@@ -2508,14 +2330,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Jerk Chicken");
     fireEvent.click(screen.getByText("Jerk Chicken"));
@@ -2584,14 +2399,7 @@ describe("AdminDashboard", () => {
       return Promise.resolve(buildResponse({}, false));
     });
 
-    render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Routes>
-          <Route path="/admin/*" element={<AdminDashboard />} />
-          <Route path="/admin/login" element={<div>Login</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderAdminRoutes();
 
     await screen.findByText("Jerk Chicken");
     expect(screen.getAllByText("Jerk Chicken")).toHaveLength(1);

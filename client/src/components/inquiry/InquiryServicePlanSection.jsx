@@ -19,20 +19,40 @@ const InquiryServicePlanSection = ({
 }) => {
   if (!serviceInterest || !shouldRequirePlanSelection) return null;
 
-  const tierSectionTitles = Array.from(
-    new Set(servicePlans.filter((plan) => plan.level === "tier").map((plan) => plan.sectionTitle))
+  const groupedCateringPlans = servicePlans.reduce(
+    (acc, plan) => {
+      const sectionTitle = String(plan?.sectionTitle || "").trim();
+      if (!sectionTitle) {
+        acc.standalone.push(plan);
+        return acc;
+      }
+      const group = acc.bySection.get(sectionTitle) || [];
+      group.push(plan);
+      acc.bySection.set(sectionTitle, group);
+      return acc;
+    },
+    { standalone: [], bySection: new Map() }
   );
+  const groupedCateringSections = Array.from(groupedCateringPlans.bySection.entries());
+  const groupedCateringSectionsWithMultiplePlans = groupedCateringSections.filter(([, plans]) => plans.length > 1);
+  const showCateringSectionGroups =
+    serviceInterest === "catering" && groupedCateringSectionsWithMultiplePlans.length > 1;
+  const primaryPackageOptions =
+    serviceInterest === "catering" && showCateringSectionGroups
+      ? [
+          ...groupedCateringPlans.standalone,
+          ...groupedCateringSections.filter(([, plans]) => plans.length === 1).flatMap(([, plans]) => plans),
+        ]
+      : servicePlans;
 
   return (
     <Form.Group className="mb-3" controlId="inquiry-service-plan">
-      <InquiryFieldLabel required>{serviceInterest === "community" ? "Package / Tier" : "Formal Dinner Package"}</InquiryFieldLabel>
+      <InquiryFieldLabel required>{serviceInterest === "catering" ? "Catering Package" : "Formal Dinner Package"}</InquiryFieldLabel>
 
       <Form.Select value={servicePlanId} onChange={onChangeServicePlan} isInvalid={isInvalid} required>
         <option value="">Select an option</option>
         <optgroup label={serviceInterest === "formal" ? "Dinner Packages" : "Packages"}>
-          {servicePlans
-            .filter((plan) => plan.level === "package")
-            .map((plan) => (
+          {primaryPackageOptions.map((plan) => (
               <option key={plan.id} value={plan.id}>
                 {getPlanDisplayTitle(serviceInterest, plan)}
                 {plan.price ? ` (${plan.price})` : ""}
@@ -40,12 +60,12 @@ const InquiryServicePlanSection = ({
             ))}
         </optgroup>
 
-        {serviceInterest !== "formal"
-          ? tierSectionTitles.map((sectionTitle) => (
+        {showCateringSectionGroups
+          ? groupedCateringSections
+              .filter(([, plans]) => plans.length > 1)
+              .map(([sectionTitle, plans]) => (
               <optgroup key={sectionTitle} label={getPlanSectionDisplayTitle(serviceInterest, sectionTitle)}>
-                {servicePlans
-                  .filter((plan) => plan.level === "tier" && plan.sectionTitle === sectionTitle)
-                  .map((plan) => (
+                {plans.map((plan) => (
                     <option key={plan.id} value={plan.id}>
                       {getPlanDisplayTitle(serviceInterest, plan)}
                       {plan.price ? ` (${plan.price})` : ""}
@@ -58,9 +78,7 @@ const InquiryServicePlanSection = ({
 
       {selectedServicePlan ? (
         <div className="inquiry-selection-summary mt-2">
-          <div className="inquiry-selection-summary-title">
-            {selectedServicePlan.level === "package" ? "Package Includes" : "Tier Details"}
-          </div>
+          <div className="inquiry-selection-summary-title">Package Includes</div>
           <ul className="inquiry-selection-summary-list mb-0">
             {displayedPlanDetails.map((detail) => {
               const detailKey = getSelectionCategoryKeyFromText(detail);
@@ -74,9 +92,6 @@ const InquiryServicePlanSection = ({
               );
             })}
           </ul>
-          {serviceInterest === "community" && selectedServicePlan.level === "tier" ? (
-            <div className="inquiry-selection-summary-note">Special requests can be added in the Message field.</div>
-          ) : null}
         </div>
       ) : null}
     </Form.Group>

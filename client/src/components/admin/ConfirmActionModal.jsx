@@ -7,6 +7,10 @@ const ConfirmActionModal = ({
   body = "Are you sure you want to apply this change?",
   confirmLabel = "Confirm",
   confirmVariant = "secondary",
+  extraActionLabel = "",
+  extraActionVariant = "outline-secondary",
+  onExtraAction,
+  extraActionDisabled = false,
   validationMessage = "",
   confirmDisabled = false,
   darkMode = false,
@@ -20,6 +24,7 @@ const ConfirmActionModal = ({
   const hasValidation = validationMessages.length > 0;
   const canConfirm = !busy && !confirmDisabled;
   const canFix = !busy;
+  const canRunExtraAction = !busy && !extraActionDisabled;
   const formRef = useRef(null);
 
   const runPrimaryAction = useCallback(() => {
@@ -100,6 +105,15 @@ const ConfirmActionModal = ({
             disabled={busy}>
             {hasValidation ? "Fix" : "Cancel"}
           </Button>
+          {!hasValidation && extraActionLabel ? (
+            <Button
+              type="button"
+              variant={extraActionVariant}
+              onClick={onExtraAction}
+              disabled={!canRunExtraAction}>
+              {extraActionLabel}
+            </Button>
+          ) : null}
           <Button
             type="submit"
             className={hasValidation ? undefined : confirmVariant === "secondary" ? "btn-inquiry-action" : undefined}
