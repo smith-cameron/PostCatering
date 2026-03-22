@@ -7,16 +7,23 @@ import CatalogSectionsAccordion from "./service-menu/CatalogSectionsAccordion";
 import { normalizeMenuText, normalizeMenuTitle } from "./service-menu/serviceMenuUtils";
 import useServiceMenuData from "./service-menu/useServiceMenuData";
 
+const MENU_KEY_ALIASES = {
+  community: "catering",
+};
+
 const ServiceMenu = () => {
   const { menuKey } = useParams();
   const { openInquiryModal } = useContext(Context);
+  const resolvedMenuKey = MENU_KEY_ALIASES[menuKey] || menuKey;
   const { menu, menuOptions, formalPlanOptions, loading, error } = useMenuConfig();
   const { data, sections } = useServiceMenuData({
-    menuKey,
+    menuKey: resolvedMenuKey,
     menu,
     menuOptions,
     formalPlanOptions,
   });
+  const serviceSections = sections.filter((section) => section.sectionKind !== "menu");
+  const menuSections = sections.filter((section) => section.sectionKind === "menu");
 
   if (loading) {
     return (
@@ -62,10 +69,30 @@ const ServiceMenu = () => {
         </section>
       ))}
 
-      <CatalogSectionsAccordion menuKey={menuKey} sections={sections} />
+      {serviceSections.length ? (
+        <section data-testid="service-menu-service-accordion">
+          <CatalogSectionsAccordion menuKey={`${resolvedMenuKey}-service`} sections={serviceSections} />
+        </section>
+      ) : null}
+
+      {menuSections.length ? (
+        <>
+          {serviceSections.length ? (
+            <div className="menu-group-break" aria-hidden="true">
+              <span className="menu-group-break-label">Menu Selections</span>
+            </div>
+          ) : null}
+          <section data-testid="service-menu-menu-accordion">
+            <CatalogSectionsAccordion menuKey={`${resolvedMenuKey}-menu`} sections={menuSections} />
+          </section>
+        </>
+      ) : null}
 
       <div className="mt-3">
-        <Button className="btn-inquiry-action" variant="secondary" onClick={() => openInquiryModal(menuKey)}>
+        <Button
+          className="btn-inquiry-action"
+          variant="secondary"
+          onClick={() => openInquiryModal(resolvedMenuKey)}>
           Inquire About This Menu
         </Button>
       </div>

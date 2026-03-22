@@ -94,7 +94,7 @@ describe("CatalogSectionsAccordion", () => {
     expect(screen.queryByText(/choose/i)).not.toBeInTheDocument();
   });
 
-  it("renders taco bar with a taco protein bullet", () => {
+  it("renders taco bar with an explicit protein list", () => {
     render(
       <CatalogSectionsAccordion
         menuKey="catering"
@@ -202,7 +202,7 @@ describe("CatalogSectionsAccordion", () => {
     expect(screen.getByRole("button", { name: "Chef's Choice" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Menu Options" })).toBeInTheDocument();
     expect(screen.getByText("$38 / person")).toBeInTheDocument();
-    expect(screen.getAllByText("Formal Dinner Packages")).toHaveLength(2);
+    expect(screen.queryByText("Formal Dinner Packages")).not.toBeInTheDocument();
   });
 
   it("renders formal packages and menu blocks as separate top-level accordion items", () => {
@@ -228,8 +228,8 @@ describe("CatalogSectionsAccordion", () => {
 
     expect(screen.getByRole("button", { name: "3-Course Service" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Entrees" })).toBeInTheDocument();
-    expect(screen.getByText("Formal Dinner Packages")).toBeInTheDocument();
-    expect(screen.getByText("Menu Options")).toBeInTheDocument();
-    expect(screen.getByText("Menu Selections")).toBeInTheDocument();
+    expect(screen.queryByText("Formal Dinner Packages")).not.toBeInTheDocument();
+    expect(screen.queryByText("Menu Options")).not.toBeInTheDocument();
+    expect(screen.queryByText("Menu Selections")).not.toBeInTheDocument();
   });
 });
