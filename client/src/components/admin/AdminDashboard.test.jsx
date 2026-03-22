@@ -1627,11 +1627,11 @@ describe("AdminDashboard", () => {
     const confirmDialog = await screen.findByRole("dialog");
     expect(within(confirmDialog).getByText("Update Hero Updated?")).toBeInTheDocument();
     expect(within(confirmDialog).queryByText("Apply media metadata changes?")).not.toBeInTheDocument();
-    expect(within(confirmDialog).getByText(/Title:/i)).toBeInTheDocument();
+    expect(within(confirmDialog).getByText(/^Title$/)).toBeInTheDocument();
     expect(within(confirmDialog).getByText("Hero Updated")).toBeInTheDocument();
-    expect(within(confirmDialog).getByText(/Active:/i)).toBeInTheDocument();
+    expect(within(confirmDialog).getByText(/^Active$/)).toBeInTheDocument();
     expect(within(confirmDialog).getByText("No")).toBeInTheDocument();
-    expect(within(confirmDialog).queryByText(/Caption:/i)).not.toBeInTheDocument();
+    expect(within(confirmDialog).queryByText(/^Caption$/)).not.toBeInTheDocument();
 
     fireEvent.click(within(confirmDialog).getByRole("button", { name: "Save" }));
 
