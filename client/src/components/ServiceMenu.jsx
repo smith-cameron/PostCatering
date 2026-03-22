@@ -7,12 +7,17 @@ import CatalogSectionsAccordion from "./service-menu/CatalogSectionsAccordion";
 import { normalizeMenuText, normalizeMenuTitle } from "./service-menu/serviceMenuUtils";
 import useServiceMenuData from "./service-menu/useServiceMenuData";
 
+const MENU_KEY_ALIASES = {
+  community: "catering",
+};
+
 const ServiceMenu = () => {
   const { menuKey } = useParams();
   const { openInquiryModal } = useContext(Context);
+  const resolvedMenuKey = MENU_KEY_ALIASES[menuKey] || menuKey;
   const { menu, menuOptions, formalPlanOptions, loading, error } = useMenuConfig();
   const { data, sections } = useServiceMenuData({
-    menuKey,
+    menuKey: resolvedMenuKey,
     menu,
     menuOptions,
     formalPlanOptions,
@@ -66,7 +71,7 @@ const ServiceMenu = () => {
 
       {serviceSections.length ? (
         <section data-testid="service-menu-service-accordion">
-          <CatalogSectionsAccordion menuKey={`${menuKey}-service`} sections={serviceSections} />
+          <CatalogSectionsAccordion menuKey={`${resolvedMenuKey}-service`} sections={serviceSections} />
         </section>
       ) : null}
 
@@ -78,13 +83,16 @@ const ServiceMenu = () => {
             </div>
           ) : null}
           <section data-testid="service-menu-menu-accordion">
-            <CatalogSectionsAccordion menuKey={`${menuKey}-menu`} sections={menuSections} />
+            <CatalogSectionsAccordion menuKey={`${resolvedMenuKey}-menu`} sections={menuSections} />
           </section>
         </>
       ) : null}
 
       <div className="mt-3">
-        <Button className="btn-inquiry-action" variant="secondary" onClick={() => openInquiryModal(menuKey)}>
+        <Button
+          className="btn-inquiry-action"
+          variant="secondary"
+          onClick={() => openInquiryModal(resolvedMenuKey)}>
           Inquire About This Menu
         </Button>
       </div>

@@ -88,4 +88,55 @@ describe("ServiceMenu", () => {
     expect(packageButton).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("Jerk Chicken")).toBeInTheDocument();
   });
+
+  it("maps the legacy community URL to the catering menu key", () => {
+    const openInquiryModal = vi.fn();
+
+    useMenuConfig.mockReturnValue({
+      loading: false,
+      error: "",
+      formalPlanOptions: [],
+      menuOptions: {},
+      menu: {
+        catering: {
+          pageTitle: "Community & Crew Catering (Per Person)",
+          subtitle: "Drop-off or buffet setup",
+          sections: [
+            {
+              sectionId: "catering_packages",
+              type: "packages",
+              title: "Catering Packages",
+              packages: [
+                {
+                  planId: "catering:taco_bar",
+                  title: "Taco Bar",
+                  details: ["Spanish rice", "Refried beans"],
+                  selectionMode: "custom_options",
+                  selectionGroups: [],
+                  isActive: true,
+                },
+              ],
+            },
+          ],
+        },
+        formal: { sections: [] },
+      },
+    });
+
+    render(
+      <Context.Provider value={{ openInquiryModal }}>
+        <MemoryRouter initialEntries={["/services/community"]}>
+          <Routes>
+            <Route path="/services/:menuKey" element={<ServiceMenu />} />
+          </Routes>
+        </MemoryRouter>
+      </Context.Provider>
+    );
+
+    expect(screen.getByText("Community & Crew Catering")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Taco Bar" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /inquire about this menu/i }));
+    expect(openInquiryModal).toHaveBeenCalledWith("catering");
+  });
 });
