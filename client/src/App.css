@@ -70,6 +70,9 @@
   --page-gradient-end-rgb: 243, 236, 223;
   --theme-shadow-rgb: 90, 114, 138;
   --theme-shadow-deep-rgb: 44, 38, 33;
+  --header-service-color-rgb: 208, 166, 72;
+  --header-service-text-color: #5f4814;
+  --header-service-hover-text-color: #46330a;
   --header-inquiry-text-color: #415464;
   --header-inquiry-hover-text-color: #2f3f4d;
   --media-frame-bg: #2a2a2a;
@@ -127,6 +130,9 @@
   --page-gradient-end-rgb: 52, 61, 69;
   --theme-shadow-rgb: 0, 0, 0;
   --theme-shadow-deep-rgb: 0, 0, 0;
+  --header-service-color-rgb: 201, 163, 90;
+  --header-service-text-color: #f1dfb0;
+  --header-service-hover-text-color: #fff9f0;
   --header-inquiry-text-color: #dbe8f3;
   --header-inquiry-hover-text-color: #fbf6ed;
   --media-frame-bg: #20262b;
@@ -1205,6 +1211,7 @@ button {
   background: var(--surface-alt-color);
 }
 
+.admin-order-cell,
 .admin-media-order-cell {
   width: 84px;
   text-align: center;
@@ -1212,6 +1219,7 @@ button {
   vertical-align: middle;
 }
 
+.admin-order-chip,
 .admin-media-order-chip {
   display: inline-block;
   min-width: 2rem;
@@ -1263,14 +1271,17 @@ button {
   border-top: 2px solid rgba(var(--highlight-color-rgb), 0.38);
 }
 
+.admin-table-row-draggable,
 .admin-media-row-draggable {
   cursor: grab;
 }
 
+.admin-table-row-dragging,
 .admin-media-row-dragging {
   opacity: 0.6;
 }
 
+.admin-table-row-drop-target > td,
 .admin-media-row-drop-target > td {
   box-shadow: inset 0 -2px 0 0 var(--highlight-color);
 }
@@ -1336,11 +1347,6 @@ button {
 
 .admin-status-dot-inactive {
   background: #c9464f;
-}
-
-.admin-theme-toggle .form-check-label {
-  font-weight: 700;
-  color: var(--admin-text);
 }
 
 .admin-profile-edit-btn {
@@ -1665,6 +1671,21 @@ button {
   color: #c37d74;
 }
 
+.admin-package-remove-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.admin-package-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: calc(1.5em + 0.75rem + calc(var(--bs-border-width) * 2));
+  padding-inline: 0.75rem;
+  line-height: 1;
+}
+
 .admin-profile-modal,
 .admin-create-user-modal,
 .admin-manage-users-modal {
@@ -1759,7 +1780,24 @@ button {
   background: rgba(var(--surface-color-rgb), 0.8);
   padding: 0.6rem 0.75rem;
   display: grid;
-  gap: 0.25rem;
+  gap: 0.5rem;
+}
+
+.admin-confirm-review-row {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.admin-confirm-review-label {
+  font-weight: 600;
+  color: var(--text-strong-color);
+}
+
+.admin-confirm-review-value {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .admin-confirm-modal-dark .admin-confirm-review {
@@ -1847,12 +1885,12 @@ button {
   border-radius: 0.45rem;
   background: linear-gradient(
     90deg,
-    rgba(var(--highlight-color-rgb), 0.12) 0%,
-    rgba(var(--border-strong-color-rgb), 0.14) 58%,
-    rgba(var(--highlight-color-rgb), 0) 100%
+    rgba(var(--header-service-color-rgb), 0.12) 0%,
+    rgba(var(--highlight-color-rgb), 0.08) 58%,
+    rgba(var(--header-service-color-rgb), 0) 100%
   );
-  box-shadow: inset 2px 0 0 rgba(var(--highlight-color-rgb), 0.46);
-  color: var(--text-muted-color);
+  box-shadow: inset 2px 0 0 rgba(var(--header-service-color-rgb), 0.44);
+  color: var(--header-service-text-color);
   font-weight: 600;
   letter-spacing: 0.01em;
 }
@@ -1861,19 +1899,19 @@ button {
 .dropdown-menu .site-header-service-item:focus {
   background: linear-gradient(
     90deg,
-    rgba(var(--highlight-color-rgb), 0.18) 0%,
-    rgba(var(--border-strong-color-rgb), 0.18) 58%,
-    rgba(var(--highlight-color-rgb), 0.01) 100%
+    rgba(var(--header-service-color-rgb), 0.16) 0%,
+    rgba(var(--highlight-color-rgb), 0.12) 58%,
+    rgba(var(--header-service-color-rgb), 0.01) 100%
   );
-  box-shadow: inset 3px 0 0 rgba(var(--highlight-color-rgb), 0.58);
-  color: var(--text-strong-color);
+  box-shadow: inset 3px 0 0 rgba(var(--header-service-color-rgb), 0.48);
+  color: var(--header-service-hover-text-color);
   text-decoration: none;
 }
 
 .dropdown-menu .site-header-service-item:focus-visible {
   box-shadow:
-    inset 3px 0 0 rgba(var(--highlight-color-rgb), 0.58),
-    0 0 0 0.16rem rgba(var(--highlight-color-rgb), 0.16);
+    inset 3px 0 0 rgba(var(--header-service-color-rgb), 0.48),
+    0 0 0 0.16rem rgba(var(--header-service-color-rgb), 0.14);
 }
 
 .dropdown-menu .site-header-inquiry-item {
@@ -2049,12 +2087,12 @@ button {
     border-radius: 0.45rem;
     background: linear-gradient(
       270deg,
-      rgba(var(--highlight-color-rgb), 0.12) 0%,
-      rgba(var(--border-strong-color-rgb), 0.14) 58%,
-      rgba(var(--highlight-color-rgb), 0) 100%
+      rgba(var(--header-service-color-rgb), 0.12) 0%,
+      rgba(var(--highlight-color-rgb), 0.08) 58%,
+      rgba(var(--header-service-color-rgb), 0) 100%
     );
-    box-shadow: inset -2px 0 0 rgba(var(--highlight-color-rgb), 0.46);
-    color: var(--text-muted-color);
+    box-shadow: inset -2px 0 0 rgba(var(--header-service-color-rgb), 0.44);
+    color: var(--header-service-text-color);
     font-weight: 600;
     letter-spacing: 0.01em;
   }
@@ -2063,19 +2101,19 @@ button {
   .site-header-nav .site-header-service-item:focus {
     background: linear-gradient(
       270deg,
-      rgba(var(--highlight-color-rgb), 0.18) 0%,
-      rgba(var(--border-strong-color-rgb), 0.18) 58%,
-      rgba(var(--highlight-color-rgb), 0.01) 100%
+      rgba(var(--header-service-color-rgb), 0.16) 0%,
+      rgba(var(--highlight-color-rgb), 0.12) 58%,
+      rgba(var(--header-service-color-rgb), 0.01) 100%
     );
-    box-shadow: inset -3px 0 0 rgba(var(--highlight-color-rgb), 0.58);
-    color: var(--text-strong-color);
+    box-shadow: inset -3px 0 0 rgba(var(--header-service-color-rgb), 0.48);
+    color: var(--header-service-hover-text-color);
     text-decoration: none;
   }
 
   .site-header-nav .site-header-service-item:focus-visible {
     box-shadow:
-      inset -3px 0 0 rgba(var(--highlight-color-rgb), 0.58),
-      0 0 0 0.16rem rgba(var(--highlight-color-rgb), 0.16);
+      inset -3px 0 0 rgba(var(--header-service-color-rgb), 0.48),
+      0 0 0 0.16rem rgba(var(--header-service-color-rgb), 0.14);
   }
 
   .site-header-nav .site-header-inquiry-item {

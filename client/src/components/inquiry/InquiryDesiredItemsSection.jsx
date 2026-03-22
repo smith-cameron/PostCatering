@@ -5,6 +5,7 @@ import { getDisplayGroupTitle, normalizeSizeOption, toIdPart } from "./inquiryUt
 const InquiryDesiredItemsSection = ({
   serviceInterest,
   shouldRequirePlanSelection,
+  requiresDesiredItemSelection,
   canShowDesiredItems,
   desiredItemGroups,
   desiredItems,
@@ -14,7 +15,7 @@ const InquiryDesiredItemsSection = ({
   hasError = false,
 }) => (
   <Form.Group className="mb-3">
-    <InquiryFieldLabel required>Desired Menu Items</InquiryFieldLabel>
+    <InquiryFieldLabel required={requiresDesiredItemSelection}>Desired Menu Items</InquiryFieldLabel>
     {canShowDesiredItems ? (
       desiredItemGroups.length ? (
         <div
@@ -57,10 +58,12 @@ const InquiryDesiredItemsSection = ({
           ))}
         </div>
       ) : (
-        <div className="inquiry-selection-hint">No items available for this service yet.</div>
+        <div className="inquiry-selection-hint">
+          {requiresDesiredItemSelection ? "No items available for this service yet." : "No menu item selections are required for this package."}
+        </div>
       )
     ) : serviceInterest && shouldRequirePlanSelection ? (
-      <div className="inquiry-selection-hint">Select a package/tier first to view desired menu items.</div>
+      <div className="inquiry-selection-hint">Select a package first to view desired menu items.</div>
     ) : (
       <div className="inquiry-selection-hint">Select a service first to view desired items.</div>
     )}

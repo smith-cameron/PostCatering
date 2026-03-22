@@ -18,12 +18,11 @@ class InquiryServiceFormattingTests(unittest.TestCase):
     def test_format_service_selection(self):
         formatted = InquiryService._format_service_selection(
             {
-                "level": "tier",
                 "title": "Tier 2: Elevated Buffet / Family-Style",
                 "price": "$45-$65 per person",
             }
         )
-        self.assertEqual(formatted, "Tier: Tier 2: Elevated Buffet / Family-Style ($45-$65 per person)")
+        self.assertEqual(formatted, "Tier 2: Elevated Buffet / Family-Style ($45-$65 per person)")
 
     def test_format_desired_items(self):
         formatted = InquiryService._format_desired_items(
@@ -78,8 +77,8 @@ class InquiryServiceFormattingTests(unittest.TestCase):
             event_date=str(date(2026, 6, 15)),
             guest_count=50,
             budget="$2,500-$5,000",
-            service_interest="Community Catering",
-            service_selection={"level": "tier", "title": "Tier 2", "price": "$45-$65 per person"},
+            service_interest="Catering Packages",
+            service_selection={"title": "Tier 2", "price": "$45-$65 per person"},
             desired_menu_items=[
                 {"name": "Jerk Chicken", "category": "entree", "tray_size": "Half", "tray_price": "$85"}
             ],
@@ -113,7 +112,7 @@ class InquiryServiceFormattingTests(unittest.TestCase):
             event_date=str(date(2026, 6, 15)),
             guest_count=50,
             budget="$2,500-$5,000",
-            service_interest="Community Catering",
+            service_interest="Catering Packages",
             service_selection={},
             desired_menu_items=[
                 {"name": "Jerk Chicken", "category": "entree"},

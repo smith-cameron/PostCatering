@@ -28,7 +28,7 @@ const Header = ({ onOpenInquiry }) => {
         To-Go & Take-and-Bake Trays
       </NavDropdown.Item>
 
-      <NavDropdown.Item as={Link} to="/services/community" className="site-header-service-item">
+      <NavDropdown.Item as={Link} to="/services/catering" className="site-header-service-item">
         Community & Crew Catering
       </NavDropdown.Item>
 
@@ -43,8 +43,6 @@ const Header = ({ onOpenInquiry }) => {
         onClick={() => onOpenInquiry?.()}>
         Send Catering Inquiry
       </NavDropdown.Item>
-
-      <NavDropdown.Divider />
 
       <NavDropdown.Item
         as="button"
@@ -91,7 +89,7 @@ const Header = ({ onOpenInquiry }) => {
 
                 <Nav.Link
                   as={Link}
-                  to="/services/community"
+                  to="/services/catering"
                   className="site-header-action-link site-header-service-item">
                   Community & Crew Catering
                 </Nav.Link>
@@ -111,8 +109,6 @@ const Header = ({ onOpenInquiry }) => {
                   Send Catering Inquiry
                 </Nav.Link>
 
-                <div className="dropdown-divider my-1" role="separator" />
-
                 <Nav.Link
                   as="button"
                   type="button"
@@ -130,7 +126,7 @@ const Header = ({ onOpenInquiry }) => {
                 </Nav.Link>
 
                 <Nav.Link as={Link} to="/showcase">
-                  Showcase
+                  Photos
                 </Nav.Link>
 
                 <Nav.Link

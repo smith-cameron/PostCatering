@@ -10,20 +10,16 @@ from flask_api.models.menu import Menu  # noqa: E402
 
 
 class MenuConstraintNormalizationTests(unittest.TestCase):
-    def test_normalize_tier_constraints_new_shape(self):
-        rows = [
-            {"constraint_key": "entrees", "min_select": 2, "max_select": 3},
-            {"constraint_key": "sides", "min_select": 3, "max_select": 3},
-        ]
-        normalized = Menu._normalize_tier_constraints(rows)
-        self.assertEqual(normalized["entrees"], {"min": 2, "max": 3})
-        self.assertEqual(normalized["sides"], {"min": 3, "max": 3})
+    def test_get_effective_service_constraints_for_catering_buffet_plan(self):
+        constraints = Menu.get_effective_service_constraints({"id": "catering:buffet_tier_2"})
+        self.assertEqual(constraints.get("entree_signature_protein"), {"min": 2, "max": 3})
+        self.assertEqual(constraints.get("sides_salads"), {"min": 5, "max": 5})
 
-    def test_get_effective_service_constraints_for_community_tier(self):
+    def test_get_effective_service_constraints_for_catering_buffet_package_title(self):
         constraints = Menu.get_effective_service_constraints(
-            {"level": "tier", "sectionId": "community_buffet_tiers", "title": "Tier 2: Elevated Buffet / Family-Style"}
+            {"sectionId": "catering_buffet_packages", "title": "Tier 2: Elevated Buffet / Family-Style"}
         )
-        self.assertEqual(constraints.get("salads"), {"min": 2, "max": 2})
+        self.assertEqual(constraints.get("sides_salads"), {"min": 5, "max": 5})
 
     def test_get_effective_service_constraints_for_formal_plan(self):
         constraints = Menu.get_effective_service_constraints({"id": "formal:3-course"})
@@ -31,12 +27,38 @@ class MenuConstraintNormalizationTests(unittest.TestCase):
         self.assertEqual(constraints.get("starter"), {"min": 1, "max": 1})
         self.assertEqual(constraints.get("entree"), {"min": 1, "max": 2})
 
+    def test_get_effective_service_constraints_prefers_payload_constraints(self):
+        constraints = Menu.get_effective_service_constraints(
+            {
+                "id": "formal:2-course",
+                "constraints": {
+                    "starter": {"min": 2, "max": 2},
+                    "entree": {"min": 3, "max": 3},
+                },
+            }
+        )
+        self.assertEqual(constraints.get("starter"), {"min": 2, "max": 2})
+        self.assertEqual(constraints.get("entree"), {"min": 3, "max": 3})
+
     def test_get_effective_service_constraints_for_homestyle_package(self):
         constraints = Menu.get_effective_service_constraints(
-            {"level": "package", "sectionId": "community_homestyle", "title": "Hearty Homestyle Packages"}
+            {"sectionId": "catering_packages", "title": "Hearty Homestyle Packages"}
+        )
+        self.assertEqual(constraints.get("entree_signature_protein"), {"min": 1, "max": 1})
+        self.assertEqual(constraints.get("sides_salads"), {"min": 2, "max": 2})
+
+    def test_get_effective_service_constraints_preserves_specific_catering_payload_groups(self):
+        constraints = Menu.get_effective_service_constraints(
+            {
+                "id": "catering:custom_package",
+                "constraints": {
+                    "entree": {"min": 1, "max": 1},
+                    "salads": {"min": 1, "max": 1},
+                },
+            }
         )
         self.assertEqual(constraints.get("entree"), {"min": 1, "max": 1})
-        self.assertEqual(constraints.get("sides_salads"), {"min": 2, "max": 2})
+        self.assertEqual(constraints.get("salads"), {"min": 1, "max": 1})
 
 
 if __name__ == "__main__":

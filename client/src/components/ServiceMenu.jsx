@@ -17,6 +17,8 @@ const ServiceMenu = () => {
     menuOptions,
     formalPlanOptions,
   });
+  const serviceSections = sections.filter((section) => section.sectionKind !== "menu");
+  const menuSections = sections.filter((section) => section.sectionKind === "menu");
 
   if (loading) {
     return (
@@ -62,7 +64,24 @@ const ServiceMenu = () => {
         </section>
       ))}
 
-      <CatalogSectionsAccordion menuKey={menuKey} sections={sections} />
+      {serviceSections.length ? (
+        <section data-testid="service-menu-service-accordion">
+          <CatalogSectionsAccordion menuKey={`${menuKey}-service`} sections={serviceSections} />
+        </section>
+      ) : null}
+
+      {menuSections.length ? (
+        <>
+          {serviceSections.length ? (
+            <div className="menu-group-break" aria-hidden="true">
+              <span className="menu-group-break-label">Menu Selections</span>
+            </div>
+          ) : null}
+          <section data-testid="service-menu-menu-accordion">
+            <CatalogSectionsAccordion menuKey={`${menuKey}-menu`} sections={menuSections} />
+          </section>
+        </>
+      ) : null}
 
       <div className="mt-3">
         <Button className="btn-inquiry-action" variant="secondary" onClick={() => openInquiryModal(menuKey)}>

@@ -66,8 +66,7 @@ class InquiryValidationTests(unittest.TestCase):
     def test_homestyle_allows_combined_two_sides_or_salads(self):
         errors = validate_service_selection_constraints(
             {
-                "level": "package",
-                "sectionId": "community_homestyle",
+                "sectionId": "catering_packages",
                 "title": "Hearty Homestyle Packages",
             },
             [

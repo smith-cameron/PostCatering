@@ -1,3 +1,9 @@
+import {
+  buildCateringConstraintDetails,
+  filterGeneratedPackageDetails,
+  normalizePackageConstraintMap,
+} from "../../utils/servicePackageUtils";
+
 export const EMPTY_FORM = {
   full_name: "",
   email: "",
@@ -40,9 +46,16 @@ export const formatBudgetInput = (value) => {
   return `${firstPart}-${secondPart}`;
 };
 
-export const COMMUNITY_TACO_BAR_OPTIONS = ["Carne Asada", "Chicken", "Marinated Pork"];
-
 export const toIdPart = (value) => String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+const getPlanId = (plan) => String(plan?.planId || plan?.id || "").trim();
+const CATERING_BUFFET_PACKAGE_IDS = new Set(["catering:buffet_tier_1", "catering:buffet_tier_2"]);
+const isLegacyBuffetPackageTitle = (plan) => {
+  const normalizedTitle = String(plan?.title || "").toLowerCase();
+  return normalizedTitle.includes("tier 1") || normalizedTitle.includes("tier 2");
+};
+const isCateringBuffetPackage = (plan) =>
+  CATERING_BUFFET_PACKAGE_IDS.has(getPlanId(plan)) ||
+  isLegacyBuffetPackageTitle(plan);
 const isSaladName = (value) => String(value || "").toLowerCase().includes("salad");
 const splitSidesAndSalads = (items = []) =>
   items.reduce(
@@ -66,58 +79,55 @@ export const getMinEventDateISO = () => {
   return new Date(now.getTime() - tzOffset).toISOString().slice(0, 10);
 };
 
-export const buildCommunitySelectionRules = (plan) => {
+const getPackageSelectionGroupDetail = (group) => {
+  const title = String(group?.title || group?.groupTitle || "").trim();
+  const optionLabels = (group?.options || [])
+    .map((option) => String(option?.label || option?.optionLabel || "").trim())
+    .filter(Boolean);
+  if (title && optionLabels.length) {
+    return `${title}: ${optionLabels.join(", ")}`;
+  }
+  if (title) return title;
+  return "";
+};
+
+const getPackageSelectionGroupDetails = (plan) =>
+  (Array.isArray(plan?.selectionGroups) ? plan.selectionGroups : [])
+    .map((group) => getPackageSelectionGroupDetail(group))
+    .filter(Boolean);
+
+export const buildCateringSelectionRules = (plan) => {
   if (!plan) return null;
+  const normalizedConstraints = normalizePackageConstraintMap(plan.constraints, "catering");
+  if (Object.keys(normalizedConstraints).length) {
+    return normalizedConstraints;
+  }
+
   const normalizedTitle = String(plan.title || "").toLowerCase();
 
   if (normalizedTitle.includes("hearty homestyle")) {
     return {
-      entree: { min: 1, max: 1 },
+      entree_signature_protein: { min: 1, max: 1 },
       sides_salads: { min: 2, max: 2 },
     };
   }
 
-  if (plan.sectionId === "community_buffet_tiers" && normalizedTitle.includes("tier 1")) {
+  if (isCateringBuffetPackage(plan) && normalizedTitle.includes("tier 1")) {
     return {
-      entree: { min: 2, max: 2 },
-      sides: { min: 2, max: 2 },
-      salads: { min: 1, max: 1 },
+      entree_signature_protein: { min: 2, max: 2 },
+      sides_salads: { min: 3, max: 3 },
     };
   }
 
-  if (plan.sectionId === "community_buffet_tiers" && normalizedTitle.includes("tier 2")) {
+  if (isCateringBuffetPackage(plan) && normalizedTitle.includes("tier 2")) {
     return {
-      entree: { min: 2, max: 3 },
-      sides: { min: 3, max: 3 },
-      salads: { min: 2, max: 2 },
+      entree_signature_protein: { min: 2, max: 3 },
+      sides_salads: { min: 5, max: 5 },
     };
   }
 
-  if (plan.constraints && typeof plan.constraints === "object") {
-    const normalizedConstraints = Object.entries(plan.constraints).reduce((acc, [key, value]) => {
-      if (typeof value === "number") {
-        acc[key] = { min: value, max: value };
-      } else if (value && typeof value === "object") {
-        acc[key] = value;
-      }
-      return acc;
-    }, {});
-    if (normalizedConstraints.sides_salads && !normalizedConstraints.sides && !normalizedConstraints.salads) {
-      const combined = normalizedConstraints.sides_salads;
-      delete normalizedConstraints.sides_salads;
-      normalizedConstraints.sides = combined;
-    }
-    return normalizedConstraints;
-  }
   return null;
 };
-
-const toTitleCase = (value) =>
-  String(value || "")
-    .split(" ")
-    .filter(Boolean)
-    .map((word) => word[0]?.toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ");
 
 const toMatchText = (value) =>
   String(value || "")
@@ -129,96 +139,59 @@ export const getSelectionCategoryKeyFromText = (value) => {
   const lower = toMatchText(value);
   if (lower.includes("passed")) return "passed";
   if (lower.includes("starter")) return "starter";
+  if (lower.includes("entree") && lower.includes("signature protein")) return "entree_signature_protein";
+  if (lower.includes("side") && lower.includes("salad")) return "sides_salads";
+  if (lower.includes("signature protein") || lower.includes("protein")) return "signature_protein";
   if (lower.includes("salad")) return "salads";
   if (lower.includes("side")) return "sides";
-  if (lower.includes("entree") || lower.includes("protein")) return "entree";
+  if (lower.includes("entree")) return "entree";
   return null;
 };
 
-const parseCommunityPackageDetails = (details) => {
-  const joined = (details || []).join(" ").trim();
-  if (!joined) return [];
-
-  const cleaned = joined.replace(/^includes\s*/i, "");
-  if (cleaned.includes("+")) {
-    return cleaned
-      .split("+")
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .map((part) => {
-        const lower = part.toLowerCase();
-        if (/^\d+\s+/.test(lower)) return `Select ${toTitleCase(part)}`;
-        return toTitleCase(part);
-      });
-  }
-  if (cleaned.includes(",")) {
-    return cleaned
-      .split(",")
-      .map((part) => toTitleCase(part.trim()))
-      .filter(Boolean);
-  }
-  return [toTitleCase(cleaned)];
-};
-
-const getCommunityPackageDetails = (plan) => {
+const getCateringPackageDetails = (plan) => {
   if (!plan) return [];
   const normalizedTitle = String(plan.title || "").toLowerCase();
-  if (normalizedTitle.includes("hearty homestyle")) {
-    return ["1 Entree/Protein", "2 Side/Salad", "Bread"];
+  const filteredDetails = filterGeneratedPackageDetails(plan.details, {
+    catalogKey: "catering",
+    selectionMode: plan.selectionMode || "menu_groups",
+  });
+  if (filteredDetails.length) {
+    return filteredDetails;
   }
-  return parseCommunityPackageDetails(plan.details);
+  if (normalizedTitle.includes("hearty homestyle")) {
+    return ["Bread"];
+  }
+  if (isCateringBuffetPackage(plan)) {
+    return ["Bread"];
+  }
+  return [];
 };
 
-export const getDisplayPlanDetails = (serviceKey, plan, communityLimits) => {
+export const getDisplayPlanDetails = (serviceKey, plan, cateringLimits) => {
   if (!plan) return [];
-  if (serviceKey === "formal" && plan.level === "package") {
-    if (plan.id === "formal:3-course") {
-      return ["2 Passed Appetizers", "1 Starter", "1 or 2 Entrees", "Bread"];
+  const selectionGroupDetails = getPackageSelectionGroupDetails(plan);
+  const mergeDetails = (details) =>
+    [...(Array.isArray(details) ? details : []), ...selectionGroupDetails].filter(
+      (detail, index, rows) => detail && rows.indexOf(detail) === index
+    );
+  if (serviceKey === "formal") {
+    if (Array.isArray(plan.details) && plan.details.length) {
+      return mergeDetails(plan.details);
     }
-    if (plan.id === "formal:2-course") {
-      return ["1 Starter", "1 Entree", "Bread"];
+    if (getPlanId(plan) === "formal:3-course") {
+      return mergeDetails(["2 Passed Appetizers", "1 Starter", "1 or 2 Entrees", "Bread"]);
+    }
+    if (getPlanId(plan) === "formal:2-course") {
+      return mergeDetails(["1 Starter", "1 Entree", "Bread"]);
     }
   }
-  if (serviceKey === "community" && plan.level === "package") {
-    return getCommunityPackageDetails(plan);
+  if (serviceKey !== "catering") return mergeDetails(plan.details || []);
+  const fixedDetails = getCateringPackageDetails(plan);
+  if (plan.selectionMode === "menu_groups") {
+    const constraintDetails = buildCateringConstraintDetails(cateringLimits || plan.constraints);
+    return mergeDetails([...constraintDetails, ...fixedDetails]);
   }
-  if (serviceKey !== "community" || plan.level !== "tier") return plan.details || [];
-
-  const normalizedTierTitle = String(plan.title || "").toLowerCase();
-  if (plan.sectionId === "community_buffet_tiers" && normalizedTierTitle.includes("tier 1")) {
-    return ["2 Entrees/Protiens", "2 Sides", "1 Salad", "Bread"];
-  }
-  if (plan.sectionId === "community_buffet_tiers" && normalizedTierTitle.includes("tier 2")) {
-    return ["2-3 Entrees/Protiens", "3 Sides", "2 Salads", "Bread"];
-  }
-
-  const details = [];
-  const toCommunityCountDetail = (limits, pluralLabel) => {
-    if (!limits?.max) return null;
-    const min = limits?.min || 0;
-    const max = limits.max;
-    const singularLabel = pluralLabel.replace(/s$/i, "");
-    if (min && min === max) return `${max} ${max === 1 ? singularLabel : pluralLabel}`;
-    if (min && min < max) return `${min}-${max} ${pluralLabel}`;
-    return `${max} ${pluralLabel}`;
-  };
-
-  if (communityLimits?.entree?.max) {
-    details.push(toCommunityCountDetail(communityLimits.entree, "entrees"));
-  }
-
-  const sideDetail = toCommunityCountDetail(communityLimits?.sides, "sides");
-  if (sideDetail) details.push(sideDetail);
-  const saladDetail = toCommunityCountDetail(communityLimits?.salads, "salads");
-  if (saladDetail) details.push(saladDetail);
-
-  if (!communityLimits?.sides && !communityLimits?.salads && communityLimits?.sides_salads?.max) {
-    const combined = toCommunityCountDetail(communityLimits.sides_salads, "sides/salads");
-    if (combined) details.push(combined);
-  }
-  details.push("bread");
-
-  return details.length ? details : plan.details || [];
+  return mergeDetails(fixedDetails);
 };
 
 export const normalizeSizeOption = (option) => {
@@ -247,11 +220,73 @@ export const getDisplayGroupTitle = (serviceKey, group) => {
   return map[group.groupKey] || group.title;
 };
 
-const getApprovedFormalPlans = (plans) => (plans || []).filter((plan) => plan.id !== "formal:2-course");
+const isPlanActive = (plan) =>
+  Boolean(plan) &&
+  plan.isActive !== false;
+
+const getSectionPackages = (section) => {
+  if (!section || typeof section !== "object") return [];
+
+  if (section.type === "packages" && Array.isArray(section.packages)) {
+    return section.packages
+      .filter((pkg) => pkg && typeof pkg === "object")
+      .map((pkg) => ({
+        planId: pkg.planId || null,
+        sectionId: section.sectionId || null,
+        sectionTitle: section.title || "",
+        title: pkg.title || section.title || "",
+        price: pkg.price || "",
+        details: Array.isArray(pkg.details) ? pkg.details : [],
+        constraints: pkg.constraints || null,
+        selectionMode: pkg.selectionMode || "menu_groups",
+        selectionGroups: Array.isArray(pkg.selectionGroups) ? pkg.selectionGroups : [],
+        isActive: pkg.isActive,
+        priceMeta: pkg.priceMeta || null,
+      }));
+  }
+
+  if (section.type === "package" && section.title) {
+    return [
+      {
+        planId: section.planId || null,
+        sectionId: section.sectionId || null,
+        sectionTitle: section.title || "",
+        title: section.title,
+        price: section.price || "",
+        details: Array.isArray(section.details) ? section.details : [],
+        constraints: section.constraints || null,
+        selectionMode: section.selectionMode || "menu_groups",
+        selectionGroups: Array.isArray(section.selectionGroups) ? section.selectionGroups : [],
+        isActive: section.isActive,
+        priceMeta: section.priceMeta || null,
+      },
+    ];
+  }
+
+  if (section.type === "tiers" && Array.isArray(section.tiers)) {
+    return section.tiers
+      .filter((tier) => tier && typeof tier === "object")
+      .map((tier) => ({
+        planId: tier.planId || null,
+        sectionId: section.sectionId || null,
+        sectionTitle: section.title || "",
+        title: tier.tierTitle || "",
+        price: tier.price || "",
+        details: Array.isArray(tier.bullets) ? tier.bullets : [],
+        constraints: tier.constraints || null,
+        selectionMode: tier.selectionMode || "menu_groups",
+        selectionGroups: Array.isArray(tier.selectionGroups) ? tier.selectionGroups : [],
+        isActive: tier.isActive,
+        priceMeta: tier.priceMeta || null,
+      }));
+  }
+
+  return [];
+};
 
 export const buildServicePlanOptions = (serviceKey, menu, formalPlanOptions) => {
   if (serviceKey === "formal") {
-    return getApprovedFormalPlans(formalPlanOptions);
+    return (formalPlanOptions || []).filter(isPlanActive);
   }
 
   const serviceMenu = menu[serviceKey];
@@ -259,37 +294,51 @@ export const buildServicePlanOptions = (serviceKey, menu, formalPlanOptions) => 
 
   const plans = [];
   serviceMenu.sections.forEach((section) => {
-    if (section.type === "package" && section.title) {
+    getSectionPackages(section).forEach((pkg) => {
+      if (pkg.isActive === false) {
+        return;
+      }
       plans.push({
-        id: `package:${section.title}`,
-        level: "package",
-        sectionId: section.sectionId || null,
-        title: section.title,
-        price: section.price || "",
-        details: section.description ? [section.description] : [],
-        constraints: section.constraints || null,
+        id: pkg.planId || `package:${pkg.sectionTitle || pkg.title}`,
+        planId: pkg.planId || null,
+        sectionId: pkg.sectionId || null,
+        sectionTitle: pkg.sectionTitle || null,
+        title: pkg.title,
+        price: pkg.price || "",
+        details: Array.isArray(pkg.details) ? pkg.details : [],
+        constraints: pkg.constraints || null,
+        selectionMode: pkg.selectionMode || "menu_groups",
+        selectionGroups: Array.isArray(pkg.selectionGroups) ? pkg.selectionGroups : [],
+        isActive: pkg.isActive,
+        priceMeta: pkg.priceMeta || null,
       });
-      return;
-    }
-
-    if (section.type === "tiers" && Array.isArray(section.tiers)) {
-      section.tiers.forEach((tier) => {
-        plans.push({
-          id: `tier:${section.title}:${tier.tierTitle}`,
-          level: "tier",
-          sectionId: section.sectionId || null,
-          courseType: section.courseType || null,
-          sectionTitle: section.title,
-          title: tier.tierTitle,
-          price: tier.price || "",
-          details: tier.bullets || [],
-          constraints: tier.constraints || null,
-        });
-      });
-    }
+    });
   });
 
   return plans;
+};
+
+export const buildPackageSelectionItemGroups = (plan) => {
+  if (!plan || !Array.isArray(plan.selectionGroups)) return [];
+
+  return plan.selectionGroups
+    .filter((group) => group && typeof group === "object")
+    .map((group) => {
+      const items = (group.options || [])
+        .map((option) => ({
+          id: option.optionKey || option.label || null,
+          name: option.label || option.optionLabel || "",
+          sizeOptions: [],
+        }))
+        .filter((item) => item.name);
+
+      return {
+        title: group.title || group.groupTitle || "Options",
+        groupKey: group.groupKey || group.menuGroupKey || "other",
+        items,
+      };
+    })
+    .filter((group) => group.items.length);
 };
 
 const toCatalogTrayPrices = (item) => {
@@ -432,7 +481,7 @@ export const buildServiceItemGroups = (serviceKey, menu, menuOptions) => {
     }
 
     if (section.type === "tiers" && Array.isArray(section.tiers)) {
-      if (serviceKey === "community") return;
+      if (serviceKey === "catering") return;
       const sectionItems = [];
       section.tiers.forEach((tier) => {
         const bulletItems = Array.isArray(tier?.bulletItems) ? tier.bulletItems : [];
@@ -453,8 +502,19 @@ export const buildServiceItemGroups = (serviceKey, menu, menuOptions) => {
       return;
     }
 
+    if (section.type === "packages" && Array.isArray(section.packages)) {
+      if (serviceKey === "catering") return;
+      const packageItems = section.packages
+        .map((pkg) => ({ id: pkg?.planId || null, name: pkg?.title || "", sizeOptions: [] }))
+        .filter((pkg) => pkg.name && pkg.name !== "Three-Course Dinner Pricing");
+      if (packageItems.length) {
+        addGroup("Packages", packageItems, "package");
+      }
+      return;
+    }
+
     if (section.type === "package" && section.title) {
-      if (serviceKey === "community" || section.title === "Three-Course Dinner Pricing") return;
+      if (serviceKey === "catering" || section.title === "Three-Course Dinner Pricing") return;
       addGroup("Packages", [{ id: null, name: section.title, sizeOptions: [] }], "package");
     }
   });
@@ -462,12 +522,9 @@ export const buildServiceItemGroups = (serviceKey, menu, menuOptions) => {
   return groups;
 };
 
-export const isCommunityTacoBarPlan = (plan) =>
-  Boolean(plan && plan.level === "package" && String(plan.title || "").toLowerCase().includes("taco bar"));
-
 export const getPlanDisplayTitle = (serviceKey, plan) => {
   const title = String(plan?.title || "");
-  if (serviceKey === "community") {
+  if (serviceKey === "catering") {
     return title.replace(/\s*\([^)]*\)\s*/g, "").trim();
   }
   return title;
@@ -475,7 +532,7 @@ export const getPlanDisplayTitle = (serviceKey, plan) => {
 
 export const getPlanSectionDisplayTitle = (serviceKey, sectionTitle) => {
   const title = String(sectionTitle || "");
-  if (serviceKey === "community") {
+  if (serviceKey === "catering") {
     return title.replace(/Event Catering - Buffet Style/i, "Event/Crew Catering - Buffet Style");
   }
   return title;

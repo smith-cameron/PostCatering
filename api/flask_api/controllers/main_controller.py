@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 
+import pymysql
 from flask import jsonify, request, send_from_directory, session
 from werkzeug.utils import secure_filename
 
@@ -13,6 +14,7 @@ from flask_api.services.admin_audit_service import AdminAuditService
 from flask_api.services.admin_auth_service import AdminAuthService
 from flask_api.services.admin_media_service import AdminMediaService
 from flask_api.services.admin_menu_service import AdminMenuService
+from flask_api.services.admin_service_plan_service import AdminServicePlanService
 from flask_api.services.gallery_service import GalleryService
 from flask_api.services.inquiry_service import InquiryService
 from flask_api.services.menu_service import MenuService
@@ -87,6 +89,39 @@ def _sanitize_upload_filename(filename):
         candidate = f"{stem}-{timestamp}-{counter}{ext.lower()}"
         counter += 1
     return candidate
+
+
+def _find_service_plan_section(sections, section_id):
+    try:
+        normalized_section_id = int(section_id)
+    except (TypeError, ValueError):
+        return None
+
+    for section in sections or []:
+        try:
+            if int(section.get("id") or 0) == normalized_section_id:
+                return section
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _serialize_service_plan_order(section):
+    return [
+        {
+            "id": row.get("id"),
+            "plan_key": row.get("plan_key"),
+            "sort_order": row.get("sort_order"),
+        }
+        for row in (section or {}).get("plans") or []
+    ]
+
+
+def _service_plan_schema_error_response(exc):
+    if not AdminServicePlanService._is_missing_service_plan_tables_error(exc):
+        return None
+    response_body, status_code = AdminServicePlanService._missing_tables_response()
+    return jsonify(response_body), status_code
 
 
 @app.route("/api/health", methods=["GET"])
@@ -410,6 +445,143 @@ def admin_menu_item_detail(item_id, admin_user=None):
             after=after,
         )
     return jsonify(response_body), status_code
+
+
+@app.route("/api/admin/service-plans", methods=["GET", "POST", "OPTIONS"])
+@_require_admin_auth
+def admin_service_plans(admin_user=None):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    try:
+        if request.method == "GET":
+            response_body, status_code = AdminServicePlanService.list_service_plan_sections(
+                catalog_key=request.args.get("catalog_key", ""),
+                include_inactive=_bool_query_param("include_inactive", default=True),
+            )
+            return jsonify(response_body), status_code
+
+        response_body, status_code = AdminServicePlanService.create_service_plan(request.get_json(silent=True) or {})
+        created_plan = response_body.get("plan") if isinstance(response_body, dict) else None
+        if status_code < 400 and created_plan:
+            AdminAuditService.log_change(
+                admin_user_id=admin_user["id"],
+                action="create",
+                entity_type="service_plan",
+                entity_id=created_plan.get("id"),
+                change_summary=f"Created service plan '{created_plan.get('title', '')}'",
+                before=None,
+                after=created_plan,
+            )
+        return jsonify(response_body), status_code
+    except pymysql.err.ProgrammingError as exc:
+        schema_response = _service_plan_schema_error_response(exc)
+        if schema_response is not None:
+            return schema_response
+        raise
+
+
+@app.route("/api/admin/service-plans/<int:plan_id>", methods=["GET", "PATCH", "DELETE", "OPTIONS"])
+@_require_admin_auth
+def admin_service_plan_detail(plan_id, admin_user=None):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    try:
+        if request.method == "GET":
+            plan = AdminServicePlanService.get_service_plan_detail(plan_id)
+            if not plan:
+                return jsonify({"error": "Service plan not found."}), 404
+            return jsonify({"plan": plan}), 200
+
+        before = AdminServicePlanService.get_service_plan_detail(plan_id)
+        if not before:
+            return jsonify({"error": "Service plan not found."}), 404
+
+        if request.method == "DELETE":
+            response_body, status_code = AdminServicePlanService.delete_service_plan(
+                plan_id,
+                hard_delete=_bool_query_param("hard_delete", default=False),
+            )
+            if status_code < 400:
+                AdminAuditService.log_change(
+                    admin_user_id=admin_user["id"],
+                    action="delete",
+                    entity_type="service_plan",
+                    entity_id=plan_id,
+                    change_summary=f"Deleted service plan '{before.get('title', '')}'",
+                    before=before,
+                    after=None,
+                )
+            return jsonify(response_body), status_code
+
+        response_body, status_code = AdminServicePlanService.update_service_plan(
+            plan_id, request.get_json(silent=True) or {}
+        )
+        if status_code < 400:
+            after = response_body.get("plan")
+            AdminAuditService.log_change(
+                admin_user_id=admin_user["id"],
+                action="update",
+                entity_type="service_plan",
+                entity_id=plan_id,
+                change_summary=f"Updated service plan '{after.get('title', '')}'",
+                before=before,
+                after=after,
+            )
+        return jsonify(response_body), status_code
+    except pymysql.err.ProgrammingError as exc:
+        schema_response = _service_plan_schema_error_response(exc)
+        if schema_response is not None:
+            return schema_response
+        raise
+
+
+@app.route("/api/admin/service-plans/reorder", methods=["PATCH", "OPTIONS"])
+@_require_admin_auth
+def admin_service_plan_reorder(admin_user=None):
+    if request.method == "OPTIONS":
+        return ("", 204)
+
+    try:
+        request_body = request.get_json(silent=True) or {}
+        section_id = request_body.get("section_id")
+        catalog_key = request_body.get("catalog_key", "")
+
+        before_response, _before_status = AdminServicePlanService.list_service_plan_sections(
+            catalog_key=catalog_key,
+            include_inactive=True,
+        )
+        before_section = _find_service_plan_section(before_response.get("sections"), section_id)
+
+        response_body, status_code = AdminServicePlanService.reorder_service_plans(
+            section_id,
+            request_body.get("ordered_plan_ids"),
+        )
+        if status_code < 400:
+            after_response, _after_status = AdminServicePlanService.list_service_plan_sections(
+                catalog_key=catalog_key,
+                include_inactive=True,
+            )
+            after_section = _find_service_plan_section(after_response.get("sections"), section_id)
+            section_title = (
+                (after_section or {}).get("title") or (before_section or {}).get("title") or f"section {section_id}"
+            )
+            AdminAuditService.log_change(
+                admin_user_id=admin_user["id"],
+                action="reorder",
+                entity_type="service_plan",
+                entity_id=section_id,
+                change_summary=f"Reordered service plans for '{section_title}'",
+                before=_serialize_service_plan_order(before_section),
+                after=_serialize_service_plan_order(after_section),
+            )
+        return jsonify(response_body), status_code
+    except pymysql.err.ProgrammingError as exc:
+        schema_response = _service_plan_schema_error_response(exc)
+        if schema_response is not None:
+            return schema_response
+        raise
 
 
 @app.route("/api/admin/media", methods=["GET", "OPTIONS"])
