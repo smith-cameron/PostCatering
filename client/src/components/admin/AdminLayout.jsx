@@ -2,6 +2,7 @@ import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Alert, Button, Form, Modal, Nav, Spinner } from "react-bootstrap";
 import { Link, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import Context from "../../context";
+import ThemeToggleButton from "../ThemeToggleButton";
 import PasswordVisibilityButton from "./PasswordVisibilityButton";
 import { getAdminSession, logoutAdminSession, updateAdminProfile } from "./adminApi";
 
@@ -266,13 +267,10 @@ const AdminLayout = () => {
               </svg>
             </button>
           </p>
-          <Form.Check
-            className="admin-theme-toggle mt-2"
-            type="switch"
-            id="admin-dark-mode-toggle"
-            label="Dark Mode"
-            checked={isDarkTheme}
-            onChange={(event) => setThemeMode?.(event.target.checked ? "dark" : "light")}
+          <ThemeToggleButton
+            isDarkTheme={isDarkTheme}
+            onToggle={() => setThemeMode?.(isDarkTheme ? "light" : "dark")}
+            className="mt-2"
           />
         </div>
         <div className="admin-header-actions">

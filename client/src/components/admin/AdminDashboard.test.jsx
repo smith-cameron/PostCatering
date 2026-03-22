@@ -216,7 +216,7 @@ describe("AdminDashboard", () => {
     expect(requests.some((requestUrl) => requestUrl.startsWith("/api/admin/menu/sections?"))).toBe(false);
   });
 
-  it("uses the shared theme setter for the dark mode switch", async () => {
+  it("uses the shared theme setter for the theme toggle", async () => {
     const setThemeMode = vi.fn();
 
     vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
@@ -240,7 +240,7 @@ describe("AdminDashboard", () => {
     renderAdminRoutes({ contextValue: { isDarkTheme: false, setThemeMode } });
 
     await screen.findByText("Menu Operations");
-    fireEvent.click(screen.getByRole("checkbox", { name: "Dark Mode" }));
+    fireEvent.click(screen.getByRole("button", { name: "Switch to dark mode" }));
     expect(setThemeMode).toHaveBeenCalledWith("dark");
   });
 
@@ -368,6 +368,10 @@ describe("AdminDashboard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add New Admin Account" }));
 
     await screen.findByText("Create Admin Account");
+    expect(screen.queryByText(/tier 0 owner/i)).not.toBeInTheDocument();
+    expect(screen.getByText("tier 1 manager or tier 2 operator")).toBeInTheDocument();
+    const accessTierSelect = screen.getByLabelText("Access Tier");
+    expect(within(accessTierSelect).queryByRole("option", { name: /tier 0/i })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
     fireEvent.click(screen.getByLabelText("Show password"));
     expect(screen.getByLabelText("Password")).toHaveAttribute("type", "text");
@@ -656,6 +660,8 @@ describe("AdminDashboard", () => {
     const ownerCell = await within(manageDialog).findByText("Owner Two");
     const ownerRow = ownerCell.closest("tr");
     expect(ownerRow).not.toBeNull();
+    expect(within(ownerRow).getByRole("combobox", { name: /Access tier for Owner Two/i })).toHaveTextContent("Protected");
+    expect(within(ownerRow).queryByText(/tier 0/i)).not.toBeInTheDocument();
     expect(within(ownerRow).queryByRole("button", { name: /Set .* Owner Two/i })).not.toBeInTheDocument();
     expect(within(ownerRow).queryByRole("button", { name: "Delete Owner Two" })).not.toBeInTheDocument();
   });

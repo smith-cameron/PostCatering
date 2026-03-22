@@ -1,7 +1,8 @@
-import { Fragment, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { Alert, Badge, Button, Card, Col, Form, Row, Spinner, Table } from "react-bootstrap";
+import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Button, Card, Col, Form, Row, Spinner, Table } from "react-bootstrap";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import Context from "../../context";
+import ThemeToggleButton from "../ThemeToggleButton";
 import {
   createAdminServicePlan,
   deleteAdminServicePlan,
@@ -19,6 +20,9 @@ import {
   buildAdminChoicePayload,
   buildAdminChoiceRows,
   buildEmptyAdminChoiceRow,
+  sanitizeAdminChoiceOptionLabels,
+  sanitizeAdminPlanForm,
+  validateAdminPlanForm,
 } from "../../utils/servicePackageAdminUtils";
 import ConfirmActionModal from "./ConfirmActionModal";
 import ConfirmReviewList from "./ConfirmReviewList";
@@ -28,7 +32,7 @@ const EMPTY_PLAN_FORM = {
   sectionId: "",
   title: "",
   price: "",
-  isActive: true,
+  isActive: false,
   choiceRows: [],
   details: [],
 };
@@ -40,14 +44,27 @@ const EMPTY_EDITOR_FIELD_ERRORS = {
   choiceRows: "",
 };
 
+const EMPTY_CHOICE_ROW_FIELD_ERRORS = Object.freeze({
+  message: "",
+  source_type: "",
+  selection_key: "",
+  group_title: "",
+  min_select: "",
+  max_select: "",
+  options_text: "",
+});
+
 const EMPTY_CONFIRM_STATE = {
   show: false,
   title: "",
   body: "",
   confirmLabel: "Confirm",
   confirmVariant: "secondary",
+  extraActionLabel: "",
+  extraActionVariant: "outline-secondary",
   validationMessage: "",
   action: null,
+  extraAction: null,
 };
 
 const buildEmptyPlanForm = (sectionId = "") => ({
@@ -56,33 +73,55 @@ const buildEmptyPlanForm = (sectionId = "") => ({
 });
 
 const hasEditorValidationErrors = (fieldErrors) => Object.values(fieldErrors || {}).some(Boolean);
+const hasChoiceRowValidationErrors = (rowErrors = []) =>
+  (Array.isArray(rowErrors) ? rowErrors : []).some((row) => Object.values(row || {}).some(Boolean));
 
-const mapPlanValidationErrors = (message) => {
+const mapPlanValidationErrors = (message, apiFieldErrors = null) => {
+  const mapped = { ...EMPTY_EDITOR_FIELD_ERRORS };
+  const normalizedApiFieldErrors =
+    apiFieldErrors && typeof apiFieldErrors === "object" ? apiFieldErrors : {};
+
+  if (normalizedApiFieldErrors.title) {
+    mapped.title = String(normalizedApiFieldErrors.title || "").trim();
+  }
+  if (normalizedApiFieldErrors.price) {
+    mapped.price = String(normalizedApiFieldErrors.price || "").trim();
+  }
+  if (normalizedApiFieldErrors.details) {
+    mapped.details = String(normalizedApiFieldErrors.details || "").trim();
+  }
+  if (normalizedApiFieldErrors.choice_rows) {
+    mapped.choiceRows = String(normalizedApiFieldErrors.choice_rows || "").trim();
+  }
+  if (hasEditorValidationErrors(mapped)) {
+    return mapped;
+  }
+
   const normalized = String(message || "").toLowerCase();
-  const mapped = {};
+  const fallbackMapped = {};
   if (!normalized) return mapped;
 
   if (normalized.includes("title")) {
-    mapped.title = String(message || "Invalid package title.");
+    fallbackMapped.title = String(message || "Invalid package title.");
   }
   if (normalized.includes("price")) {
-    mapped.price = String(message || "Invalid package price.");
+    fallbackMapped.price = String(message || "Invalid package price.");
   }
   if (
     normalized.includes("included item") ||
     normalized.includes("included items") ||
     normalized.includes("fixed inclusions")
   ) {
-    mapped.details = String(message || "Invalid included items.");
+    fallbackMapped.details = String(message || "Invalid included items.");
   }
   if (
     normalized.includes("customer choice") ||
     normalized.includes("customer choices") ||
     normalized.includes("customer chooses")
   ) {
-    mapped.choiceRows = String(message || "Invalid customer choices.");
+    fallbackMapped.choiceRows = String(message || "Invalid customer choices.");
   }
-  return mapped;
+  return { ...mapped, ...fallbackMapped };
 };
 
 const toReviewValue = (value) => {
@@ -98,36 +137,6 @@ const toChoiceCountLabel = (row) => {
   if (min) return `Choose at least ${min}`;
   if (max) return `Choose up to ${max}`;
   return "Optional";
-};
-
-const buildChoiceValidationErrors = (choiceRows = []) => {
-  const rows = Array.isArray(choiceRows) ? choiceRows : [];
-  if (
-    rows.some(
-      (row) =>
-        String(row?.source_type || "") === "custom_options" && !String(row?.group_title || "").trim()
-    )
-  ) {
-    return "Each custom customer choice needs a label.";
-  }
-  if (
-    rows.some(
-      (row) =>
-        String(row?.source_type || "") === "custom_options" && !String(row?.options_text || "").trim()
-    )
-  ) {
-    return "Each custom customer choice needs at least one option.";
-  }
-  if (
-    rows.some(
-      (row) =>
-        String(row?.source_type || "menu_group") !== "custom_options" &&
-        !String(row?.selection_key || "").trim()
-    )
-  ) {
-    return "Select a menu family for each menu-based customer choice.";
-  }
-  return "";
 };
 
 const sortSections = (sections = []) =>
@@ -185,6 +194,11 @@ const buildSubmitPayload = (form, catalogKey = "") => {
   };
 };
 
+const getCatalogLabel = (catalogKey = "") => {
+  if (catalogKey === "formal") return "Formal";
+  return "Catering";
+};
+
 const AdminServicePlansPage = ({
   embedded = false,
   adminUser: externalAdminUser = null,
@@ -203,6 +217,7 @@ const AdminServicePlansPage = ({
   const [editorError, setEditorError] = useState("");
   const [saving, setSaving] = useState(false);
   const [busyPlanId, setBusyPlanId] = useState(null);
+  const [statusToggleBusy, setStatusToggleBusy] = useState({});
   const [draggingPlanId, setDraggingPlanId] = useState(null);
   const [draggingSectionId, setDraggingSectionId] = useState(null);
   const [dragOverPlanId, setDragOverPlanId] = useState(null);
@@ -211,9 +226,11 @@ const AdminServicePlansPage = ({
   const [planFormOriginal, setPlanFormOriginal] = useState(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editorFieldErrors, setEditorFieldErrors] = useState(EMPTY_EDITOR_FIELD_ERRORS);
+  const [editorChoiceRowErrors, setEditorChoiceRowErrors] = useState([]);
   const [editorValidationLocked, setEditorValidationLocked] = useState(false);
   const [confirmState, setConfirmState] = useState(EMPTY_CONFIRM_STATE);
   const [confirmBusy, setConfirmBusy] = useState(false);
+  const editorFormRef = useRef(null);
   const adminUser = externalAdminUser || internalAdminUser;
   const sessionLoading = hasExternalSession ? externalSessionLoading : internalSessionLoading;
 
@@ -225,9 +242,17 @@ const AdminServicePlansPage = ({
     () => editableSections.find((section) => Number(section?.id) === Number(planForm.sectionId)) || null,
     [editableSections, planForm.sectionId]
   );
+  const activeCatalogLabel = useMemo(
+    () => getCatalogLabel(selectedSection?.catalog_key || catalogKey),
+    [catalogKey, selectedSection]
+  );
   const constraintOptions = useMemo(
     () => getPackageConstraintOptions(selectedSection?.catalog_key || catalogKey),
     [catalogKey, selectedSection]
+  );
+  const hasCustomChoiceRows = useMemo(
+    () => (Array.isArray(planForm.choiceRows) ? planForm.choiceRows : []).some((row) => row?.source_type === "custom_options"),
+    [planForm.choiceRows]
   );
 
   const loadSections = useCallback(async (nextCatalogKey = catalogKey) => {
@@ -281,6 +306,7 @@ const AdminServicePlansPage = ({
     setIsEditorOpen(false);
     setEditorError("");
     setEditorFieldErrors(EMPTY_EDITOR_FIELD_ERRORS);
+    setEditorChoiceRowErrors([]);
     setEditorValidationLocked(false);
     setConfirmState(EMPTY_CONFIRM_STATE);
     setPlanFormOriginal(null);
@@ -291,6 +317,7 @@ const AdminServicePlansPage = ({
     setEditorError("");
     if (!nextFields.length) {
       setEditorFieldErrors(EMPTY_EDITOR_FIELD_ERRORS);
+      setEditorChoiceRowErrors([]);
       setEditorValidationLocked(false);
       return;
     }
@@ -301,12 +328,31 @@ const AdminServicePlansPage = ({
       });
       return next;
     });
+    if (nextFields.includes("choiceRows")) {
+      setEditorChoiceRowErrors([]);
+    }
     setEditorValidationLocked(false);
   }, []);
 
-  const queueConfirm = useCallback((title, body, confirmLabel, action) => {
+  const focusFirstInvalidField = useCallback(() => {
+    window.setTimeout(() => {
+      const invalidField = editorFormRef.current?.querySelector(".is-invalid");
+      if (invalidField && typeof invalidField.focus === "function") {
+        invalidField.focus();
+      }
+    }, 0);
+  }, []);
+
+  const resolveSectionForForm = useCallback(
+    (formDraft) =>
+      editableSections.find((section) => Number(section?.id) === Number(formDraft?.sectionId)) || null,
+    [editableSections]
+  );
+
+  const queueConfirm = useCallback((title, body, confirmLabel, action, options = {}) => {
     setEditorError("");
     setConfirmState({
+      ...EMPTY_CONFIRM_STATE,
       show: true,
       title,
       body,
@@ -314,6 +360,7 @@ const AdminServicePlansPage = ({
       confirmVariant: "secondary",
       validationMessage: "",
       action,
+      ...options,
     });
   }, []);
 
@@ -335,6 +382,7 @@ const AdminServicePlansPage = ({
     const nextForm = buildEmptyPlanForm(section?.id || selectedSection?.id || editableSections[0]?.id || "");
     setEditorError("");
     setEditorFieldErrors(EMPTY_EDITOR_FIELD_ERRORS);
+    setEditorChoiceRowErrors([]);
     setEditorValidationLocked(false);
     setConfirmState(EMPTY_CONFIRM_STATE);
     setPlanForm(nextForm);
@@ -346,6 +394,7 @@ const AdminServicePlansPage = ({
     const nextForm = toPlanForm(plan);
     setEditorError("");
     setEditorFieldErrors(EMPTY_EDITOR_FIELD_ERRORS);
+    setEditorChoiceRowErrors([]);
     setEditorValidationLocked(false);
     setConfirmState(EMPTY_CONFIRM_STATE);
     setPlanForm(nextForm);
@@ -357,6 +406,7 @@ const AdminServicePlansPage = ({
     const nextForm = buildEmptyPlanForm(selectedSection?.id || editableSections[0]?.id || "");
     setEditorError("");
     setEditorFieldErrors(EMPTY_EDITOR_FIELD_ERRORS);
+    setEditorChoiceRowErrors([]);
     setEditorValidationLocked(false);
     setConfirmState(EMPTY_CONFIRM_STATE);
     setPlanForm(nextForm);
@@ -366,6 +416,7 @@ const AdminServicePlansPage = ({
   const resetEditor = () => {
     setEditorError("");
     setEditorFieldErrors(EMPTY_EDITOR_FIELD_ERRORS);
+    setEditorChoiceRowErrors([]);
     setEditorValidationLocked(false);
     setConfirmState(EMPTY_CONFIRM_STATE);
     setPlanForm(buildEmptyPlanForm(selectedSection?.id || editableSections[0]?.id || ""));
@@ -400,11 +451,7 @@ const AdminServicePlansPage = ({
     (row) => {
       if (String(row?.source_type || "menu_group") === "custom_options") {
         const groupTitle = String(row?.group_title || "").trim() || "Custom choice";
-        const options = String(row?.options_text || "")
-          .split(/\r?\n|,/)
-          .map((option) => option.trim())
-          .filter(Boolean)
-          .join(", ");
+        const options = sanitizeAdminChoiceOptionLabels(row?.options_text).join(" / ");
         return `${groupTitle} (${toChoiceCountLabel(row)}): ${options || "-"}`;
       }
       const label =
@@ -415,60 +462,70 @@ const AdminServicePlansPage = ({
     [constraintOptions]
   );
 
-  const validatePlanEditor = useCallback(() => {
-    const nextFieldErrors = { ...EMPTY_EDITOR_FIELD_ERRORS };
-    if (!String(planForm.title || "").trim()) {
-      nextFieldErrors.title = "Package title is required.";
-    }
-    const choiceRowError = buildChoiceValidationErrors(planForm.choiceRows);
-    if (choiceRowError) {
-      nextFieldErrors.choiceRows = choiceRowError;
-    }
-    return nextFieldErrors;
-  }, [planForm.choiceRows, planForm.title]);
+  const validatePlanEditor = useCallback(
+    (candidateForm = planForm) =>
+      validateAdminPlanForm(candidateForm, resolveSectionForForm(candidateForm)?.catalog_key || catalogKey),
+    [catalogKey, planForm, resolveSectionForForm]
+  );
 
-  const buildCreateConfirmBody = useCallback(() => {
-    const rows = [
-      { label: "Section", value: selectedSection?.title || "No section selected" },
-      { label: "Title", value: toReviewValue(planForm.title) },
-      { label: "Price Display", value: toReviewValue(planForm.price) },
-      {
-        label: "Included Items",
-        value: (planForm.details || []).map((detail) => String(detail || "").trim()).filter(Boolean).join(" | ") || "-",
-      },
-      {
-        label: "Customer Chooses",
-        value: (planForm.choiceRows || []).map((row) => summarizeChoiceRow(row)).filter(Boolean).join(" | ") || "-",
-      },
-      { label: "Active", value: planForm.isActive ? "Yes" : "No" },
-    ];
+  const buildCreateConfirmBody = useCallback(
+    (formDraft, sectionTitle = selectedSection?.title) => {
+      const rows = [
+        { label: "Section", value: sectionTitle || "No section selected" },
+        { label: "Title", value: toReviewValue(formDraft.title) },
+        { label: "Price Display", value: toReviewValue(formDraft.price) },
+        {
+          label: "Included Items",
+          value:
+            (formDraft.details || [])
+              .map((detail) => String(detail || "").trim())
+              .filter(Boolean)
+              .join(" | ") || "-",
+        },
+        {
+          label: "Customer Chooses",
+          value:
+            (formDraft.choiceRows || [])
+              .map((row) => summarizeChoiceRow(row))
+              .filter(Boolean)
+              .join(" | ") || "-",
+        },
+        { label: "Active", value: formDraft.isActive ? "Yes" : "No" },
+      ];
 
-    return (
-      <div>
-        <p className="mb-2">Create this package with the following details?</p>
-        <ConfirmReviewList rows={rows} />
-      </div>
-    );
-  }, [planForm, selectedSection?.title, summarizeChoiceRow]);
+      return (
+        <div>
+          <p className="mb-2">Create this package with the following details?</p>
+          {!formDraft.isActive ? (
+            <p className="small text-secondary mb-2">
+              New packages start inactive by default. Use Make Active below if this one is ready to publish now.
+            </p>
+          ) : null}
+          <ConfirmReviewList rows={rows} />
+        </div>
+      );
+    },
+    [selectedSection?.title, summarizeChoiceRow]
+  );
 
-  const buildUpdateConfirmBody = useCallback(() => {
-    if (!planFormOriginal) return "Save package changes?";
+  const buildUpdateConfirmBody = useCallback((formDraft, originalForm = planFormOriginal) => {
+    if (!originalForm) return "Save package changes?";
 
     const currentIncludedItems =
-      (planForm.details || []).map((detail) => String(detail || "").trim()).filter(Boolean).join(" | ") || "-";
+      (formDraft.details || []).map((detail) => String(detail || "").trim()).filter(Boolean).join(" | ") || "-";
     const originalIncludedItems =
-      (planFormOriginal.details || []).map((detail) => String(detail || "").trim()).filter(Boolean).join(" | ") || "-";
+      (originalForm.details || []).map((detail) => String(detail || "").trim()).filter(Boolean).join(" | ") || "-";
     const currentChoiceRows =
-      (planForm.choiceRows || []).map((row) => summarizeChoiceRow(row)).filter(Boolean).join(" | ") || "-";
+      (formDraft.choiceRows || []).map((row) => summarizeChoiceRow(row)).filter(Boolean).join(" | ") || "-";
     const originalChoiceRows =
-      (planFormOriginal.choiceRows || []).map((row) => summarizeChoiceRow(row)).filter(Boolean).join(" | ") || "-";
+      (originalForm.choiceRows || []).map((row) => summarizeChoiceRow(row)).filter(Boolean).join(" | ") || "-";
 
     const changes = [];
-    if (String(planForm.title || "").trim() !== String(planFormOriginal.title || "").trim()) {
-      changes.push({ label: "Title", value: toReviewValue(planForm.title) });
+    if (String(formDraft.title || "").trim() !== String(originalForm.title || "").trim()) {
+      changes.push({ label: "Title", value: toReviewValue(formDraft.title) });
     }
-    if (String(planForm.price || "").trim() !== String(planFormOriginal.price || "").trim()) {
-      changes.push({ label: "Price Display", value: toReviewValue(planForm.price) });
+    if (String(formDraft.price || "").trim() !== String(originalForm.price || "").trim()) {
+      changes.push({ label: "Price Display", value: toReviewValue(formDraft.price) });
     }
     if (currentIncludedItems !== originalIncludedItems) {
       changes.push({ label: "Included Items", value: currentIncludedItems });
@@ -476,57 +533,65 @@ const AdminServicePlansPage = ({
     if (currentChoiceRows !== originalChoiceRows) {
       changes.push({ label: "Customer Chooses", value: currentChoiceRows });
     }
-    if (Boolean(planForm.isActive) !== Boolean(planFormOriginal.isActive)) {
-      changes.push({ label: "Active", value: planForm.isActive ? "Yes" : "No" });
+    if (Boolean(formDraft.isActive) !== Boolean(originalForm.isActive)) {
+      changes.push({ label: "Active", value: formDraft.isActive ? "Yes" : "No" });
     }
 
     return <ConfirmReviewList rows={changes} emptyMessage="No field changes detected." />;
-  }, [planForm, planFormOriginal, summarizeChoiceRow]);
+  }, [planFormOriginal, summarizeChoiceRow]);
 
-  const buildUpdateConfirmTitle = useCallback(() => {
-    const packageTitle = String(planForm.title || planFormOriginal?.title || "").trim();
+  const buildUpdateConfirmTitle = useCallback((formDraft, originalForm = planFormOriginal) => {
+    const packageTitle = String(formDraft?.title || originalForm?.title || "").trim();
     return packageTitle ? `Update ${packageTitle}?` : "Update package?";
-  }, [planForm.title, planFormOriginal?.title]);
+  }, [planFormOriginal]);
 
-  const persistPlan = useCallback(async () => {
+  const persistPlan = useCallback(async (formDraft = planForm) => {
     setEditorError("");
     setEditorFieldErrors(EMPTY_EDITOR_FIELD_ERRORS);
-
-    const nextFieldErrors = validatePlanEditor();
-    if (hasEditorValidationErrors(nextFieldErrors)) {
-      setEditorFieldErrors(nextFieldErrors);
-      setEditorValidationLocked(true);
-      throw new Error(Object.values(nextFieldErrors).filter(Boolean).join("\n"));
-    }
-
-    const normalizedCatalogKey = selectedSection?.catalog_key || catalogKey;
-    const payload = buildSubmitPayload(planForm, normalizedCatalogKey);
+    setEditorChoiceRowErrors([]);
+    const draftSection = resolveSectionForForm(formDraft);
+    const normalizedCatalogKey = draftSection?.catalog_key || catalogKey;
+    const payload = buildSubmitPayload(formDraft, normalizedCatalogKey);
     if (!payload.section_id) {
       throw new Error("Select a destination section.");
     }
 
     setSaving(true);
     try {
-      if (planForm.planId) {
-        await updateAdminServicePlan(planForm.planId, payload);
+      if (formDraft.planId) {
+        await updateAdminServicePlan(formDraft.planId, payload);
       } else {
         await createAdminServicePlan(payload);
       }
       await loadSections(catalogKey);
-      setPlanForm(buildEmptyPlanForm(selectedSection?.id || editableSections[0]?.id || ""));
+      setPlanForm(buildEmptyPlanForm(draftSection?.id || editableSections[0]?.id || ""));
       setPlanFormOriginal(null);
       setEditorFieldErrors(EMPTY_EDITOR_FIELD_ERRORS);
+      setEditorChoiceRowErrors([]);
       setEditorValidationLocked(false);
       setIsEditorOpen(false);
     } catch (saveError) {
       const message = saveError.message || "Failed to save service package.";
-      const mappedFieldErrors = mapPlanValidationErrors(message);
+      const mappedFieldErrors = mapPlanValidationErrors(message, saveError.fieldErrors);
+      const sectionError =
+        saveError?.fieldErrors && typeof saveError.fieldErrors === "object"
+          ? String(saveError.fieldErrors.section_id || "").trim()
+          : "";
       if (hasEditorValidationErrors(mappedFieldErrors)) {
-        setEditorFieldErrors((prev) => ({ ...prev, ...mappedFieldErrors }));
-        setEditorValidationLocked(true);
-      } else {
-        setEditorError(message);
+        setEditorFieldErrors(mappedFieldErrors);
+        setEditorChoiceRowErrors([]);
+        setEditorValidationLocked(false);
+        setConfirmState(EMPTY_CONFIRM_STATE);
+        setEditorError(sectionError);
+        focusFirstInvalidField();
+        return;
       }
+      if (sectionError) {
+        setConfirmState(EMPTY_CONFIRM_STATE);
+        setEditorError(sectionError);
+        return;
+      }
+      setEditorError(message);
       throw new Error(message);
     } finally {
       setSaving(false);
@@ -534,11 +599,41 @@ const AdminServicePlansPage = ({
   }, [
     catalogKey,
     editableSections,
+    focusFirstInvalidField,
     loadSections,
     planForm,
-    selectedSection,
-    validatePlanEditor,
+    resolveSectionForForm,
   ]);
+
+  const buildCreateConfirmState = useCallback(
+    function buildCreateConfirmState(formDraft, draftSection) {
+      const normalizedDraft = {
+        ...formDraft,
+        isActive: Boolean(formDraft?.isActive),
+      };
+      const nextIsActive = !normalizedDraft.isActive;
+      return {
+        ...EMPTY_CONFIRM_STATE,
+        show: true,
+        title: "Create package",
+        body: buildCreateConfirmBody(normalizedDraft, draftSection?.title),
+        confirmLabel: "Create",
+        confirmVariant: "secondary",
+        action: () => persistPlan(normalizedDraft),
+        extraActionLabel: normalizedDraft.isActive ? "Keep Inactive" : "Make Active",
+        extraActionVariant: "outline-secondary",
+        extraAction: () => {
+          const toggledDraft = {
+            ...normalizedDraft,
+            isActive: nextIsActive,
+          };
+          setPlanForm(toggledDraft);
+          setConfirmState(buildCreateConfirmState(toggledDraft, draftSection));
+        },
+      };
+    },
+    [buildCreateConfirmBody, persistPlan]
+  );
 
   const runConfirmedAction = useCallback(async () => {
     if (!confirmState.action) return;
@@ -558,30 +653,95 @@ const AdminServicePlansPage = ({
 
   const handlePlanSubmit = (event) => {
     event.preventDefault();
-    if (editorValidationLocked) return;
-    if (planForm.planId) {
-      queueConfirm(buildUpdateConfirmTitle(), buildUpdateConfirmBody(), "Update", persistPlan);
+    const { sanitizedForm, fieldErrors, choiceRowErrors } = validatePlanEditor(planForm);
+    const normalizedForm = sanitizeAdminPlanForm(
+      sanitizedForm,
+      resolveSectionForForm(sanitizedForm)?.catalog_key || catalogKey
+    );
+    const draftSection = resolveSectionForForm(normalizedForm);
+
+    setPlanForm(normalizedForm);
+    setEditorError("");
+    setEditorFieldErrors(fieldErrors);
+    setEditorChoiceRowErrors(choiceRowErrors);
+    setEditorValidationLocked(false);
+
+    if (hasEditorValidationErrors(fieldErrors) || hasChoiceRowValidationErrors(choiceRowErrors)) {
+      focusFirstInvalidField();
       return;
     }
-    queueConfirm("Create package", buildCreateConfirmBody(), "Create", persistPlan);
+
+    if (!draftSection) {
+      setEditorError("Select a destination section.");
+      return;
+    }
+
+    if (normalizedForm.planId) {
+      queueConfirm(
+        buildUpdateConfirmTitle(normalizedForm, planFormOriginal),
+        buildUpdateConfirmBody(normalizedForm, planFormOriginal),
+        "Update",
+        () => persistPlan(normalizedForm)
+      );
+      return;
+    }
+    setConfirmState(buildCreateConfirmState(normalizedForm, draftSection));
   };
 
   const handleDeletePlan = async (plan) => {
     if (!plan?.id) return;
-    const confirmed = window.confirm(`Delete "${plan.title}"? This will deactivate it from the public catalog.`);
-    if (!confirmed) return;
-
-    setBusyPlanId(plan.id);
-    try {
-      await deleteAdminServicePlan(plan.id);
-      await loadSections(catalogKey);
-      if (Number(planForm.planId) === Number(plan.id)) {
-        resetEditor();
+    const packageTitle = String(plan.title || "this package").trim() || "this package";
+    queueConfirm(
+      `Delete ${packageTitle}?`,
+      "This permanently removes the package from both the admin table and the public catalog.",
+      "Delete",
+      async () => {
+        setBusyPlanId(plan.id);
+        try {
+          await deleteAdminServicePlan(plan.id, { hardDelete: true });
+          await loadSections(catalogKey);
+          if (Number(planForm.planId) === Number(plan.id)) {
+            resetEditor();
+          }
+        } catch (deleteError) {
+          setError(deleteError.message || "Failed to delete service package.");
+          throw new Error(deleteError.message || "Failed to delete service package.");
+        } finally {
+          setBusyPlanId(null);
+        }
+      },
+      {
+        confirmVariant: "danger",
       }
-    } catch (deleteError) {
-      setError(deleteError.message || "Failed to delete service package.");
+    );
+  };
+
+  const togglePlanStatusFromTable = async (plan) => {
+    const planId = toPositiveId(plan?.id);
+    if (!planId) return;
+    const busyKey = `plan:${planId}`;
+    if (statusToggleBusy[busyKey]) return;
+
+    setStatusToggleBusy((prev) => ({ ...prev, [busyKey]: true }));
+    setError("");
+    try {
+      const response = await updateAdminServicePlan(planId, {
+        is_active: plan?.is_active === false,
+      });
+      if (Number(planForm.planId) === Number(planId) && response?.plan) {
+        const nextForm = toPlanForm(response.plan, response.plan?.section_id || planForm.sectionId);
+        setPlanForm(nextForm);
+        setPlanFormOriginal(nextForm);
+      }
+      await loadSections(catalogKey);
+    } catch (toggleError) {
+      setError(toggleError.message || "Failed to update service package status.");
     } finally {
-      setBusyPlanId(null);
+      setStatusToggleBusy((prev) => {
+        const next = { ...prev };
+        delete next[busyKey];
+        return next;
+      });
     }
   };
 
@@ -665,13 +825,10 @@ const AdminServicePlansPage = ({
             <p className="text-secondary mb-0">
               Signed in as <strong>{adminUser?.display_name || adminUser?.username}</strong>
             </p>
-            <Form.Check
-              className="admin-theme-toggle mt-2"
-              type="switch"
-              id="admin-service-plans-dark-mode-toggle"
-              label="Dark Mode"
-              checked={isDarkTheme}
-              onChange={(event) => setThemeMode?.(event.target.checked ? "dark" : "light")}
+            <ThemeToggleButton
+              isDarkTheme={isDarkTheme}
+              onToggle={() => setThemeMode?.(isDarkTheme ? "light" : "dark")}
+              className="mt-2"
             />
           </div>
           <div className="admin-header-actions d-flex gap-2">
@@ -722,13 +879,7 @@ const AdminServicePlansPage = ({
                   <Card.Body>
                     <div className="d-flex flex-wrap justify-content-between gap-2 mb-3">
                       <div>
-                        <div className="d-flex flex-wrap align-items-center gap-2 mb-1">
-                          <h3 className="h6 mb-0">{section.title}</h3>
-                          <Badge bg={section.is_active ? "success" : "secondary"}>
-                            {section.section_type}
-                          </Badge>
-                        </div>
-                        {section.note ? <div className="small text-secondary">{section.note}</div> : null}
+                        <h3 className="h6 mb-0">{section.title}</h3>
                       </div>
                       <Button variant="outline-secondary" size="sm" onClick={() => openCreateEditor(section)}>
                         Add Package
@@ -741,7 +892,7 @@ const AdminServicePlansPage = ({
                           <tr>
                             <th>Title</th>
                             <th>Price</th>
-                            <th className="text-center">Status</th>
+                            <th className="text-center">Active</th>
                             <th className="admin-order-cell text-center">Order</th>
                             <th className="text-end">Actions</th>
                           </tr>
@@ -749,6 +900,8 @@ const AdminServicePlansPage = ({
                         <tbody>
                           {plans.map((plan) => {
                             const planId = toPositiveId(plan?.id);
+                            const statusBusyKey = `plan:${planId}`;
+                            const isStatusBusy = Boolean(statusToggleBusy[statusBusyKey]);
                             const isSelectedPlanRow =
                               Boolean(isEditorOpen && planForm.planId) && Number(planForm.planId) === Number(planId);
                             const isDropTarget =
@@ -820,16 +973,24 @@ const AdminServicePlansPage = ({
                               </td>
                               <td>{plan.price || "—"}</td>
                               <td className="text-center align-middle">
-                                <div className="admin-status-line">
+                                <button
+                                  type="button"
+                                  className="admin-status-toggle"
+                                  disabled={isStatusBusy}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void togglePlanStatusFromTable(plan);
+                                  }}
+                                  aria-label={plan.is_active !== false ? "Set inactive" : "Set active"}
+                                  title={plan.is_active !== false ? "Set inactive" : "Set active"}>
                                   <span
                                     className={`admin-status-dot ${
                                       plan.is_active !== false ? "admin-status-dot-active" : "admin-status-dot-inactive"
                                     }`}
                                     role="img"
-                                    aria-label={plan.is_active !== false ? "Active" : "Archived"}
-                                    title={plan.is_active !== false ? "Active" : "Archived"}
+                                    aria-label={plan.is_active !== false ? "Active" : "Inactive"}
                                   />
-                                </div>
+                                </button>
                               </td>
                               <td className="admin-order-cell">
                                 {Number.isFinite(displayOrder) ? (
@@ -872,7 +1033,9 @@ const AdminServicePlansPage = ({
             <Card>
               <Card.Body>
                 <div className="d-flex justify-content-between align-items-center mb-3">
-                  <h3 className="h6 mb-0">{planForm.planId ? "Edit Package" : "Create Package"}</h3>
+                  <h3 className="h6 mb-0">
+                    {planForm.planId ? "Edit Package" : `Create New ${activeCatalogLabel} Package`}
+                  </h3>
                   <Button variant="outline-secondary" size="sm" onClick={clearEditor}>
                     Clear
                   </Button>
@@ -880,16 +1043,15 @@ const AdminServicePlansPage = ({
 
                 {editorError ? <Alert variant="danger">{editorError}</Alert> : null}
 
-                <Form onSubmit={handlePlanSubmit}>
-                  <div className="mb-3">
-                    <div className="form-label mb-1">Section</div>
-                    <div className="form-control-plaintext fw-semibold py-0">
-                      {selectedSection?.title || "No section selected"}
+                <Form ref={editorFormRef} noValidate onSubmit={handlePlanSubmit}>
+                  {planForm.planId ? (
+                    <div className="mb-3">
+                      <div className="form-label mb-1">Section</div>
+                      <div className="form-control-plaintext fw-semibold py-0">
+                        {selectedSection?.title || "No section selected"}
+                      </div>
                     </div>
-                    <div className="small text-secondary mt-1">
-                      New packages are created in the section you opened from the package list.
-                    </div>
-                  </div>
+                  ) : null}
 
                   <Form.Group className="mb-3" controlId="service-package-title">
                     <Form.Label className={editorFieldErrors.title ? "admin-field-label-invalid" : ""}>Title</Form.Label>
@@ -901,6 +1063,7 @@ const AdminServicePlansPage = ({
                         setPlanForm((prev) => ({ ...prev, title: event.target.value }));
                       }}
                     />
+                    <Form.Control.Feedback type="invalid">{editorFieldErrors.title}</Form.Control.Feedback>
                   </Form.Group>
 
                   <Form.Group className="mb-3" controlId="service-package-price">
@@ -914,8 +1077,13 @@ const AdminServicePlansPage = ({
                         clearEditorValidation(["price"]);
                         setPlanForm((prev) => ({ ...prev, price: event.target.value }));
                       }}
-                      placeholder="$30-$40 per person"
+                      placeholder="45-89"
                     />
+                    <div className="small text-secondary mt-1">
+                      Enter a price or price range. Dollar signs and <code>per person</code> are added automatically
+                      for simple package prices.
+                    </div>
+                    <Form.Control.Feedback type="invalid">{editorFieldErrors.price}</Form.Control.Feedback>
                   </Form.Group>
 
                   <div className="mb-3">
@@ -926,19 +1094,21 @@ const AdminServicePlansPage = ({
                       className={`small mb-2 ${
                         editorFieldErrors.details ? "admin-form-requirement-text admin-form-requirement-text-invalid" : "text-secondary"
                       }`}>
-                      Fixed inclusions only. Do not repeat anything the customer is choosing below.
+                      {editorFieldErrors.details ||
+                        "Fixed inclusions only. Do not repeat anything the customer is choosing below."}
                     </div>
                     {(planForm.details || []).map((detail, index) => (
-                      <div className="d-flex gap-2 mb-2" key={`detail-row-${index}`}>
+                      <div className="admin-package-remove-row mb-2" key={`detail-row-${index}`}>
                         <Form.Control
                           isInvalid={Boolean(editorFieldErrors.details)}
                           value={detail}
                           onChange={(event) => updateDetailRow(index, event.target.value)}
-                          placeholder="Bread"
+                          placeholder="Add item"
                         />
                         <Button
                           type="button"
                           variant="outline-danger"
+                          className="admin-package-remove-btn"
                           onClick={() => {
                             clearEditorValidation(["details"]);
                             setPlanForm((prev) => ({
@@ -966,25 +1136,49 @@ const AdminServicePlansPage = ({
                   </div>
 
                   <div className="mb-3">
-                    <div className={`fw-semibold mb-2 ${editorFieldErrors.choiceRows ? "admin-field-label-invalid" : ""}`}>
+                    <div
+                      className={`fw-semibold mb-2 ${
+                        editorFieldErrors.choiceRows || hasChoiceRowValidationErrors(editorChoiceRowErrors)
+                          ? "admin-field-label-invalid"
+                          : ""
+                      }`}>
                       Customer Chooses
                     </div>
                     <div
                       className={`small mb-2 ${
-                        editorFieldErrors.choiceRows
+                        editorFieldErrors.choiceRows || hasChoiceRowValidationErrors(editorChoiceRowErrors)
                           ? "admin-form-requirement-text admin-form-requirement-text-invalid"
                           : "text-secondary"
                       }`}>
-                      Use one row per thing the customer picks. Menu options pull from shared package families; custom
-                      options cover package-specific choices like Taco Bar proteins.
+                      {editorFieldErrors.choiceRows ? (
+                        editorFieldErrors.choiceRows
+                      ) : (
+                        <>
+                          <span className="d-block">
+                            Use one row per thing the customer picks. Menu options pull from shared package families
+                            and require Min and Max.
+                          </span>
+                          {hasCustomChoiceRows ? (
+                            <span className="d-block">
+                              Custom options cover package-specific choices like Taco Bar proteins. Min/Max can stay
+                              blank when there is no fixed selection count.
+                            </span>
+                          ) : null}
+                        </>
+                      )}
                     </div>
-                    {(planForm.choiceRows || []).map((row, index) => (
-                      <div className="border rounded p-2 mb-2" key={`choice-row-${index}`}>
+                    {(planForm.choiceRows || []).map((row, index) => {
+                      const rowErrors = editorChoiceRowErrors[index] || EMPTY_CHOICE_ROW_FIELD_ERRORS;
+                      const rowHasError = hasEditorValidationErrors(rowErrors);
+                      return (
+                      <div
+                        className={`border rounded p-2 mb-2 ${rowHasError ? "border-danger" : ""}`}
+                        key={`choice-row-${index}`}>
                         <Row className="g-2 align-items-start">
-                          <Col md={4}>
+                          <Col md={3}>
                             <Form.Select
                               aria-label={`Choice source ${index + 1}`}
-                              isInvalid={Boolean(editorFieldErrors.choiceRows)}
+                              isInvalid={Boolean(rowErrors.source_type)}
                               value={row.source_type}
                               onChange={(event) => updateChoiceRow(index, "source_type", event.target.value)}>
                               <option value="menu_group">Menu options</option>
@@ -994,14 +1188,14 @@ const AdminServicePlansPage = ({
                           <Col md={4}>
                             {row.source_type === "custom_options" ? (
                               <Form.Control
-                                isInvalid={Boolean(editorFieldErrors.choiceRows)}
+                                isInvalid={Boolean(rowErrors.group_title)}
                                 value={row.group_title}
                                 onChange={(event) => updateChoiceRow(index, "group_title", event.target.value)}
                                 placeholder="Choice label"
                               />
                             ) : (
                               <Form.Select
-                                isInvalid={Boolean(editorFieldErrors.choiceRows)}
+                                isInvalid={Boolean(rowErrors.selection_key)}
                                 value={row.selection_key}
                                 onChange={(event) => updateChoiceRow(index, "selection_key", event.target.value)}>
                                 <option value="">Select menu family</option>
@@ -1013,56 +1207,63 @@ const AdminServicePlansPage = ({
                               </Form.Select>
                             )}
                           </Col>
-                          <Col md={2}>
-                            <Form.Control
-                              isInvalid={Boolean(editorFieldErrors.choiceRows)}
-                              value={row.min_select}
-                              onChange={(event) => updateChoiceRow(index, "min_select", event.target.value)}
-                              placeholder="Min"
-                              inputMode="numeric"
-                            />
-                          </Col>
-                          <Col md={2}>
-                            <Form.Control
-                              isInvalid={Boolean(editorFieldErrors.choiceRows)}
-                              value={row.max_select}
-                              onChange={(event) => updateChoiceRow(index, "max_select", event.target.value)}
-                              placeholder="Max"
-                              inputMode="numeric"
-                            />
+                          <Col xs={12} md={5}>
+                            <div className="admin-package-remove-row">
+                              <Form.Control
+                                isInvalid={Boolean(rowErrors.min_select)}
+                                value={row.min_select}
+                                onChange={(event) => updateChoiceRow(index, "min_select", event.target.value)}
+                                placeholder="Min"
+                                inputMode="numeric"
+                              />
+                              <Form.Control
+                                isInvalid={Boolean(rowErrors.max_select)}
+                                value={row.max_select}
+                                onChange={(event) => updateChoiceRow(index, "max_select", event.target.value)}
+                                placeholder="Max"
+                                inputMode="numeric"
+                              />
+                              <Button
+                                type="button"
+                                variant="outline-danger"
+                                className="admin-package-remove-btn"
+                                onClick={() => {
+                                  clearEditorValidation(["choiceRows"]);
+                                  setPlanForm((prev) => ({
+                                    ...prev,
+                                    choiceRows: prev.choiceRows.filter((_, rowIndex) => rowIndex !== index),
+                                  }));
+                                }}>
+                                &times;
+                              </Button>
+                            </div>
                           </Col>
                           {row.source_type === "custom_options" ? (
                             <Col xs={12}>
                               <Form.Control
                                 as="textarea"
                                 rows={2}
-                                isInvalid={Boolean(editorFieldErrors.choiceRows)}
+                                isInvalid={Boolean(rowErrors.options_text)}
                                 value={row.options_text}
                                 onChange={(event) => updateChoiceRow(index, "options_text", event.target.value)}
-                                placeholder="Carne Asada, Chicken, Marinated Pork"
+                                placeholder="Add one option per line"
                               />
                               <div className="small text-secondary mt-1">
-                                Separate custom options with commas or new lines.
+                                Add one custom option per line. Bullets or numbering are okay, and commas stay part
+                                of the option text.
                               </div>
                             </Col>
                           ) : null}
-                          <Col xs={12} className="d-flex justify-content-end">
-                            <Button
-                              type="button"
-                              variant="outline-danger"
-                              onClick={() => {
-                                clearEditorValidation(["choiceRows"]);
-                                setPlanForm((prev) => ({
-                                  ...prev,
-                                  choiceRows: prev.choiceRows.filter((_, rowIndex) => rowIndex !== index),
-                                }));
-                              }}>
-                              &times;
-                            </Button>
-                          </Col>
+                          {rowHasError && rowErrors.message ? (
+                            <Col xs={12}>
+                              <div className="small admin-form-requirement-text admin-form-requirement-text-invalid mt-1">
+                                {rowErrors.message}
+                              </div>
+                            </Col>
+                          ) : null}
                         </Row>
                       </div>
-                    ))}
+                    )})}
                     <Button
                       type="button"
                       variant="outline-secondary"
@@ -1117,11 +1318,14 @@ const AdminServicePlansPage = ({
         body={confirmState.body}
         confirmLabel={confirmState.confirmLabel}
         confirmVariant={confirmState.confirmVariant}
+        extraActionLabel={confirmState.extraActionLabel}
+        extraActionVariant={confirmState.extraActionVariant}
         validationMessage={confirmState.validationMessage}
         confirmDisabled={editorValidationLocked}
         darkMode={isDarkTheme}
         busy={confirmBusy}
         onCancel={closeConfirm}
+        onExtraAction={confirmState.extraAction}
         onConfirm={runConfirmedAction}
       />
     </Shell>

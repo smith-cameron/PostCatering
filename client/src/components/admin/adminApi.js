@@ -16,6 +16,14 @@ const resolveErrorMessage = (payload, fallback) => {
   return fallback;
 };
 
+const buildRequestError = (payload, fallback, status) => {
+  const error = new Error(resolveErrorMessage(payload, fallback));
+  error.status = status;
+  error.payload = payload;
+  error.fieldErrors = payload && typeof payload.field_errors === "object" ? payload.field_errors : null;
+  return error;
+};
+
 export const requestJson = async (url, options = {}) => {
   const nextOptions = {
     credentials: "include",
@@ -32,7 +40,7 @@ export const requestJson = async (url, options = {}) => {
   const response = await fetch(url, nextOptions);
   const payload = await parseJsonSafely(response);
   if (!response.ok) {
-    throw new Error(resolveErrorMessage(payload, "Request failed."));
+    throw buildRequestError(payload, "Request failed.", response.status);
   }
   return payload;
 };
@@ -46,7 +54,7 @@ export const requestWithFormData = async (url, formData, options = {}) => {
   });
   const payload = await parseJsonSafely(response);
   if (!response.ok) {
-    throw new Error(resolveErrorMessage(payload, "Upload failed."));
+    throw buildRequestError(payload, "Upload failed.", response.status);
   }
   return payload;
 };

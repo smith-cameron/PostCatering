@@ -2,6 +2,7 @@ import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState
 import { Accordion, Alert, Badge, Button, Card, Col, Form, InputGroup, Modal, Nav, Row, Spinner, Table } from "react-bootstrap";
 import { Navigate, useNavigate } from "react-router-dom";
 import Context from "../../context";
+import ThemeToggleButton from "../ThemeToggleButton";
 import ConfirmActionModal from "./ConfirmActionModal";
 import ConfirmReviewList from "./ConfirmReviewList";
 import PasswordVisibilityButton from "./PasswordVisibilityButton";
@@ -21,7 +22,7 @@ const ACCESS_TIER_OWNER = 0;
 const ACCESS_TIER_MANAGER = 1;
 const ACCESS_TIER_OPERATOR = 2;
 const ACCESS_TIER_OPTIONS = [
-  { value: ACCESS_TIER_OWNER, label: "Tier 0 (Owner)" },
+  { value: ACCESS_TIER_OWNER, label: "Protected" },
   { value: ACCESS_TIER_MANAGER, label: "Tier 1 (Manager)" },
   { value: ACCESS_TIER_OPERATOR, label: "Tier 2 (Operator)" },
 ];
@@ -2344,13 +2345,10 @@ const AdminDashboard = ({
               </svg>
             </button>
           </p>
-          <Form.Check
-            className="admin-theme-toggle mt-2"
-            type="switch"
-            id="admin-dark-mode-toggle"
-            label="Dark Mode"
-            checked={isDarkTheme}
-            onChange={(event) => setThemeMode?.(event.target.checked ? "dark" : "light")}
+          <ThemeToggleButton
+            isDarkTheme={isDarkTheme}
+            onToggle={() => setThemeMode?.(isDarkTheme ? "light" : "dark")}
+            className="mt-2"
           />
         </div>
         <div className="admin-header-actions">
@@ -3340,7 +3338,7 @@ const AdminDashboard = ({
                   </span>
                 </Form.Label>
                 <span className={`admin-form-requirement-text ${createAdminAccessTierInvalid ? "admin-form-requirement-text-invalid" : ""}`}>
-                  tier 0 owner, tier 1 manager, tier 2 operator
+                  tier 1 manager or tier 2 operator
                 </span>
               </div>
               <Form.Select
