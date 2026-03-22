@@ -1,21 +1,12 @@
-import { Alert, Button, Modal } from "react-bootstrap";
+import { Alert } from "react-bootstrap";
+import InfoModal from "../modals/InfoModal";
 
 const InquirySuccessModal = ({ show, onHide }) => (
-  <Modal show={show} onHide={onHide} centered>
-    <Modal.Header closeButton>
-      <Modal.Title>Inquiry Sent</Modal.Title>
-    </Modal.Header>
-    <Modal.Body>
-      <Alert variant="success" className="mb-0">
-        Your inquiry was sent successfully.
-      </Alert>
-    </Modal.Body>
-    <Modal.Footer>
-      <Button className="btn-inquiry-action" variant="secondary" onClick={onHide}>
-        Close
-      </Button>
-    </Modal.Footer>
-  </Modal>
+  <InfoModal show={show} onHide={onHide} title="Inquiry Sent" centered>
+    <Alert variant="success" className="mb-0">
+      Your inquiry was sent successfully.
+    </Alert>
+  </InfoModal>
 );
 
 export default InquirySuccessModal;
