@@ -56,7 +56,7 @@
   "FORMAL_PLAN_OPTIONS": [
     {
       "id": "formal:2-course",
-      "level": "package",
+      "planId": "formal:2-course",
       "title": "Two-Course Dinner",
       "price": "$65-$90 per person",
       "details": [
@@ -73,11 +73,12 @@
           "min": 1,
           "max": 1
         }
-      }
+      },
+      "isActive": false
     },
     {
       "id": "formal:3-course",
-      "level": "package",
+      "planId": "formal:3-course",
       "title": "Three-Course Dinner",
       "price": "$75-$110+ per person",
       "details": [
@@ -99,7 +100,8 @@
           "min": 1,
           "max": 2
         }
-      }
+      },
+      "isActive": true
     }
   ],
   "MENU": {
@@ -309,88 +311,114 @@
         }
       ]
     },
-    "community": {
-      "pageTitle": "Community & Crew Catering (Per Person)",
+    "catering": {
+      "pageTitle": "Catering Packages (Per Person)",
       "subtitle": "Drop-off or buffet setup • Minimums apply",
       "sections": [
         {
-          "sectionId": "community_taco_bar",
-          "type": "package",
-          "title": "Taco Bar (Carne Asada, Chicken, or Marinated Pork)",
-          "description": "Includes Spanish rice, refried beans, tortillas, toppings",
-          "constraints": {
-            "entree": {
-              "min": 1,
-              "max": 1
-            }
-          },
-          "price": "$18-$25 per person"
-        },
-        {
-          "sectionId": "community_homestyle",
-          "type": "package",
-          "title": "Hearty Homestyle Packages",
-          "description": "Choose 1 protein + 2 sides + bread",
-          "constraints": {
-            "entree": {
-              "min": 1,
-              "max": 1
-            },
-            "sides": {
-              "min": 2,
-              "max": 2
-            }
-          },
-          "price": "$20-$28 per person"
-        },
-        {
-          "sectionId": "community_buffet_tiers",
-          "type": "tiers",
-          "title": "Event Catering - Buffet Style",
-          "tiers": [
+          "sectionId": "catering_packages",
+          "type": "packages",
+          "title": "Catering Packages",
+          "packages": [
             {
-              "tierTitle": "Tier 1: Casual Buffet",
+              "planId": "catering:taco_bar",
+              "title": "Taco Bar",
+              "details": [
+                "Spanish rice",
+                "Refried beans",
+                "Tortillas",
+                "Toppings"
+              ],
               "constraints": {
-                "entree": 2,
-                "sides": 2,
-                "salads": 1
+                "signature_protein": {
+                  "min": 1,
+                  "max": 1
+                }
               },
-              "price": "$30-$40 per person",
-              "bullets": [
-                "2 Entrées",
-                "2 Sides",
-                "1 Salad",
-                "Bread"
-              ]
+              "selectionMode": "custom_options",
+              "selectionGroups": [
+                {
+                  "groupKey": "signature_protein",
+                  "title": "Taco Bar Proteins",
+                  "min": 1,
+                  "max": 1,
+                  "options": [
+                    {
+                      "optionKey": "carne_asada",
+                      "label": "Carne Asada"
+                    },
+                    {
+                      "optionKey": "chicken",
+                      "label": "Chicken"
+                    },
+                    {
+                      "optionKey": "marinated_pork",
+                      "label": "Marinated Pork"
+                    }
+                  ]
+                }
+              ],
+              "price": "$18-$25 per person",
+              "isActive": true
             },
             {
-              "tierTitle": "Tier 2: Elevated Buffet / Family-Style",
+              "planId": "catering:homestyle",
+              "title": "Hearty Homestyle Packages",
+              "details": [
+                "Bread"
+              ],
               "constraints": {
-                "entree": {
-                  "min": 2,
-                  "max": 3
+                "entree_signature_protein": {
+                  "min": 1,
+                  "max": 1
                 },
-                "sides": {
-                  "min": 3,
-                  "max": 3
-                },
-                "salads": {
+                "sides_salads": {
                   "min": 2,
                   "max": 2
                 }
               },
-              "price": "$45-$65 per person",
-              "bullets": [
-                "2-3 Entrées",
-                "3 Sides",
-                "2 Salads",
+              "selectionMode": "menu_groups",
+              "price": "$20-$28 per person",
+              "isActive": true
+            },
+            {
+              "planId": "catering:buffet_tier_1",
+              "title": "Tier 1: Casual Buffet",
+              "details": [
                 "Bread"
-              ]
+              ],
+              "constraints": {
+                "entree_signature_protein": 2,
+                "sides_salads": 3
+              },
+              "selectionMode": "menu_groups",
+              "price": "$30-$40 per person",
+              "isActive": true
+            },
+            {
+              "planId": "catering:buffet_tier_2",
+              "title": "Tier 2: Elevated Buffet / Family-Style",
+              "details": [
+                "Bread"
+              ],
+              "constraints": {
+                "entree_signature_protein": {
+                  "min": 2,
+                  "max": 3
+                },
+                "sides_salads": {
+                  "min": 5,
+                  "max": 5
+                }
+              },
+              "selectionMode": "menu_groups",
+              "price": "$45-$65 per person",
+              "isActive": true
             }
           ]
         },
         {
-          "sectionId": "community_menu_options",
+          "sectionId": "catering_menu_options",
           "type": "includeMenu",
           "title": "Menu Options (Entrées, Proteins, Sides & Salads)",
           "includeKeys": [
@@ -409,7 +437,7 @@
           "sectionId": "formal_pricing",
           "type": "package",
           "title": "Three-Course Dinner Pricing",
-          "description": "Per person pricing (final depends on selections and service details).",
+          "note": "Per person pricing (final depends on selections and service details).",
           "price": "$75-$110+ per person"
         },
         {

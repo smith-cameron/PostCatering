@@ -133,6 +133,15 @@ def _get_effective_service_constraints(service_selection):
     return Menu.get_effective_service_constraints(service_selection)
 
 
+def _requires_desired_menu_items(service_selection):
+    if not isinstance(service_selection, dict):
+        return True
+    selection_mode = (
+        str(service_selection.get("selectionMode") or service_selection.get("selection_mode") or "").strip().lower()
+    )
+    return selection_mode != "none"
+
+
 def validate_service_selection_constraints(service_selection, desired_menu_items):
     constraints = _get_effective_service_constraints(service_selection)
     if not constraints:
@@ -146,14 +155,24 @@ def validate_service_selection_constraints(service_selection, desired_menu_items
         category_counts[category] = category_counts.get(category, 0) + 1
 
     errors = []
+    label_map = {
+        "entree_signature_protein": "entrees/signature proteins",
+        "entree": "entrees",
+        "signature_protein": "signature proteins",
+        "sides": "sides",
+        "salads": "salads",
+        "sides_salads": "sides/salads",
+    }
     for category, limits in constraints.items():
-        if category == "sides_salads":
+        if category == "entree_signature_protein":
+            selected_count = category_counts.get("entree", 0) + category_counts.get("signature_protein", 0)
+        elif category == "sides_salads":
             selected_count = category_counts.get("sides", 0) + category_counts.get("salads", 0)
         else:
             selected_count = category_counts.get(category, 0)
         min_select = limits.get("min", 0)
         max_select = limits.get("max", 0)
-        label = category.replace("_", "/")
+        label = label_map.get(category, category.replace("_", "/"))
 
         if min_select and selected_count < min_select:
             errors.append(f"Please select at least {min_select} {label}.")
@@ -195,9 +214,12 @@ def validate_inquiry_payload(inquiry):
     if service_interest_error:
         errors.append(service_interest_error)
 
-    desired_menu_items_error = validate_desired_menu_items(inquiry.desired_menu_items)
-    if desired_menu_items_error:
-        errors.append(desired_menu_items_error)
+    if _requires_desired_menu_items(inquiry.service_selection):
+        desired_menu_items_error = validate_desired_menu_items(inquiry.desired_menu_items)
+        if desired_menu_items_error:
+            errors.append(desired_menu_items_error)
+        else:
+            errors.extend(validate_service_selection_constraints(inquiry.service_selection, inquiry.desired_menu_items))
     else:
         errors.extend(validate_service_selection_constraints(inquiry.service_selection, inquiry.desired_menu_items))
 

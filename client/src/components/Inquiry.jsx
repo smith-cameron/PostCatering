@@ -74,9 +74,10 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
     serviceOptions,
     servicePlans,
     selectedServicePlan,
-    communitySelectionRules,
+    cateringSelectionRules,
     displayedPlanDetails,
     shouldRequirePlanSelection,
+    requiresDesiredItemSelection,
     canShowDesiredItems,
     desiredItemGroups,
     itemSizeOptions,
@@ -138,7 +139,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
     return selectedGroup?.groupKey || "other";
   };
 
-  const buildCommunityCategoryCounts = (items) =>
+  const buildCateringCategoryCounts = (items) =>
     (items || []).reduce((acc, selectedItem) => {
       const category = getDesiredItemCategory(selectedItem);
       acc[category] = (acc[category] || 0) + 1;
@@ -147,6 +148,9 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
 
   const getCombinedSideSaladCount = (categoryCounts) =>
     Number(categoryCounts?.sides || 0) + Number(categoryCounts?.salads || 0);
+
+  const getCombinedEntreeProteinCount = (categoryCounts) =>
+    Number(categoryCounts?.entree || 0) + Number(categoryCounts?.signature_protein || 0);
 
   const setTopErrors = (nextErrors) => {
     setHighlightedDetailKeys([]);
@@ -233,12 +237,12 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
       }
     }
 
-    if (!isSelected && form.service_interest === "community" && communitySelectionRules) {
+    if (!isSelected && form.service_interest === "catering" && cateringSelectionRules) {
       const category = getDesiredItemCategory(item);
-      const categoryRule = communitySelectionRules[category];
+      const categoryRule = cateringSelectionRules[category];
 
       if (categoryRule?.max) {
-        const categoryCounts = buildCommunityCategoryCounts(desiredItems);
+        const categoryCounts = buildCateringCategoryCounts(desiredItems);
         const selectedInCategory = categoryCounts[category] || 0;
 
         if (selectedInCategory >= categoryRule.max) {
@@ -248,12 +252,23 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
         }
       }
 
-      const combinedSideSaladRule = communitySelectionRules.sides_salads;
+      const combinedEntreeProteinRule = cateringSelectionRules.entree_signature_protein;
+      if (combinedEntreeProteinRule?.max && (category === "entree" || category === "signature_protein")) {
+        const categoryCounts = buildCateringCategoryCounts(desiredItems);
+        const selectedCombinedCount = getCombinedEntreeProteinCount(categoryCounts);
+        if (selectedCombinedCount >= combinedEntreeProteinRule.max) {
+          setHighlightedDetailKeys(["entree", "signature_protein", "entree_signature_protein"]);
+          setErrors([]);
+          return;
+        }
+      }
+
+      const combinedSideSaladRule = cateringSelectionRules.sides_salads;
       if (combinedSideSaladRule?.max && (category === "sides" || category === "salads")) {
-        const categoryCounts = buildCommunityCategoryCounts(desiredItems);
+        const categoryCounts = buildCateringCategoryCounts(desiredItems);
         const selectedCombinedCount = getCombinedSideSaladCount(categoryCounts);
         if (selectedCombinedCount >= combinedSideSaladRule.max) {
-          setHighlightedDetailKeys(["sides", "salads"]);
+          setHighlightedDetailKeys(["sides", "salads", "sides_salads"]);
           setErrors([]);
           return;
         }
@@ -339,9 +354,9 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
         nextFieldErrors.guest_count = "guest_count is required.";
       }
       if (shouldRequirePlanSelection && !servicePlanId) {
-        nextFieldErrors.service_plan = "Please select a package or tier option.";
+        nextFieldErrors.service_plan = "Please select a package option.";
       }
-      if (!desiredItems.length) {
+      if (requiresDesiredItemSelection && !desiredItems.length) {
         nextFieldErrors.desired_menu_items = "Please select at least one desired menu item.";
       }
       if (hasFieldValidationErrors(nextFieldErrors)) {
@@ -369,12 +384,12 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
         }
       }
 
-      if (form.service_interest === "community" && communitySelectionRules) {
-        const categoryCounts = buildCommunityCategoryCounts(desiredItems);
+      if (form.service_interest === "catering" && cateringSelectionRules) {
+        const categoryCounts = buildCateringCategoryCounts(desiredItems);
         const nextHighlightedDetailKeys = [];
 
-        for (const [category, rule] of Object.entries(communitySelectionRules)) {
-          if (category === "sides_salads") continue;
+        for (const [category, rule] of Object.entries(cateringSelectionRules)) {
+          if (category === "entree_signature_protein" || category === "sides_salads") continue;
           const selectedCount = categoryCounts[category] || 0;
           if (rule.min && selectedCount < rule.min) {
             nextHighlightedDetailKeys.push(category);
@@ -384,14 +399,31 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
           }
         }
 
-        const combinedSideSaladRule = communitySelectionRules.sides_salads;
+        const combinedEntreeProteinRule = cateringSelectionRules.entree_signature_protein;
+        if (combinedEntreeProteinRule) {
+          const selectedCombinedCount = getCombinedEntreeProteinCount(categoryCounts);
+          if (
+            combinedEntreeProteinRule.min &&
+            selectedCombinedCount < combinedEntreeProteinRule.min
+          ) {
+            nextHighlightedDetailKeys.push("entree", "signature_protein", "entree_signature_protein");
+          }
+          if (
+            combinedEntreeProteinRule.max &&
+            selectedCombinedCount > combinedEntreeProteinRule.max
+          ) {
+            nextHighlightedDetailKeys.push("entree", "signature_protein", "entree_signature_protein");
+          }
+        }
+
+        const combinedSideSaladRule = cateringSelectionRules.sides_salads;
         if (combinedSideSaladRule) {
           const selectedCombinedCount = getCombinedSideSaladCount(categoryCounts);
           if (combinedSideSaladRule.min && selectedCombinedCount < combinedSideSaladRule.min) {
-            nextHighlightedDetailKeys.push("sides", "salads");
+            nextHighlightedDetailKeys.push("sides", "salads", "sides_salads");
           }
           if (combinedSideSaladRule.max && selectedCombinedCount > combinedSideSaladRule.max) {
-            nextHighlightedDetailKeys.push("sides", "salads");
+            nextHighlightedDetailKeys.push("sides", "salads", "sides_salads");
           }
         }
         if (nextHighlightedDetailKeys.length) {
@@ -607,6 +639,7 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
             <InquiryDesiredItemsSection
               serviceInterest={form.service_interest}
               shouldRequirePlanSelection={shouldRequirePlanSelection}
+              requiresDesiredItemSelection={requiresDesiredItemSelection}
               canShowDesiredItems={canShowDesiredItems}
               desiredItemGroups={desiredItemGroups}
               desiredItems={desiredItems}

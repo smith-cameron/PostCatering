@@ -1205,6 +1205,7 @@ button {
   background: var(--surface-alt-color);
 }
 
+.admin-order-cell,
 .admin-media-order-cell {
   width: 84px;
   text-align: center;
@@ -1212,6 +1213,7 @@ button {
   vertical-align: middle;
 }
 
+.admin-order-chip,
 .admin-media-order-chip {
   display: inline-block;
   min-width: 2rem;
@@ -1263,14 +1265,17 @@ button {
   border-top: 2px solid rgba(var(--highlight-color-rgb), 0.38);
 }
 
+.admin-table-row-draggable,
 .admin-media-row-draggable {
   cursor: grab;
 }
 
+.admin-table-row-dragging,
 .admin-media-row-dragging {
   opacity: 0.6;
 }
 
+.admin-table-row-drop-target > td,
 .admin-media-row-drop-target > td {
   box-shadow: inset 0 -2px 0 0 var(--highlight-color);
 }
@@ -1336,11 +1341,6 @@ button {
 
 .admin-status-dot-inactive {
   background: #c9464f;
-}
-
-.admin-theme-toggle .form-check-label {
-  font-weight: 700;
-  color: var(--admin-text);
 }
 
 .admin-profile-edit-btn {
@@ -1665,6 +1665,21 @@ button {
   color: #c37d74;
 }
 
+.admin-package-remove-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.admin-package-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: calc(1.5em + 0.75rem + calc(var(--bs-border-width) * 2));
+  padding-inline: 0.75rem;
+  line-height: 1;
+}
+
 .admin-profile-modal,
 .admin-create-user-modal,
 .admin-manage-users-modal {
@@ -1759,7 +1774,24 @@ button {
   background: rgba(var(--surface-color-rgb), 0.8);
   padding: 0.6rem 0.75rem;
   display: grid;
-  gap: 0.25rem;
+  gap: 0.5rem;
+}
+
+.admin-confirm-review-row {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.admin-confirm-review-label {
+  font-weight: 600;
+  color: var(--text-strong-color);
+}
+
+.admin-confirm-review-value {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .admin-confirm-modal-dark .admin-confirm-review {

@@ -1,11 +1,10 @@
 import { useMemo } from "react";
 import {
-  COMMUNITY_TACO_BAR_OPTIONS,
-  buildCommunitySelectionRules,
+  buildCateringSelectionRules,
+  buildPackageSelectionItemGroups,
   buildServiceItemGroups,
   buildServicePlanOptions,
   getDisplayPlanDetails,
-  isCommunityTacoBarPlan,
   normalizeSizeOption,
 } from "./inquiryUtils";
 
@@ -35,37 +34,42 @@ const useInquirySelections = ({
     [servicePlans, servicePlanId]
   );
 
-  const communitySelectionRules = useMemo(() => {
-    if (formServiceInterest !== "community") return null;
-    return buildCommunitySelectionRules(selectedServicePlan);
+  const cateringSelectionRules = useMemo(() => {
+    if (formServiceInterest !== "catering") return null;
+    return buildCateringSelectionRules(selectedServicePlan);
   }, [formServiceInterest, selectedServicePlan]);
 
   const displayedPlanDetails = useMemo(
-    () => getDisplayPlanDetails(formServiceInterest, selectedServicePlan, communitySelectionRules),
-    [formServiceInterest, selectedServicePlan, communitySelectionRules]
+    () => getDisplayPlanDetails(formServiceInterest, selectedServicePlan, cateringSelectionRules),
+    [formServiceInterest, selectedServicePlan, cateringSelectionRules]
   );
 
-  const shouldRequirePlanSelection = formServiceInterest === "community" || formServiceInterest === "formal";
+  const shouldRequirePlanSelection = formServiceInterest === "catering" || formServiceInterest === "formal";
 
   const desiredItemGroups = useMemo(() => {
     const groups = buildServiceItemGroups(formServiceInterest, menu, menuOptions);
-    if (formServiceInterest === "community" && isCommunityTacoBarPlan(selectedServicePlan)) {
-      return [
-        {
-          title: "Taco Bar Proteins",
-          groupKey: "entree",
-          items: COMMUNITY_TACO_BAR_OPTIONS.map((item) => ({ name: item, sizeOptions: [] })),
-        },
-      ];
+    if (formServiceInterest === "catering") {
+      if (selectedServicePlan?.selectionMode === "none") {
+        return [];
+      }
+      if (selectedServicePlan?.selectionMode === "custom_options") {
+        return buildPackageSelectionItemGroups(selectedServicePlan);
+      }
+      if (selectedServicePlan?.selectionMode === "hybrid") {
+        return [...buildPackageSelectionItemGroups(selectedServicePlan), ...groups];
+      }
     }
 
     if (formServiceInterest !== "formal") return groups;
     const groupsWithoutSides = groups.filter((group) => group.groupKey !== "sides");
-    if (servicePlanId === "formal:2-course") {
-      return groupsWithoutSides.filter((group) => group.groupKey !== "passed");
+    const selectedConstraintKeys = new Set(Object.keys(selectedServicePlan?.constraints || {}));
+    if (!selectedConstraintKeys.size) {
+      return groupsWithoutSides;
     }
-    return groupsWithoutSides;
-  }, [formServiceInterest, servicePlanId, selectedServicePlan, menu, menuOptions]);
+    return groupsWithoutSides.filter(
+      (group) => group.groupKey === "package" || selectedConstraintKeys.has(group.groupKey)
+    );
+  }, [formServiceInterest, selectedServicePlan, menu, menuOptions]);
 
   const itemSizeOptions = useMemo(() => {
     const map = {};
@@ -77,15 +81,17 @@ const useInquirySelections = ({
     return map;
   }, [desiredItemGroups]);
 
+  const requiresDesiredItemSelection = desiredItemGroups.length > 0;
   const canShowDesiredItems = Boolean(formServiceInterest) && (!shouldRequirePlanSelection || Boolean(selectedServicePlan));
 
   return {
     serviceOptions,
     servicePlans,
     selectedServicePlan,
-    communitySelectionRules,
+    cateringSelectionRules,
     displayedPlanDetails,
     shouldRequirePlanSelection,
+    requiresDesiredItemSelection,
     canShowDesiredItems,
     desiredItemGroups,
     itemSizeOptions,

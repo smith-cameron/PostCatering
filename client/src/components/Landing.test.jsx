@@ -60,7 +60,7 @@ describe("Landing", () => {
     });
 
     expect(screen.getByRole("button", { name: "To-Go / Take & Bake" })).toHaveAttribute("href", "/services/togo");
-    expect(screen.getByRole("button", { name: "Community/Crew Catering" })).toHaveAttribute("href", "/services/community");
+    expect(screen.getByRole("button", { name: "Community/Crew Catering" })).toHaveAttribute("href", "/services/catering");
     expect(screen.getByRole("button", { name: "Formal Events" })).toHaveAttribute("href", "/services/formal");
   });
 
