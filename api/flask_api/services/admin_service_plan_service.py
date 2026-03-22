@@ -4,12 +4,29 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import pymysql
 
 from flask_api.config.mysqlconnection import db_transaction, query_db, query_db_many
+from flask_api.models.menu import Menu
+
+
+class ServicePlanValidationError(ValueError):
+    def __init__(self, message, field_errors=None, status_code=400):
+        super().__init__(message)
+        self.message = str(message or "Invalid service plan payload.")
+        self.status_code = status_code
+        self.field_errors = {
+            key: str(value or "").strip() for key, value in (field_errors or {}).items() if str(value or "").strip()
+        }
 
 
 class AdminServicePlanService:
     VALID_CATALOG_KEYS = ("catering", "formal")
     VALID_SELECTION_MODES = ("menu_groups", "custom_options", "none", "hybrid")
     KEY_SEGMENT_PATTERN = re.compile(r"[^a-z0-9]+")
+    PACKAGE_PER_PERSON_PRICE_PATTERN = re.compile(
+        r"^\$?\s*(?P<amount_min>[0-9][0-9,]*(?:\.\d{1,2})?)\s*(?P<suffix_min>[kK])?\s*(?P<plus_min>\+)?"
+        r"(?:\s*(?:-|–|—|to)\s*\$?\s*(?P<amount_max>[0-9][0-9,]*(?:\.\d{1,2})?)\s*(?P<suffix_max>[kK])?\s*(?P<plus_max>\+)?)?"
+        r"\s*(?P<unit>per\s*person|/person)?\s*$",
+        re.IGNORECASE,
+    )
     CATERING_CONSTRAINT_KEY_ALIASES = {
         "entree_signature_protein": "entree_signature_protein",
         "entree_signature_proteins": "entree_signature_protein",
@@ -77,6 +94,512 @@ class AdminServicePlanService:
         "Service plan tables are not installed. Run admin menu sync with apply_schema enabled, "
         "or apply the service plan migrations in api/sql/migrations."
     )
+    PACKAGE_TITLE_MAX_LENGTH = 150
+    PACKAGE_PRICE_MAX_LENGTH = 120
+    PACKAGE_DETAIL_MAX_LENGTH = 255
+    PACKAGE_CHOICE_LABEL_MAX_LENGTH = 150
+    PACKAGE_CHOICE_OPTION_MAX_LENGTH = 150
+
+    @classmethod
+    def _validation_response(cls, error):
+        response = {"error": error.message}
+        if error.field_errors:
+            response["field_errors"] = error.field_errors
+        return response, error.status_code
+
+    @classmethod
+    def _raise_validation_error(cls, message, field_key="", status_code=400):
+        field_errors = {field_key: message} if field_key else None
+        raise ServicePlanValidationError(message, field_errors=field_errors, status_code=status_code)
+
+    @staticmethod
+    def _collapse_whitespace(value):
+        return re.sub(r"\s+", " ", str(value or "").strip()).strip()
+
+    @staticmethod
+    def _to_whole_number(value):
+        if value is None or value == "" or isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and re.fullmatch(r"\d+", value.strip()):
+            return int(value.strip())
+        return None
+
+    @classmethod
+    def _allowed_constraint_keys(cls, catalog_key=""):
+        normalized_catalog = cls._normalize_catalog_key(catalog_key)
+        if normalized_catalog == "formal":
+            return {"passed", "starter", "entree", "side"}
+        if normalized_catalog == "catering":
+            return {
+                "entree_signature_protein",
+                "entree",
+                "signature_protein",
+                "sides",
+                "salads",
+                "sides_salads",
+            }
+        return set()
+
+    @classmethod
+    def _validate_title(cls, value):
+        title = cls._collapse_whitespace(value)
+        if not title:
+            cls._raise_validation_error("Package title is required.", "title")
+        if len(title) > cls.PACKAGE_TITLE_MAX_LENGTH:
+            cls._raise_validation_error(
+                f"Package title must be {cls.PACKAGE_TITLE_MAX_LENGTH} characters or fewer.",
+                "title",
+            )
+        return title
+
+    @classmethod
+    def _validate_price_display(cls, value):
+        price_display = cls._collapse_whitespace(value)
+        if not price_display:
+            return {
+                "price_display": None,
+                "price_amount_min": None,
+                "price_amount_max": None,
+                "price_currency": None,
+                "price_unit": None,
+            }
+        price_display = cls._normalize_package_price_display(price_display)
+        if len(price_display) > cls.PACKAGE_PRICE_MAX_LENGTH:
+            cls._raise_validation_error(
+                f"Price display must be {cls.PACKAGE_PRICE_MAX_LENGTH} characters or fewer.",
+                "price",
+            )
+        normalized_price = Menu._normalize_price_fields(price_display)
+        parsed_amounts = Menu._extract_price_amounts(price_display)
+        if not parsed_amounts:
+            cls._raise_validation_error("Price display must include at least one numeric amount.", "price")
+        return {
+            "price_display": normalized_price.get("price"),
+            "price_amount_min": cls._serialize_decimal(normalized_price.get("price_amount_min")),
+            "price_amount_max": cls._serialize_decimal(normalized_price.get("price_amount_max")),
+            "price_currency": normalized_price.get("price_currency"),
+            "price_unit": normalized_price.get("price_unit"),
+        }
+
+    @staticmethod
+    def _format_price_amount_for_display(value):
+        if value in (None, ""):
+            return None
+        try:
+            normalized = Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        except (InvalidOperation, ValueError):
+            return None
+        if normalized == normalized.to_integral():
+            return f"${int(normalized):,}"
+        return f"${format(normalized, ',.2f')}"
+
+    @classmethod
+    def _normalize_package_price_display(cls, value):
+        price_display = cls._collapse_whitespace(value)
+        if not price_display:
+            return price_display
+
+        match = cls.PACKAGE_PER_PERSON_PRICE_PATTERN.fullmatch(price_display)
+        if not match:
+            return price_display
+        if match.group("amount_max") and match.group("plus_min"):
+            return price_display
+
+        min_fragment = f"{match.group('amount_min')}{match.group('suffix_min') or ''}"
+        max_fragment = (
+            f"{match.group('amount_max')}{match.group('suffix_max') or ''}" if match.group("amount_max") else None
+        )
+        min_amount = Menu._coerce_price_number(min_fragment)
+        max_amount = Menu._coerce_price_number(max_fragment) if max_fragment else None
+        if min_amount is None or (max_fragment and max_amount is None):
+            return price_display
+
+        formatted_min = cls._format_price_amount_for_display(min_amount)
+        if not formatted_min:
+            return price_display
+        if max_fragment:
+            formatted_max = cls._format_price_amount_for_display(max_amount)
+            if not formatted_max:
+                return price_display
+            normalized_display = f"{formatted_min}-{formatted_max}"
+            if match.group("plus_max"):
+                normalized_display += "+"
+        else:
+            normalized_display = formatted_min
+            if match.group("plus_min"):
+                normalized_display += "+"
+
+        return f"{normalized_display} per person"
+
+    @classmethod
+    def _validate_detail_rows_for_write(cls, value):
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            cls._raise_validation_error("Included items must be a list.", "details")
+
+        rows = []
+        detail_keys = set()
+        for index, row in enumerate(value, start=1):
+            if isinstance(row, str):
+                detail_text = cls._collapse_whitespace(row)
+                sort_order = index
+            elif isinstance(row, dict):
+                detail_text = cls._collapse_whitespace(row.get("detail_text") or row.get("text"))
+                sort_order = cls._to_int(row.get("sort_order"), default=index, minimum=1)
+            else:
+                cls._raise_validation_error("Included items must use text rows.", "details")
+
+            if not detail_text:
+                cls._raise_validation_error("Included items cannot be blank.", "details")
+            if len(detail_text) > cls.PACKAGE_DETAIL_MAX_LENGTH:
+                cls._raise_validation_error(
+                    f"Included items must be {cls.PACKAGE_DETAIL_MAX_LENGTH} characters or fewer.",
+                    "details",
+                )
+            duplicate_key = cls._normalize_match_text(detail_text)
+            if duplicate_key in detail_keys:
+                cls._raise_validation_error("Included items cannot repeat.", "details")
+            detail_keys.add(duplicate_key)
+            rows.append({"detail_text": detail_text, "sort_order": sort_order})
+        return rows
+
+    @classmethod
+    def _validate_choice_limits(
+        cls,
+        min_value,
+        max_value,
+        *,
+        required=True,
+        invalid_message="Each customer choice needs whole-number Min and Max values.",
+    ):
+        min_present = min_value not in (None, "")
+        max_present = max_value not in (None, "")
+        min_select = cls._to_whole_number(min_value)
+        max_select = cls._to_whole_number(max_value)
+        if required:
+            if min_select is None or max_select is None:
+                cls._raise_validation_error(invalid_message, "choice_rows")
+        else:
+            if (min_present and min_select is None) or (max_present and max_select is None):
+                cls._raise_validation_error(invalid_message, "choice_rows")
+            if not min_present and not max_present:
+                return None, None
+        if min_select is not None and min_select < 0:
+            cls._raise_validation_error("Each customer choice must use Min 0 or greater.", "choice_rows")
+        if max_select is not None and max_select < 1:
+            cls._raise_validation_error("Each customer choice must allow at least 1 selection.", "choice_rows")
+        if min_select is not None and max_select is not None and min_select > max_select:
+            cls._raise_validation_error(
+                "Each customer choice must use Min less than or equal to Max.",
+                "choice_rows",
+            )
+        return min_select, max_select
+
+    @classmethod
+    def _validate_selection_groups_for_write(cls, value):
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            cls._raise_validation_error("Customer choices must be a list.", "choice_rows")
+
+        rows = []
+        group_keys = set()
+        for index, row in enumerate(value, start=1):
+            if not isinstance(row, dict):
+                cls._raise_validation_error("Each custom customer choice must be an object.", "choice_rows")
+
+            group_title = cls._collapse_whitespace(row.get("group_title") or row.get("title"))
+            if not group_title:
+                cls._raise_validation_error("Each custom customer choice needs a label.", "choice_rows")
+            if len(group_title) > cls.PACKAGE_CHOICE_LABEL_MAX_LENGTH:
+                cls._raise_validation_error(
+                    f"Custom customer choice labels must be {cls.PACKAGE_CHOICE_LABEL_MAX_LENGTH} characters or fewer.",
+                    "choice_rows",
+                )
+
+            group_key = cls._normalize_selection_key(
+                row.get("group_key") or row.get("selection_key") or row.get("menu_group_key") or group_title
+            )
+            if not group_key:
+                cls._raise_validation_error("Each custom customer choice needs a label.", "choice_rows")
+            if group_key in group_keys:
+                cls._raise_validation_error("Custom customer choice labels must stay unique.", "choice_rows")
+            group_keys.add(group_key)
+
+            min_select, max_select = cls._validate_choice_limits(
+                row.get("min_select", row.get("min")),
+                row.get("max_select", row.get("max")),
+                required=False,
+                invalid_message="Custom customer choice Min and Max must use whole numbers when provided.",
+            )
+
+            options_value = row.get("options")
+            if not isinstance(options_value, list):
+                cls._raise_validation_error(
+                    "Each custom customer choice needs at least 2 unique options.",
+                    "choice_rows",
+                )
+
+            options = []
+            seen_exact_labels = set()
+            option_keys = set()
+            for option_row in options_value:
+                if not isinstance(option_row, dict):
+                    cls._raise_validation_error("Each custom customer choice option needs a label.", "choice_rows")
+
+                option_label = cls._collapse_whitespace(
+                    option_row.get("option_label") or option_row.get("label") or option_row.get("name")
+                )
+                if not option_label:
+                    cls._raise_validation_error("Each custom customer choice option needs a label.", "choice_rows")
+                if option_label in seen_exact_labels:
+                    continue
+                seen_exact_labels.add(option_label)
+
+                if len(option_label) > cls.PACKAGE_CHOICE_OPTION_MAX_LENGTH:
+                    cls._raise_validation_error(
+                        "Custom customer choice options must be "
+                        f"{cls.PACKAGE_CHOICE_OPTION_MAX_LENGTH} characters or fewer.",
+                        "choice_rows",
+                    )
+
+                option_key = cls._slugify(option_row.get("option_key") or option_label, separator="_")
+                if not option_key:
+                    cls._raise_validation_error("Each custom customer choice option needs a label.", "choice_rows")
+                if option_key in option_keys:
+                    cls._raise_validation_error(
+                        "Custom customer choice options must stay unique after formatting.",
+                        "choice_rows",
+                    )
+                option_keys.add(option_key)
+                options.append(
+                    {
+                        "option_key": option_key,
+                        "option_label": option_label,
+                        "menu_item_id": cls._to_int(option_row.get("menu_item_id"), minimum=1),
+                        "sort_order": len(options) + 1,
+                        "is_active": 1 if cls._to_bool(option_row.get("is_active"), default=True) else 0,
+                    }
+                )
+
+            if len(options) < 2:
+                cls._raise_validation_error(
+                    "Each custom customer choice needs at least 2 unique options.",
+                    "choice_rows",
+                )
+
+            source_type = str(row.get("source_type") or "").strip().lower().replace("-", "_").replace(" ", "_")
+            if source_type not in {"menu_group", "custom_options"}:
+                source_type = "custom_options"
+
+            rows.append(
+                {
+                    "group_key": group_key,
+                    "group_title": group_title,
+                    "source_type": source_type,
+                    "menu_group_key": cls._normalize_selection_key(row.get("menu_group_key")) or None,
+                    "min_select": min_select,
+                    "max_select": max_select,
+                    "sort_order": cls._to_int(row.get("sort_order"), default=index, minimum=1),
+                    "is_active": 1 if cls._to_bool(row.get("is_active"), default=True) else 0,
+                    "options": options,
+                }
+            )
+        return rows
+
+    @classmethod
+    def _constraint_entries_for_write(cls, value):
+        if value is None:
+            return []
+        if isinstance(value, dict):
+            return list(value.items())
+        if isinstance(value, list):
+            entries = []
+            for row in value:
+                if not isinstance(row, dict):
+                    cls._raise_validation_error("Each customer choice must be an object.", "choice_rows")
+                entries.append(
+                    (
+                        row.get("selection_key") or row.get("key"),
+                        {"min": row.get("min_select", row.get("min")), "max": row.get("max_select", row.get("max"))},
+                    )
+                )
+            return entries
+        cls._raise_validation_error("Customer choices must be a list.", "choice_rows")
+
+    @classmethod
+    def _validate_constraints_for_write(cls, value, catalog_key="", selection_groups=None):
+        selection_groups = selection_groups or []
+        custom_group_map = {row.get("group_key"): row for row in selection_groups if row.get("group_key")}
+        allowed_menu_keys = cls._allowed_constraint_keys(catalog_key)
+        seen_keys = set()
+        matched_custom_group_keys = set()
+        menu_choice_keys = set()
+        rows = []
+
+        for raw_key, raw_rule in cls._constraint_entries_for_write(value):
+            selection_key = cls._canonicalize_constraint_key(raw_key, catalog_key=catalog_key)
+            if not selection_key:
+                cls._raise_validation_error(
+                    "Each menu-based customer choice must select a menu family.",
+                    "choice_rows",
+                )
+            if selection_key in seen_keys:
+                if selection_key in custom_group_map:
+                    cls._raise_validation_error("Custom customer choice labels must stay unique.", "choice_rows")
+                cls._raise_validation_error(
+                    "Each menu-based customer choice must use a unique menu family.",
+                    "choice_rows",
+                )
+            seen_keys.add(selection_key)
+            is_custom_group = selection_key in custom_group_map
+
+            if isinstance(raw_rule, int):
+                min_select, max_select = cls._validate_choice_limits(
+                    raw_rule,
+                    raw_rule,
+                    required=not is_custom_group,
+                    invalid_message="Custom customer choice Min and Max must use whole numbers when provided.",
+                )
+            elif isinstance(raw_rule, dict):
+                min_select, max_select = cls._validate_choice_limits(
+                    raw_rule.get("min", raw_rule.get("min_select")),
+                    raw_rule.get("max", raw_rule.get("max_select")),
+                    required=not is_custom_group,
+                    invalid_message="Custom customer choice Min and Max must use whole numbers when provided.",
+                )
+            else:
+                cls._raise_validation_error(
+                    (
+                        "Custom customer choice Min and Max must use whole numbers when provided."
+                        if is_custom_group
+                        else "Each customer choice needs whole-number Min and Max values."
+                    ),
+                    "choice_rows",
+                )
+
+            if is_custom_group:
+                matched_custom_group_keys.add(selection_key)
+                matching_group = custom_group_map.get(selection_key) or {}
+                if matching_group.get("min_select") != min_select or matching_group.get("max_select") != max_select:
+                    cls._raise_validation_error(
+                        "Custom customer choice limits must stay in sync with their saved options.",
+                        "choice_rows",
+                    )
+            else:
+                if selection_key not in allowed_menu_keys:
+                    cls._raise_validation_error(
+                        "Each menu-based customer choice must select a menu family.",
+                        "choice_rows",
+                    )
+                if selection_key in menu_choice_keys:
+                    cls._raise_validation_error(
+                        "Each menu-based customer choice must use a unique menu family.",
+                        "choice_rows",
+                    )
+                menu_choice_keys.add(selection_key)
+
+            if min_select is not None or max_select is not None:
+                rows.append(
+                    {
+                        "selection_key": selection_key,
+                        "min_select": min_select,
+                        "max_select": max_select,
+                    }
+                )
+
+        for group_key, matching_group in custom_group_map.items():
+            if group_key in matched_custom_group_keys:
+                continue
+            min_select = matching_group.get("min_select")
+            max_select = matching_group.get("max_select")
+            if min_select is None and max_select is None:
+                continue
+            rows.append(
+                {
+                    "selection_key": group_key,
+                    "min_select": min_select,
+                    "max_select": max_select,
+                }
+            )
+
+        return sorted(
+            rows,
+            key=lambda row: (
+                cls.CONSTRAINT_SORT_ORDER.get(row.get("selection_key"), 99),
+                row.get("selection_key") or "",
+            ),
+        )
+
+    @classmethod
+    def _derive_selection_mode_for_write(cls, constraints, selection_groups):
+        custom_group_keys = {row.get("group_key") for row in selection_groups or [] if row.get("group_key")}
+        has_custom_choices = bool(selection_groups)
+        has_menu_choices = any(row.get("selection_key") not in custom_group_keys for row in constraints or [])
+        if has_menu_choices and has_custom_choices:
+            return "hybrid"
+        if has_custom_choices:
+            return "custom_options"
+        if has_menu_choices:
+            return "menu_groups"
+        return "none"
+
+    @classmethod
+    def _normalize_plan_write_payload(
+        cls,
+        payload,
+        *,
+        catalog_key="",
+        default_title="",
+        default_price_display="",
+        details_value=None,
+        constraints_value=None,
+        selection_groups_value=None,
+    ):
+        body = payload if isinstance(payload, dict) else {}
+        title = cls._validate_title(body.get("title") if "title" in body else default_title)
+        price_fields = cls._validate_price_display(
+            body.get("price")
+            if "price" in body
+            else (body.get("price_display") if "price_display" in body else default_price_display)
+        )
+        normalized_details = cls._validate_detail_rows_for_write(details_value)
+        normalized_selection_groups = cls._validate_selection_groups_for_write(selection_groups_value)
+        normalized_constraints = cls._validate_constraints_for_write(
+            constraints_value,
+            catalog_key=catalog_key,
+            selection_groups=normalized_selection_groups,
+        )
+        conflict_error = cls._validate_detail_choice_conflicts(
+            normalized_details,
+            normalized_constraints,
+            normalized_selection_groups,
+            catalog_key=catalog_key,
+        )
+        if conflict_error:
+            raise ServicePlanValidationError(
+                conflict_error,
+                field_errors={"details": conflict_error},
+            )
+
+        return {
+            "title": title,
+            "price_display": price_fields["price_display"],
+            "price_amount_min": price_fields["price_amount_min"],
+            "price_amount_max": price_fields["price_amount_max"],
+            "price_currency": price_fields["price_currency"],
+            "price_unit": price_fields["price_unit"],
+            "constraints": normalized_constraints,
+            "details": normalized_details,
+            "selection_groups": normalized_selection_groups,
+            "selection_mode": cls._derive_selection_mode_for_write(
+                normalized_constraints,
+                normalized_selection_groups,
+            ),
+        }
 
     @classmethod
     def _is_missing_service_plan_tables_error(cls, exc):
@@ -572,11 +1095,20 @@ class AdminServicePlanService:
     @classmethod
     def _serialize_plan_row(cls, row, constraints=None, details=None, selection_groups=None):
         is_active = bool(row.get("is_active", 0))
+        normalized_price = Menu._normalize_price_fields(
+            cls._normalize_package_price_display(str(row.get("price_display") or "").strip() or None),
+            price_meta={
+                "amount_min": row.get("price_amount_min"),
+                "amount_max": row.get("price_amount_max"),
+                "currency": row.get("price_currency"),
+                "unit": row.get("price_unit"),
+            },
+        )
         price_meta = {
-            "amount_min": cls._serialize_decimal(row.get("price_amount_min")),
-            "amount_max": cls._serialize_decimal(row.get("price_amount_max")),
-            "currency": str(row.get("price_currency") or "").strip().upper() or None,
-            "unit": str(row.get("price_unit") or "").strip().lower() or None,
+            "amount_min": cls._serialize_decimal(normalized_price.get("price_amount_min")),
+            "amount_max": cls._serialize_decimal(normalized_price.get("price_amount_max")),
+            "currency": str(normalized_price.get("price_currency") or "").strip().upper() or None,
+            "unit": str(normalized_price.get("price_unit") or "").strip().lower() or None,
         }
         if not any(price_meta.values()):
             price_meta = None
@@ -587,7 +1119,7 @@ class AdminServicePlanService:
             "catalog_key": row.get("catalog_key"),
             "plan_key": row.get("plan_key"),
             "title": str(row.get("title") or "").strip(),
-            "price": str(row.get("price_display") or "").strip() or None,
+            "price": str(normalized_price.get("price") or "").strip() or None,
             "price_meta": price_meta,
             "selection_mode": cls._normalize_selection_mode(row.get("selection_mode")),
             "sort_order": cls._to_int(row.get("sort_order"), default=0, minimum=0),
@@ -704,7 +1236,23 @@ class AdminServicePlanService:
             connection=connection,
             auto_commit=False,
         )
-        rows = cls._normalize_constraint_rows(constraints, catalog_key=catalog_key)
+        if isinstance(constraints, list) and all(isinstance(row, dict) for row in constraints):
+            rows = []
+            for row in constraints:
+                selection_key = cls._canonicalize_constraint_key(row.get("selection_key"), catalog_key=catalog_key)
+                min_select = cls._to_whole_number(row.get("min_select", row.get("min")))
+                max_select = cls._to_whole_number(row.get("max_select", row.get("max")))
+                if not selection_key or (min_select is None and max_select is None):
+                    continue
+                rows.append(
+                    {
+                        "selection_key": selection_key,
+                        "min_select": min_select,
+                        "max_select": max_select,
+                    }
+                )
+        else:
+            rows = cls._normalize_constraint_rows(constraints, catalog_key=catalog_key)
         if not rows:
             return
         query_db_many(
@@ -926,204 +1474,192 @@ class AdminServicePlanService:
 
     @classmethod
     def create_service_plan(cls, payload):
-        body = payload or {}
+        body = payload if isinstance(payload, dict) else {}
         section_id = cls._to_int(body.get("section_id"), minimum=1)
         if not section_id:
-            return {"error": "section_id is required."}, 400
+            return {
+                "error": "section_id is required.",
+                "field_errors": {"section_id": "Select a destination section."},
+            }, 400
 
         with db_transaction() as connection:
-            section_row = cls._get_section_row(section_id, connection=connection)
-            if not section_row:
-                return {"error": "Service plan section not found."}, 404
-            if section_row.get("section_type") == "include_menu":
-                return {"error": "Cannot create plans in an include_menu section."}, 400
+            try:
+                section_row = cls._get_section_row(section_id, connection=connection)
+                if not section_row:
+                    return {
+                        "error": "Service plan section not found.",
+                        "field_errors": {"section_id": "Select a valid destination section."},
+                    }, 404
+                if section_row.get("section_type") == "include_menu":
+                    return {
+                        "error": "Cannot create plans in an include_menu section.",
+                        "field_errors": {"section_id": "Select a destination section."},
+                    }, 400
 
-            title = str(body.get("title") or "").strip()
-            if not title:
-                return {"error": "title is required."}, 400
+                normalized_write_payload = cls._normalize_plan_write_payload(
+                    body,
+                    catalog_key=section_row.get("catalog_key"),
+                    details_value=body.get("details"),
+                    constraints_value=body.get("constraints"),
+                    selection_groups_value=body.get("selection_groups"),
+                )
 
-            plan_key = cls._build_plan_key(section_row.get("catalog_key"), body.get("plan_key"), title)
-            if cls._get_plan_by_key(plan_key, connection=connection):
-                return {"error": "plan_key must be unique."}, 409
-            is_active = cls._resolve_plan_active_flag(body, default=True)
-            normalized_constraints = cls._normalize_constraint_rows(
-                body.get("constraints"),
-                catalog_key=section_row.get("catalog_key"),
-            )
-            normalized_details = cls._normalize_detail_rows(body.get("details"))
-            normalized_selection_groups = cls._normalize_selection_group_rows(body.get("selection_groups"))
-            conflict_error = cls._validate_detail_choice_conflicts(
-                normalized_details,
-                normalized_constraints,
-                normalized_selection_groups,
-                catalog_key=section_row.get("catalog_key"),
-            )
-            if conflict_error:
-                return {"error": conflict_error}, 400
+                plan_key = cls._build_plan_key(
+                    section_row.get("catalog_key"),
+                    body.get("plan_key"),
+                    normalized_write_payload["title"],
+                )
+                if cls._get_plan_by_key(plan_key, connection=connection):
+                    return {
+                        "error": "A package with this title already exists in this catalog.",
+                        "field_errors": {"title": "Package title must stay unique within this catalog."},
+                    }, 409
 
-            inserted_plan_id = query_db(
-                """
-        INSERT INTO service_plans (
-          section_id,
-          plan_key,
-          title,
-          price_display,
-          price_amount_min,
-          price_amount_max,
-          price_currency,
-          price_unit,
-          selection_mode,
-          sort_order,
-          is_active
-        )
-        VALUES (
-          %(section_id)s,
-          %(plan_key)s,
-          %(title)s,
-          %(price_display)s,
-          %(price_amount_min)s,
-          %(price_amount_max)s,
-          %(price_currency)s,
-          %(price_unit)s,
-          %(selection_mode)s,
-          %(sort_order)s,
-          %(is_active)s
-        );
-        """,
-                {
-                    "section_id": section_id,
-                    "plan_key": plan_key,
-                    "title": title,
-                    "price_display": str(body.get("price") or body.get("price_display") or "").strip() or None,
-                    "price_amount_min": cls._serialize_decimal(body.get("price_amount_min")),
-                    "price_amount_max": cls._serialize_decimal(body.get("price_amount_max")),
-                    "price_currency": str(body.get("price_currency") or "").strip().upper() or None,
-                    "price_unit": cls._normalize_selection_key(body.get("price_unit")) or None,
-                    "selection_mode": cls._normalize_selection_mode(body.get("selection_mode")),
-                    "sort_order": cls._to_int(
-                        body.get("sort_order"), default=cls._next_plan_sort_order(section_id, connection), minimum=1
-                    ),
-                    "is_active": 1 if is_active else 0,
-                },
-                fetch="none",
-                connection=connection,
-                auto_commit=False,
+                is_active = cls._resolve_plan_active_flag(body, default=True)
+                inserted_plan_id = query_db(
+                    """
+            INSERT INTO service_plans (
+              section_id,
+              plan_key,
+              title,
+              price_display,
+              price_amount_min,
+              price_amount_max,
+              price_currency,
+              price_unit,
+              selection_mode,
+              sort_order,
+              is_active
             )
-            cls._replace_plan_constraints(
-                inserted_plan_id,
-                normalized_constraints,
-                section_row.get("catalog_key"),
-                connection,
-            )
-            cls._replace_plan_details(inserted_plan_id, normalized_details, connection)
-            cls._replace_plan_selection_groups(inserted_plan_id, normalized_selection_groups, connection)
+            VALUES (
+              %(section_id)s,
+              %(plan_key)s,
+              %(title)s,
+              %(price_display)s,
+              %(price_amount_min)s,
+              %(price_amount_max)s,
+              %(price_currency)s,
+              %(price_unit)s,
+              %(selection_mode)s,
+              %(sort_order)s,
+              %(is_active)s
+            );
+            """,
+                    {
+                        "section_id": section_id,
+                        "plan_key": plan_key,
+                        "title": normalized_write_payload["title"],
+                        "price_display": normalized_write_payload["price_display"],
+                        "price_amount_min": normalized_write_payload["price_amount_min"],
+                        "price_amount_max": normalized_write_payload["price_amount_max"],
+                        "price_currency": normalized_write_payload["price_currency"],
+                        "price_unit": normalized_write_payload["price_unit"],
+                        "selection_mode": normalized_write_payload["selection_mode"],
+                        "sort_order": cls._to_int(body.get("sort_order"), minimum=1)
+                        or cls._next_plan_sort_order(section_id, connection),
+                        "is_active": 1 if is_active else 0,
+                    },
+                    fetch="none",
+                    connection=connection,
+                    auto_commit=False,
+                )
+                cls._replace_plan_constraints(
+                    inserted_plan_id,
+                    normalized_write_payload["constraints"],
+                    section_row.get("catalog_key"),
+                    connection,
+                )
+                cls._replace_plan_details(inserted_plan_id, normalized_write_payload["details"], connection)
+                cls._replace_plan_selection_groups(
+                    inserted_plan_id,
+                    normalized_write_payload["selection_groups"],
+                    connection,
+                )
+            except ServicePlanValidationError as error:
+                return cls._validation_response(error)
 
         return {"plan": cls.get_service_plan_detail(inserted_plan_id)}, 201
 
     @classmethod
     def update_service_plan(cls, plan_id, payload):
-        body = payload or {}
+        body = payload if isinstance(payload, dict) else {}
         with db_transaction() as connection:
-            plan_row = cls._get_plan_row(plan_id, connection=connection)
-            if not plan_row:
-                return {"error": "Service plan not found."}, 404
+            try:
+                plan_row = cls._get_plan_row(plan_id, connection=connection)
+                if not plan_row:
+                    return {"error": "Service plan not found."}, 404
 
-            title = str(body.get("title") if "title" in body else plan_row.get("title") or "").strip()
-            if not title:
-                return {"error": "title is required."}, 400
-            if "plan_key" in body and cls._build_plan_key(
-                plan_row.get("catalog_key"), body.get("plan_key"), title
-            ) != plan_row.get("plan_key"):
-                return {"error": "plan_key is immutable once created."}, 400
-            is_active = cls._resolve_plan_active_flag(body, default=bool(plan_row.get("is_active", 0)))
-            existing_constraints = cls._fetch_plan_constraints([plan_row.get("id")]).get(plan_row.get("id"), [])
-            existing_details = cls._fetch_plan_details([plan_row.get("id")]).get(plan_row.get("id"), [])
-            existing_selection_groups = cls._fetch_plan_selection_groups([plan_row.get("id")]).get(
-                plan_row.get("id"), []
-            )
-            normalized_constraints = cls._normalize_constraint_rows(
-                body.get("constraints") if "constraints" in body else existing_constraints,
-                catalog_key=plan_row.get("catalog_key"),
-            )
-            normalized_details = cls._normalize_detail_rows(
-                body.get("details") if "details" in body else existing_details
-            )
-            normalized_selection_groups = cls._normalize_selection_group_rows(
-                body.get("selection_groups") if "selection_groups" in body else existing_selection_groups
-            )
-            conflict_error = cls._validate_detail_choice_conflicts(
-                normalized_details,
-                normalized_constraints,
-                normalized_selection_groups,
-                catalog_key=plan_row.get("catalog_key"),
-            )
-            if conflict_error:
-                return {"error": conflict_error}, 400
+                title = body.get("title") if "title" in body else plan_row.get("title")
+                if "plan_key" in body and cls._build_plan_key(
+                    plan_row.get("catalog_key"), body.get("plan_key"), title
+                ) != plan_row.get("plan_key"):
+                    return {"error": "plan_key is immutable once created."}, 400
 
-            query_db(
-                """
-        UPDATE service_plans
-        SET
-          title = %(title)s,
-          price_display = %(price_display)s,
-          price_amount_min = %(price_amount_min)s,
-          price_amount_max = %(price_amount_max)s,
-          price_currency = %(price_currency)s,
-          price_unit = %(price_unit)s,
-          selection_mode = %(selection_mode)s,
-          is_active = %(is_active)s,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = %(plan_id)s;
-        """,
-                {
-                    "plan_id": plan_row.get("id"),
-                    "title": title,
-                    "price_display": str(
-                        body.get("price")
-                        if "price" in body
-                        else (
-                            body.get("price_display")
-                            if "price_display" in body
-                            else plan_row.get("price_display") or ""
-                        )
-                    ).strip()
-                    or None,
-                    "price_amount_min": cls._serialize_decimal(
-                        body.get("price_amount_min") if "price_amount_min" in body else plan_row.get("price_amount_min")
-                    ),
-                    "price_amount_max": cls._serialize_decimal(
-                        body.get("price_amount_max") if "price_amount_max" in body else plan_row.get("price_amount_max")
-                    ),
-                    "price_currency": str(
-                        body.get("price_currency") if "price_currency" in body else plan_row.get("price_currency") or ""
-                    )
-                    .strip()
-                    .upper()
-                    or None,
-                    "price_unit": cls._normalize_selection_key(
-                        body.get("price_unit") if "price_unit" in body else plan_row.get("price_unit")
-                    )
-                    or None,
-                    "selection_mode": cls._normalize_selection_mode(
-                        body.get("selection_mode") if "selection_mode" in body else plan_row.get("selection_mode")
-                    ),
-                    "is_active": 1 if is_active else 0,
-                },
-                fetch="none",
-                connection=connection,
-                auto_commit=False,
-            )
-            if "constraints" in body:
-                cls._replace_plan_constraints(
-                    plan_row.get("id"),
-                    normalized_constraints,
-                    plan_row.get("catalog_key"),
-                    connection,
+                is_active = cls._resolve_plan_active_flag(body, default=bool(plan_row.get("is_active", 0)))
+                existing_constraints = cls._fetch_plan_constraints([plan_row.get("id")]).get(plan_row.get("id"), [])
+                existing_details = cls._fetch_plan_details([plan_row.get("id")]).get(plan_row.get("id"), [])
+                existing_selection_groups = cls._fetch_plan_selection_groups([plan_row.get("id")]).get(
+                    plan_row.get("id"), []
                 )
-            if "details" in body:
-                cls._replace_plan_details(plan_row.get("id"), normalized_details, connection)
-            if "selection_groups" in body:
-                cls._replace_plan_selection_groups(plan_row.get("id"), normalized_selection_groups, connection)
+                normalized_write_payload = cls._normalize_plan_write_payload(
+                    body,
+                    catalog_key=plan_row.get("catalog_key"),
+                    default_title=plan_row.get("title"),
+                    default_price_display=plan_row.get("price_display"),
+                    details_value=body.get("details") if "details" in body else existing_details,
+                    constraints_value=body.get("constraints") if "constraints" in body else existing_constraints,
+                    selection_groups_value=(
+                        body.get("selection_groups") if "selection_groups" in body else existing_selection_groups
+                    ),
+                )
+
+                query_db(
+                    """
+            UPDATE service_plans
+            SET
+              title = %(title)s,
+              price_display = %(price_display)s,
+              price_amount_min = %(price_amount_min)s,
+              price_amount_max = %(price_amount_max)s,
+              price_currency = %(price_currency)s,
+              price_unit = %(price_unit)s,
+              selection_mode = %(selection_mode)s,
+              is_active = %(is_active)s,
+              updated_at = CURRENT_TIMESTAMP
+            WHERE id = %(plan_id)s;
+            """,
+                    {
+                        "plan_id": plan_row.get("id"),
+                        "title": normalized_write_payload["title"],
+                        "price_display": normalized_write_payload["price_display"],
+                        "price_amount_min": normalized_write_payload["price_amount_min"],
+                        "price_amount_max": normalized_write_payload["price_amount_max"],
+                        "price_currency": normalized_write_payload["price_currency"],
+                        "price_unit": normalized_write_payload["price_unit"],
+                        "selection_mode": normalized_write_payload["selection_mode"],
+                        "is_active": 1 if is_active else 0,
+                    },
+                    fetch="none",
+                    connection=connection,
+                    auto_commit=False,
+                )
+                if "constraints" in body:
+                    cls._replace_plan_constraints(
+                        plan_row.get("id"),
+                        normalized_write_payload["constraints"],
+                        plan_row.get("catalog_key"),
+                        connection,
+                    )
+                if "details" in body:
+                    cls._replace_plan_details(plan_row.get("id"), normalized_write_payload["details"], connection)
+                if "selection_groups" in body:
+                    cls._replace_plan_selection_groups(
+                        plan_row.get("id"),
+                        normalized_write_payload["selection_groups"],
+                        connection,
+                    )
+            except ServicePlanValidationError as error:
+                return cls._validation_response(error)
 
         return {"plan": cls.get_service_plan_detail(plan_row.get("id"))}, 200
 

@@ -249,6 +249,44 @@ class AdminEndpointTests(unittest.TestCase):
         "flask_api.controllers.main_controller.AdminAuthService.get_user_by_id",
         return_value={"id": 1, "username": "admin", "display_name": "Admin", "is_active": 1},
     )
+    @patch("flask_api.controllers.main_controller.AdminAuditService.log_change")
+    @patch(
+        "flask_api.controllers.main_controller.AdminServicePlanService.create_service_plan",
+        return_value=(
+            {
+                "error": "Package title must stay unique within this catalog.",
+                "field_errors": {"title": "Package title must stay unique within this catalog."},
+            },
+            409,
+        ),
+    )
+    def test_admin_service_plan_create_returns_field_errors_when_validation_fails(
+        self,
+        mock_create_plan,
+        mock_log_change,
+        _mock_get_user,
+    ):
+        with self.client.session_transaction() as session:
+            session["admin_user_id"] = 1
+
+        payload = {"section_id": 5, "title": "Three-Course Dinner"}
+        response = self.client.post("/api/admin/service-plans", json=payload)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(
+            response.get_json(),
+            {
+                "error": "Package title must stay unique within this catalog.",
+                "field_errors": {"title": "Package title must stay unique within this catalog."},
+            },
+        )
+        mock_create_plan.assert_called_once_with(payload)
+        mock_log_change.assert_not_called()
+
+    @patch(
+        "flask_api.controllers.main_controller.AdminAuthService.get_user_by_id",
+        return_value={"id": 1, "username": "admin", "display_name": "Admin", "is_active": 1},
+    )
     @patch(
         "flask_api.controllers.main_controller.AdminServicePlanService.get_service_plan_detail",
         return_value=None,
