@@ -129,6 +129,7 @@ Vite defaults to `http://localhost:5173` and proxies `/api` to `http://localhost
 ## Deployment
 
 - AWS EC2 runbook: `docs/deployment-aws-ec2.md`
+- Namecheap VPS runbook: `docs/deployment-namecheap-vps.md`
 - Owner-account launch-day checklist: `docs/pre-cutover-checklist.md`
 - Owner-account command sheet: `docs/cutover-command-sheet.md`
 
