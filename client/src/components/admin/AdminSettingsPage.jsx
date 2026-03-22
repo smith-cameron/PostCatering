@@ -1,22 +1,8 @@
-import { Navigate, useOutletContext } from "react-router-dom";
-import AdminDashboard from "./AdminDashboard";
+import AdminDashboardSectionPage from "./AdminDashboardSectionPage";
+import { ADMIN_TAB_SETTINGS } from "./adminShared";
 
 const AdminSettingsPage = () => {
-  const { adminUser, sessionLoading, onAdminUserChange, canAccessDashboardSettings } = useOutletContext();
-
-  if (!sessionLoading && !canAccessDashboardSettings) {
-    return <Navigate to="/admin/menu-items" replace />;
-  }
-
-  return (
-    <AdminDashboard
-      embedded
-      forcedTab="audit"
-      adminUser={adminUser}
-      sessionLoading={sessionLoading}
-      onAdminUserChange={onAdminUserChange}
-    />
-  );
+  return <AdminDashboardSectionPage section={ADMIN_TAB_SETTINGS} requiresSettingsAccess />;
 };
 
 export default AdminSettingsPage;

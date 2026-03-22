@@ -1,18 +1,8 @@
-import { useOutletContext } from "react-router-dom";
-import AdminDashboard from "./AdminDashboard";
+import AdminDashboardSectionPage from "./AdminDashboardSectionPage";
+import { ADMIN_TAB_MEDIA } from "./adminShared";
 
 const AdminMediaPage = () => {
-  const { adminUser, sessionLoading, onAdminUserChange } = useOutletContext();
-
-  return (
-    <AdminDashboard
-      embedded
-      forcedTab="media"
-      adminUser={adminUser}
-      sessionLoading={sessionLoading}
-      onAdminUserChange={onAdminUserChange}
-    />
-  );
+  return <AdminDashboardSectionPage section={ADMIN_TAB_MEDIA} />;
 };
 
 export default AdminMediaPage;
