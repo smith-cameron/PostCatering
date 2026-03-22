@@ -2,11 +2,23 @@ import InfoModal from "./InfoModal";
 
 const ContactUsModal = ({ show, onHide }) => {
   return (
-    <InfoModal show={show} onHide={onHide} title="Contact Us">
+    <InfoModal show={show} onHide={onHide} title="American Legion Post 468">
       <div className="info-modal-copy">
-        <p className="lead">
-          Use the public Post 468 contact details below for general questions and location information.
-        </p>
+        <div className="contact-modal-inquiry-note">
+          <p className="contact-modal-inquiry-title">Catering Inquiries</p>
+          <p className="mb-2">
+            If you&apos;re reaching out about food, menus, events, or anything catering-related,
+            please use the inquiry options provided.
+          </p>
+          <p className="mb-0">
+            For general questions, ask for our{" "}
+            <span className="contact-modal-inquiry-contact">
+              <span className="contact-modal-inquiry-contact-role">Events Coordinator</span>{" "}
+              <span className="contact-modal-inquiry-contact-name">Arianne</span>
+            </span>
+            .
+          </p>
+        </div>
 
         <p className="info-modal-section-title">Phone</p>
         <p>
@@ -28,9 +40,6 @@ const ContactUsModal = ({ show, onHide }) => {
           <br />
           Julian, California 92036
         </p>
-
-        <p className="info-modal-section-title">Catering Inquiries</p>
-        <p className="mb-0">All catering inquiries should use the catering inquiry options provided on this site.</p>
       </div>
     </InfoModal>
   );

@@ -510,6 +510,53 @@ button {
   margin-bottom: 1rem;
 }
 
+.contact-modal-inquiry-note {
+  margin: 0 0 1.15rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(var(--accent-color-rgb), 0.24);
+  border-radius: 0.85rem;
+  background: linear-gradient(
+    135deg,
+    rgba(var(--accent-color-rgb), 0.12) 0%,
+    rgba(var(--highlight-color-rgb), 0.08) 100%
+  );
+  box-shadow: 0 12px 24px rgba(var(--theme-shadow-rgb), 0.08);
+}
+
+.contact-modal-inquiry-title {
+  margin: 0 0 0.35rem;
+  font-weight: 700;
+  font-size: 0.92rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--header-inquiry-text-color);
+}
+
+.contact-modal-inquiry-contact {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.46rem;
+  margin-left: 0.12rem;
+  padding: 0.08rem 0 0.12rem;
+  border-bottom: 2px solid rgba(var(--accent-color-rgb), 0.24);
+}
+
+.contact-modal-inquiry-contact-role {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color, #4b5563);
+}
+
+.contact-modal-inquiry-contact-name {
+  font-size: 1.12rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  color: var(--header-inquiry-text-color);
+}
+
 .info-modal-section-title {
   margin: 1rem 0 0.5rem;
   font-weight: 700;
@@ -534,6 +581,11 @@ button {
 
 [data-bs-theme="dark"] .info-modal-section-title {
   color: var(--text-muted-color);
+}
+
+[data-bs-theme="dark"] .contact-modal-inquiry-note {
+  border-color: rgba(var(--accent-color-rgb), 0.34);
+  box-shadow: 0 14px 26px rgba(var(--theme-shadow-deep-rgb), 0.22);
 }
 
 .modal {
