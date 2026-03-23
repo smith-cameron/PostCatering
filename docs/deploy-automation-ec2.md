@@ -50,13 +50,13 @@ Optional overrides:
 - Deploy script:
   - pulls latest `main` with fast-forward only
   - installs backend deps in `api/venv`
-  - loads API env from `/etc/postcatering/api.env` (or `api/.env` fallback) and runs `python scripts/menu_admin_sync.py --apply-schema --no-seed`
+  - loads API env from `/etc/postcatering/api.env`, the systemd `EnvironmentFile`, or `api/.env`, then runs `python scripts/menu_admin_sync.py --apply-schema --no-seed`
   - builds frontend with `npm ci && npm run build`
   - publishes `client/dist` to `/var/www/postcatering`
   - restarts API service and reloads Nginx
   - validates `/api/health`
 
-Make sure the deploy user can read the API env file used for migrations.
+If your service uses a non-default env path, set `EC2_API_ENV_FILE` or keep the systemd `EnvironmentFile` current.
 
 ## Rollback
 
