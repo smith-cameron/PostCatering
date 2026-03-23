@@ -563,55 +563,24 @@ Content-Type: application/json
 }
 ```
 
-## Updating Landing Photos
+## Manual Media Recovery / Bulk Sync
 
-Media metadata is database-first:
-- `GET /api/slides` and `GET /api/gallery` both read labels/text from MySQL `slides`.
-- Filenames are treated as storage details only and should not be used as display labels.
+Normal media updates now belong in Admin > Media.
 
-Current canonical media storage:
-- files: `api/flask_api/static/slides`
-- metadata: `slides` table (`title`, `caption`, `alt_text`, `image_url`, `media_type`, `is_slide`, `display_order`, `is_active`)
+Use the manual path below only for recovery, bulk imports, or reconciling files already placed on disk.
 
-Step-by-step (current setup):
-1. Add files to `api/flask_api/static/slides`.
-2. Sync/normalize DB metadata (adds missing rows and writes placeholders for missing labels/text):
+- Canonical media files live in `api/flask_api/static/slides`
+- Canonical metadata lives in MySQL `slides` (`title`, `caption`, `alt_text`, `image_url`, `media_type`, `is_slide`, `display_order`, `is_active`)
+- `GET /api/slides` and `GET /api/gallery` read from `slides`, so filenames should be treated as storage details only
+
+To resync file-backed media rows:
 
 ```powershell
 cd api
 python scripts/sync_gallery_media.py
 ```
 
-3. Replace placeholder metadata with owner-provided values in `slides`:
-   - `title` (label shown in gallery/modal)
-   - `caption` (description text)
-   - `alt_text` (accessibility text)
-   - `is_slide` (`1` to include on landing carousel, `0` to keep only in gallery)
-4. Disable retired media with `is_active = 0` instead of deleting rows.
-5. Verify in browser:
-   - `GET /api/gallery` returns expected labels/text and ordering
-   - `GET /api/slides` returns only rows where `is_slide = 1`
-   - Landing carousel and `/showcase` reflect metadata updates
-
-Example SQL update:
-
-```sql
-UPDATE slides
-SET
-  title = 'Community Dinner',
-  caption = 'Seasonal menu highlights',
-  image_url = '/api/assets/slides/community-dinner-2026.jpg',
-  alt_text = 'Community dinner service line',
-  display_order = 1,
-  is_active = 1
-WHERE id = 1;
-```
-
-Future-ready option (recommended when moving off-repo assets):
-1. Upload images to object storage/CDN (S3, R2, etc.).
-2. Save full CDN URLs in `slides.image_url` (no frontend code changes required).
-3. Use versioned filenames or query params for cache busting (example: `hero-2026-05.jpg?v=2`).
-4. Keep `GET /api/slides` as the single source of truth so updates remain operational, not code-driven.
+After syncing, finish cleanup in the admin media panel by reviewing titles, captions, alt text, slide status, active status, and ordering.
 
 ## Inquiry Flow
 
