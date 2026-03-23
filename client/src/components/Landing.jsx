@@ -110,7 +110,7 @@ const Landing = () => {
         </Button>
         <Button
           as={Link}
-          to="/services/community"
+          to="/services/catering"
           className="fw-semibold btn-inquiry-action landing-info-action"
           variant="secondary"
         >

@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 
 from flask_api.config.mysqlconnection import connect_to_mysql, db_transaction, query_db, query_db_many
+from flask_api.services.admin_service_plan_service import AdminServicePlanService
 
 
 class MenuService:
@@ -45,15 +46,16 @@ class MenuService:
     FORMAL_PLAN_OPTIONS = (
         {
             "id": "formal:2-course",
-            "level": "package",
+            "planId": "formal:2-course",
             "title": "Two-Course Dinner",
             "price": "$65-$90 per person",
             "details": ["1 Starter", "1 Entree", "Bread"],
             "constraints": {"starter": {"min": 1, "max": 1}, "entree": {"min": 1, "max": 1}},
+            "isActive": False,
         },
         {
             "id": "formal:3-course",
-            "level": "package",
+            "planId": "formal:3-course",
             "title": "Three-Course Dinner",
             "price": "$75-$110+ per person",
             "details": ["2 Passed Appetizers", "1 Starter", "1 or 2 Entrees", "Bread"],
@@ -62,6 +64,7 @@ class MenuService:
                 "starter": {"min": 1, "max": 1},
                 "entree": {"min": 1, "max": 2},
             },
+            "isActive": True,
         },
     )
 
@@ -94,7 +97,7 @@ class MenuService:
     def _normalize_menu_payload_for_api(cls, payload):
         menu_options = payload.get("menu_options", {})
         formal_plan_options = payload.get("formal_plan_options", [])
-        menu = payload.get("menu", {})
+        menu = dict(payload.get("menu", {}) or {})
 
         normalized_menu_options = {key: cls._to_snake_case_keys(option) for key, option in menu_options.items()}
         normalized_menu = {key: cls._to_snake_case_keys(catalog) for key, catalog in menu.items()}
@@ -131,6 +134,12 @@ class MenuService:
             sql_root / "schema.sql",
             sql_root / "migrations" / "20260221_menu_drop_legacy_tables.sql",
             sql_root / "migrations" / "20260222_menu_unified_item_model.sql",
+            # Canonical service-package schema/state sync.
+            sql_root / "migrations" / "20260316_catering_packages_refactor.sql",
+            sql_root / "migrations" / "20260316_service_package_status_phase2.sql",
+            sql_root / "migrations" / "20260316_service_package_constraint_families.sql",
+            sql_root / "migrations" / "20260316_service_package_specific_menu_groups.sql",
+            sql_root / "migrations" / "20260316_service_package_drop_descriptions.sql",
         ]
 
     @staticmethod
@@ -265,6 +274,294 @@ class MenuService:
             return format(normalized, "f")
         except (InvalidOperation, ValueError):
             return None
+
+    @staticmethod
+    def _service_plan_price_meta_to_public(price_meta):
+        if not isinstance(price_meta, dict):
+            return None
+        public_meta = {
+            "amountMin": price_meta.get("amount_min"),
+            "amountMax": price_meta.get("amount_max"),
+            "currency": price_meta.get("currency"),
+            "unit": price_meta.get("unit"),
+        }
+        return public_meta if any(public_meta.values()) else None
+
+    @staticmethod
+    def _normalize_service_plan_constraints(constraints, catalog_key=""):
+        rows = AdminServicePlanService._normalize_constraint_rows(constraints, catalog_key=catalog_key)
+        return {
+            row.get("selection_key"): {
+                "min": row.get("min_select"),
+                "max": row.get("max_select"),
+            }
+            for row in rows
+            if row.get("selection_key")
+        }
+
+    @staticmethod
+    def _normalize_service_plan_selection_groups(selection_groups):
+        if not isinstance(selection_groups, list):
+            return []
+
+        normalized_groups = []
+        for row in selection_groups:
+            if not isinstance(row, dict) or not bool(row.get("is_active", True)):
+                continue
+            options = []
+            for option in row.get("options") or []:
+                if not isinstance(option, dict) or not bool(option.get("is_active", True)):
+                    continue
+                option_label = str(option.get("option_label") or option.get("label") or "").strip()
+                option_key = str(option.get("option_key") or "").strip()
+                if not option_label and not option_key:
+                    continue
+                options.append(
+                    {
+                        "optionKey": option_key or option_label.lower().replace(" ", "_"),
+                        "label": option_label or option_key,
+                        "menuItemId": option.get("menu_item_id"),
+                    }
+                )
+
+            normalized_groups.append(
+                {
+                    "groupKey": str(row.get("group_key") or "").strip(),
+                    "title": str(row.get("group_title") or "").strip(),
+                    "sourceType": str(row.get("source_type") or "").strip() or "custom_options",
+                    "menuGroupKey": str(row.get("menu_group_key") or "").strip() or None,
+                    "min": row.get("min_select"),
+                    "max": row.get("max_select"),
+                    "options": options,
+                }
+            )
+        return [group for group in normalized_groups if group.get("groupKey")]
+
+    @staticmethod
+    def _is_service_plan_active(plan):
+        return bool((plan or {}).get("is_active", True))
+
+    @staticmethod
+    def _extract_service_plan_detail_text(details):
+        if not isinstance(details, list):
+            return []
+        output = []
+        for row in details:
+            if isinstance(row, str):
+                detail_text = row.strip()
+            elif isinstance(row, dict):
+                detail_text = str(row.get("detail_text") or row.get("text") or "").strip()
+            else:
+                detail_text = ""
+            if detail_text:
+                output.append(detail_text)
+        return output
+
+    @staticmethod
+    def _public_service_plan_id(plan):
+        return str(plan.get("plan_key") or plan.get("id") or "").strip()
+
+    @classmethod
+    def _build_legacy_catering_sections(cls):
+        return [
+            {
+                "sectionId": "catering_packages",
+                "title": "Catering Packages",
+                "type": "packages",
+                "packages": [
+                    {
+                        "planId": "catering:taco_bar",
+                        "title": "Taco Bar",
+                        "details": ["Spanish rice", "Refried beans", "Tortillas", "Toppings"],
+                        "constraints": {"signature_protein": {"min": 1, "max": 1}},
+                        "selectionMode": "custom_options",
+                        "selectionGroups": [
+                            {
+                                "groupKey": "signature_protein",
+                                "title": "Taco Bar Proteins",
+                                "sourceType": "custom_options",
+                                "min": 1,
+                                "max": 1,
+                                "options": [
+                                    {"optionKey": "carne_asada", "label": "Carne Asada"},
+                                    {"optionKey": "chicken", "label": "Chicken"},
+                                    {"optionKey": "marinated_pork", "label": "Marinated Pork"},
+                                ],
+                            }
+                        ],
+                        "price": "$18-$25 per person",
+                        "isActive": True,
+                    },
+                    {
+                        "planId": "catering:homestyle",
+                        "title": "Hearty Homestyle Packages",
+                        "details": ["Bread"],
+                        "constraints": {
+                            "entree_signature_protein": {"min": 1, "max": 1},
+                            "sides_salads": {"min": 2, "max": 2},
+                        },
+                        "selectionMode": "menu_groups",
+                        "price": "$20-$28 per person",
+                        "isActive": True,
+                    },
+                    {
+                        "planId": "catering:buffet_tier_1",
+                        "title": "Tier 1: Casual Buffet",
+                        "constraints": {
+                            "entree_signature_protein": {"min": 2, "max": 2},
+                            "sides_salads": {"min": 3, "max": 3},
+                        },
+                        "selectionMode": "menu_groups",
+                        "price": "$30-$40 per person",
+                        "details": ["Bread"],
+                        "isActive": True,
+                    },
+                    {
+                        "planId": "catering:buffet_tier_2",
+                        "title": "Tier 2: Elevated Buffet / Family-Style",
+                        "constraints": {
+                            "entree_signature_protein": {"min": 2, "max": 3},
+                            "sides_salads": {"min": 5, "max": 5},
+                        },
+                        "selectionMode": "menu_groups",
+                        "price": "$45-$65 per person",
+                        "details": ["Bread"],
+                        "isActive": True,
+                    },
+                ],
+            },
+            {
+                "sectionId": "catering_menu_options",
+                "type": "includeMenu",
+                "title": "Menu Options",
+                "includeKeys": ["entree", "signature_protein", "side", "salad"],
+                "isActive": True,
+            },
+        ]
+
+    @classmethod
+    def _build_public_catering_sections(cls, sections):
+        catering_sections = []
+        for section in sections or []:
+            if not bool(section.get("is_active", True)):
+                continue
+
+            section_type = str(section.get("section_type") or "").strip().lower()
+            section_id = str(section.get("public_section_id") or section.get("section_key") or "").strip()
+            if not section_id:
+                section_id = f"service-section-{section.get('id')}"
+
+            if section_type == "include_menu":
+                include_keys = [str(key).strip() for key in section.get("include_keys") or [] if str(key).strip()]
+                if not include_keys:
+                    continue
+                entry = {
+                    "sectionId": section_id,
+                    "type": "includeMenu",
+                    "title": section.get("title"),
+                    "includeKeys": include_keys,
+                    "isActive": True,
+                }
+                if section.get("note"):
+                    entry["note"] = section.get("note")
+                catering_sections.append(entry)
+                continue
+
+            visible_plans = [plan for plan in section.get("plans") or [] if cls._is_service_plan_active(plan)]
+            if not visible_plans:
+                continue
+
+            if section_type in ("package", "packages", "tiers"):
+                packages = []
+                for plan in visible_plans:
+                    is_active = cls._is_service_plan_active(plan)
+                    package_entry = {
+                        "planId": cls._public_service_plan_id(plan) or str(plan.get("id") or ""),
+                        "title": plan.get("title") or "",
+                        "details": cls._extract_service_plan_detail_text(plan.get("details")),
+                        "constraints": cls._normalize_service_plan_constraints(
+                            plan.get("constraints"), catalog_key="catering"
+                        ),
+                        "selectionMode": str(plan.get("selection_mode") or "").strip() or "menu_groups",
+                        "selectionGroups": cls._normalize_service_plan_selection_groups(plan.get("selection_groups")),
+                        "price": plan.get("price") or "",
+                        "isActive": is_active,
+                    }
+                    price_meta = cls._service_plan_price_meta_to_public(plan.get("price_meta"))
+                    if price_meta:
+                        package_entry["priceMeta"] = price_meta
+                    packages.append(package_entry)
+
+                if not packages:
+                    continue
+
+                section_entry = {
+                    "sectionId": section_id,
+                    "type": "packages",
+                    "title": section.get("title"),
+                    "packages": packages,
+                    "isActive": True,
+                }
+                if section.get("note"):
+                    section_entry["note"] = section.get("note")
+                catering_sections.append(section_entry)
+
+        return catering_sections
+
+    @classmethod
+    def _build_public_formal_plan_options(cls, sections):
+        formal_plans = []
+        for section in sections or []:
+            if not bool(section.get("is_active", True)):
+                continue
+            for plan in section.get("plans") or []:
+                if not cls._is_service_plan_active(plan):
+                    continue
+
+                public_plan_id = cls._public_service_plan_id(plan)
+                is_active = cls._is_service_plan_active(plan)
+                plan_entry = {
+                    "id": public_plan_id or str(plan.get("id") or ""),
+                    "planId": public_plan_id or str(plan.get("id") or ""),
+                    "sectionId": str(section.get("public_section_id") or section.get("section_key") or "").strip()
+                    or None,
+                    "title": plan.get("title"),
+                    "price": plan.get("price") or "",
+                    "details": cls._extract_service_plan_detail_text(plan.get("details")),
+                    "constraints": cls._normalize_service_plan_constraints(
+                        plan.get("constraints"), catalog_key="formal"
+                    ),
+                    "selectionMode": str(plan.get("selection_mode") or "").strip() or "menu_groups",
+                    "selectionGroups": cls._normalize_service_plan_selection_groups(plan.get("selection_groups")),
+                    "isActive": is_active,
+                }
+                price_meta = cls._service_plan_price_meta_to_public(plan.get("price_meta"))
+                if price_meta:
+                    plan_entry["priceMeta"] = price_meta
+                formal_plans.append(plan_entry)
+        return formal_plans
+
+    @classmethod
+    def _build_service_plan_catalog(cls):
+        try:
+            catering_response, catering_status = AdminServicePlanService.list_service_plan_sections(
+                catalog_key="catering",
+                include_inactive=False,
+            )
+            formal_response, formal_status = AdminServicePlanService.list_service_plan_sections(
+                catalog_key="formal",
+                include_inactive=False,
+            )
+        except Exception:
+            return None
+
+        if catering_status >= 400 or formal_status >= 400:
+            return None
+
+        return {
+            "catering_sections": cls._build_public_catering_sections(catering_response.get("sections") or []),
+            "formal_plan_options": cls._build_public_formal_plan_options(formal_response.get("sections") or []),
+        }
 
     @classmethod
     def _infer_regular_group_key(cls, category, item_name, type_hint):
@@ -836,6 +1133,7 @@ class MenuService:
         formal_groups = cls._list_groups_by_type("formal", active_only=True)
         general_items = cls._list_items_by_type("regular", active_only=True)
         formal_items = cls._list_items_by_type("formal", active_only=True)
+        service_plan_catalog = cls._build_service_plan_catalog()
 
         if not general_groups or not formal_groups:
             return None
@@ -859,7 +1157,7 @@ class MenuService:
             },
             "signature_protein": {
                 "id": "signature_protein",
-                "category": "entree",
+                "category": "signature_protein",
                 "title": general_group_titles.get("signature_protein", "Signature Protein"),
                 "items": [item["name"] for item in general_by_group.get("signature_protein", [])],
             },
@@ -880,7 +1178,7 @@ class MenuService:
         togo_sections = []
         for key, title, category in (
             ("entree", "Entrees", "entree"),
-            ("signature_protein", "Signature Proteins", "entree"),
+            ("signature_protein", "Signature Proteins", "signature_protein"),
             ("side", "Sides", "sides"),
             ("salad", "Salads", "salads"),
         ):
@@ -927,16 +1225,7 @@ class MenuService:
             },
         }
 
-        formal_sections = [
-            {
-                "sectionId": "formal_pricing",
-                "type": "package",
-                "title": "Three-Course Dinner Pricing",
-                "description": "Per person pricing (final depends on selections and service details).",
-                "price": "$75-$110+ per person",
-            }
-        ]
-
+        formal_sections = []
         for key in ("passed_appetizer", "starter", "entree", "side"):
             bullets = [item["name"] for item in formal_by_group.get(key, [])]
             if not bullets:
@@ -952,9 +1241,16 @@ class MenuService:
                 }
             )
 
+        formal_plan_options = (
+            service_plan_catalog.get("formal_plan_options") if isinstance(service_plan_catalog, dict) else None
+        ) or deepcopy(list(cls.FORMAL_PLAN_OPTIONS))
+        catering_sections = (
+            service_plan_catalog.get("catering_sections") if isinstance(service_plan_catalog, dict) else None
+        ) or cls._build_legacy_catering_sections()
+
         return {
             "menu_options": menu_options,
-            "formal_plan_options": deepcopy(list(cls.FORMAL_PLAN_OPTIONS)),
+            "formal_plan_options": formal_plan_options,
             "menu": {
                 "togo": {
                     "pageTitle": "To-Go & Take-and-Bake Trays",
@@ -967,64 +1263,14 @@ class MenuService:
                     ],
                     "sections": togo_sections,
                 },
-                "community": {
+                "catering": {
                     "pageTitle": "Community & Crew Catering (Per Person)",
                     "subtitle": "Drop-off or buffet setup - Minimums apply",
-                    "sections": [
-                        {
-                            "sectionId": "community_taco_bar",
-                            "type": "package",
-                            "title": "Taco Bar",
-                            "description": "Includes Spanish rice, refried beans, tortillas, toppings",
-                            "constraints": {"entree": {"min": 1, "max": 1}},
-                            "price": "$18-$25 per person",
-                        },
-                        {
-                            "sectionId": "community_homestyle",
-                            "type": "package",
-                            "title": "Hearty Homestyle Packages",
-                            "description": "Choose 1 protein + 2 sides + bread",
-                            "constraints": {"entree": {"min": 1, "max": 1}, "sides": {"min": 2, "max": 2}},
-                            "price": "$20-$28 per person",
-                        },
-                        {
-                            "sectionId": "community_buffet_tiers",
-                            "type": "tiers",
-                            "title": "Event Catering - Buffet Style",
-                            "tiers": [
-                                {
-                                    "tierTitle": "Tier 1: Casual Buffet",
-                                    "constraints": {
-                                        "entree": {"min": 2, "max": 2},
-                                        "sides": {"min": 2, "max": 2},
-                                        "salads": {"min": 1, "max": 1},
-                                    },
-                                    "price": "$30-$40 per person",
-                                    "bullets": ["2 Entrees", "2 Sides", "1 Salad", "Bread"],
-                                },
-                                {
-                                    "tierTitle": "Tier 2: Elevated Buffet / Family-Style",
-                                    "constraints": {
-                                        "entree": {"min": 2, "max": 3},
-                                        "sides": {"min": 3, "max": 3},
-                                        "salads": {"min": 2, "max": 2},
-                                    },
-                                    "price": "$45-$65 per person",
-                                    "bullets": ["2-3 Entrees", "3 Sides", "2 Salads", "Bread"],
-                                },
-                            ],
-                        },
-                        {
-                            "sectionId": "community_menu_options",
-                            "type": "includeMenu",
-                            "title": "Menu Options",
-                            "includeKeys": ["entree", "signature_protein", "side", "salad"],
-                        },
-                    ],
+                    "sections": catering_sections,
                 },
                 "formal": {
                     "pageTitle": "Formal Events - Plated & Full Service",
-                    "subtitle": "Three-course dinner",
+                    "subtitle": "Select a dinner package, then choose menu options.",
                     "sections": formal_sections,
                 },
             },

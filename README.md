@@ -1,25 +1,16 @@
 # American Legion Post 468 Catering Application
 
-Web application for American Legion Post 468 catering services and community food programs.
-This repository includes a React frontend, a Flask backend, and a MySQL data layer for menus, inquiries, and landing slides.
-
 ## Mission And Program Context
+Web application for American Legion Post 468 catering services and community food programs.
 
 Food prepared with purpose. American Legion Post 468 Catering combines professional culinary and event experience with a mission to serve the local community. The same team supports events and the weekly Monday Meal Program for veterans, and catering proceeds support veteran outreach.
-
-## Audience
-
-This README is for:
-- Developers onboarding to the project
-- Future maintainers handling operations and menu updates
-- Internal stakeholders who need a technical and program-level overview
 
 ## Stack
 
 - Frontend: React + Vite + React Router + React Bootstrap
 - Backend: Python + Flask
 - Database: MySQL
-- Data model: normalized relational menu tables served by `/api/menus`
+- Data model: normalized menu-item tables plus service-package tables composed into `/api/menus`
 
 ## Repository Layout
 
@@ -59,7 +50,8 @@ PostCatering/
     vite.config.js
     eslint.config.js
   docs/
-    reference/
+    README.md
+    admin-service-packages.md
   README.md
 ```
 
@@ -115,6 +107,8 @@ npm run api
 ```
 
 This uses the client script to start Flask from `../api` via `venv\Scripts\flask run --no-debugger`.
+It works as long as `api/venv` already exists; you do not need to activate the virtual environment first.
+Do not run `npm run api` and `python server.py` at the same time, because both start the backend on port `5000`.
 
 ### 2) Frontend Setup (`client/`)
 
@@ -129,8 +123,8 @@ Vite defaults to `http://localhost:5173` and proxies `/api` to `http://localhost
 ## Deployment
 
 - AWS EC2 runbook: `docs/deployment-aws-ec2.md`
-- Owner-account launch-day checklist: `docs/pre-cutover-checklist.md`
-- Owner-account command sheet: `docs/cutover-command-sheet.md`
+- Namecheap VPS runbook: `docs/deployment-namecheap-vps.md`
+- Documentation map: `docs/README.md`
 
 ## Testing
 
@@ -165,7 +159,9 @@ Current frontend coverage includes:
 - `client/src/components/Inquiry.test.jsx` (required validation + successful submit payload)
 - `client/src/components/service-menu/CatalogSectionsAccordion.test.jsx` (shared public menu accordion rendering and section promotion)
 - `client/src/components/service-menu/serviceMenuUtils.test.js` (filters formal-only items out of non-formal public menu displays)
-- `client/src/components/admin/AdminDashboard.test.jsx` (admin filter flows, including local media filtering behavior)
+- `client/src/components/admin/AdminLayout.test.jsx` (routed admin shell and tab navigation)
+- `client/src/components/admin/AdminDashboard.test.jsx` (embedded menu/media/settings flows running inside the routed admin shell)
+- `client/src/components/admin/AdminServicePlansPage.test.jsx` (service package CRUD and validation flows)
 - `client/e2e/customer-inquiry.spec.js` (browser flow from open inquiry modal to successful submission)
 
 ## Pre-commit Hooks
@@ -302,6 +298,24 @@ ON DUPLICATE KEY UPDATE
 - `PATCH /api/admin/menu/items/<id>`
   Updates menu item fields and option-group assignments.
 
+- `GET /api/admin/service-plans`
+  Returns service package sections plus package rows for the requested catalog (`catering` or `formal`).
+
+- `GET /api/admin/service-plans/<id>`
+  Returns a single service package for editing.
+
+- `POST /api/admin/service-plans`
+  Creates a service package.
+
+- `PATCH /api/admin/service-plans/<id>`
+  Updates a service package.
+
+- `DELETE /api/admin/service-plans/<id>`
+  Archives a service package by default; hard delete is explicit.
+
+- `PATCH /api/admin/service-plans/reorder`
+  Persists package order within a fixed section.
+
 - `GET /api/admin/media`
   Search/filter gallery/landing media.
 
@@ -325,9 +339,20 @@ ON DUPLICATE KEY UPDATE
 - HTTP payloads use `snake_case` for API field names.
 - React component/view-model state uses `camelCase`.
 - Boundary mapping is enforced in `client/src/hooks/useMenuConfig.js` for `/api/menus`:
-  - API fields like `page_title`, `intro_blocks`, `section_id`, `course_type`, `include_keys`, `tier_title`
-  - Client fields like `pageTitle`, `introBlocks`, `sectionId`, `courseType`, `includeKeys`, `tierTitle`
+  - API fields like `page_title`, `intro_blocks`, `section_id`, `plan_id`, `plan_key`, `selection_mode`, `selection_groups`, `group_key`, `option_key`
+  - Client fields like `pageTitle`, `introBlocks`, `sectionId`, `planId`, `planKey`, `selectionMode`, `selectionGroups`, `groupKey`, `optionKey`
+  - legacy compatibility for `tier_title` remains in the mapping layer, while current formal course-option payloads render as grouped `tiers` using `tierTitle`
 - Inquiry request/response payloads remain `snake_case` end-to-end to align with backend validators and DB fields.
+
+## Admin Dashboard
+
+The admin UI now uses one routed shell (`AdminLayout`) with fixed tabs:
+- `/admin/menu-items`
+- `/admin/service-packages`
+- `/admin/media`
+- `/admin/settings`
+
+The visible layout stays uniform across tabs, but each route renders its own page component inside the shared dashboard shell.
 
 ## Menu Data And Maintenance
 
@@ -336,22 +361,42 @@ Primary menu source is normalized MySQL tables. Seed source is:
 
 Maintenance details and SQL examples:
 - `api/flask_api/config/MENU_DB_MAINTENANCE.md`
+- `docs/admin-service-packages.md`
 
 Key maintenance rule:
 - Use `is_active = 0` to hide rows instead of deleting data.
 
+Service packages are stored separately from menu items. Menu dishes stay in the normalized menu tables, while catering/formal packages live in:
+- `service_plan_sections`
+- `service_plans`
+- `service_plan_constraints`
+- `service_plan_details`
+- `service_plan_selection_groups`
+- `service_plan_selection_options`
+
+Important current rules:
+- Package sections are fixed operational buckets, not user-managed content.
+- Runtime catalogs are `catering` and `formal`.
+- `is_active` is the only live package status. Inactive means archived/hidden from public displays and the inquiry flow.
+
 Public menu rendering notes (current UI):
 - All public menu pages render through the same accordion pipeline (`CatalogSectionsAccordion` + `MenuSectionBlocks`), so structural display changes should be made there instead of per-menu page.
 - Menu accordions default to collapsed.
-- Items assigned to the formal catalog are intentionally excluded from `to-go` and `community/catering` public displays, even if they exist in shared source data.
+- Items assigned to the formal catalog are intentionally excluded from `to-go` and `catering` public displays, even if they exist in shared source data.
 
-### Unified Menu Item Model (Current, Updated February 22, 2026)
+### Unified Menu And Service Package Model (Current, Updated March 16, 2026)
 
-The menu schema now uses one canonical `menu_items` table for all item identities, with per-type group assignments in a join table.
+The current schema separates two domains that used to be mixed together:
+- menu items
+- service packages
 
-Picture 1: ERD (high-level)
+Menu items are still the canonical source for dishes and tray pricing. Service packages are now their own domain with package rules, included items, section-level include-menu definitions, and customer-choice definitions stored separately.
+
+Picture 1: high-level schema
 
 ```text
+MENU ITEMS
+
 +------------------+        +------------------+
 |    menu_types    |        |    menu_groups   |
 |------------------|        |------------------|
@@ -395,42 +440,116 @@ Picture 1: ERD (high-level)
 | UQ(group_a_id,group_b_id)
 | CHECK(group_a_id < group_b_id)
 +-----------------------+
+
+SERVICE PACKAGES
+
++----------------------------+      +-------------------+
+|   service_plan_sections    |----->|   service_plans   |
+|----------------------------|      |-------------------|
+| id (PK)                    |      | id (PK)           |
+| catalog_key                |      | section_id (FK)   |
+| section_key (UQ)           |      | plan_key (UQ)     |
+| section_type               |      | title             |
+| public_section_id (UQ)     |      | price_*           |
+| title                      |      | selection_mode    |
+| note                       |      | sort_order        |
+| sort_order                 |      | is_active         |
+| is_active                  |      +-------------------+
++----------------------------+               |
+              |                              |
+              v                              v
++----------------------------+   +---------------------------+-----------------------------+
+| service_section_menu_groups|   |                           |                             |
+|----------------------------|   |                           |                             |
+| section_id (FK)            |   v                           v                             v
+| menu_group_key             | +---------------------------+  +----------------------+  +------------------------------+
+| sort_order                 | | service_plan_constraints  |  | service_plan_details |  | service_plan_selection_groups|
++----------------------------+ |---------------------------|  |----------------------|  |------------------------------|
+                               | service_plan_id (FK)      |  | service_plan_id (FK) |  | service_plan_id (FK)         |
+                               | selection_key             |  | detail_text          |  | group_key                    |
+                               | min_select                |  | sort_order           |  | source_type                  |
+                               | max_select                |  +----------------------+  | menu_group_key               |
+                               +---------------------------+                            | min_select / max_select      |
+                                                                                        +------------------------------+
+                                                                                                       |
+                                                                                                       v
+                                                                                        +-------------------------------+
+                                                                                        | service_plan_selection_options|
+                                                                                        |-------------------------------|
+                                                                                        | selection_group_id (FK)       |
+                                                                                        | option_key                    |
+                                                                                        | option_label                  |
+                                                                                        | menu_item_id (nullable FK)    |
+                                                                                        +-------------------------------+
 ```
 
-What each table does
+What each area does
 
-- `menu_types`
-  - Reference table for type dimension.
-  - Rows use singular, unique keys (for example: `regular`, `formal`).
-- `menu_groups`
-  - Reference table for group dimension.
-  - Rows use singular, unique keys (for example: `entree`, `side`, `salad`, `starter`).
-- `menu_type_groups`
-  - Defines which groups are valid for each type and their display order.
-  - Example: `regular -> entree, signature_protein, side, salad`
-  - Example: `formal -> passed_appetizer, starter, entree, side`
-- `menu_item_type_groups`
-  - Canonical assignment table between `menu_items` and `menu_types`, with one group per item per type.
-  - This enables an item to exist in `regular`, `formal`, or both, without duplicating item rows.
-- `menu_group_conflicts`
-  - Optional policy table for cross-type group conflicts (for example: `side` vs `salad`).
-  - Enforced in generic service validation, not hardcoded per menu flow.
 - `menu_items`
-  - Canonical item identity + pricing table for all menu items (regular and formal).
-  - No duplicated item rows across menu types.
+  - Canonical item identity and tray pricing.
+  - No duplicate dish rows are needed just because an item appears in more than one catalog.
+- `menu_types`
+  - Type dimension for menu items.
+  - Current runtime types are `regular` and `formal`.
+- `menu_groups`
+  - Menu-item grouping dimension.
+  - Current keys include `entree`, `signature_protein`, `side`, `salad`, `passed_appetizer`, and `starter`.
+- `menu_type_groups`
+  - Declares which menu groups are valid for each menu type and the display order used by admin/public menus.
+- `menu_item_type_groups`
+  - Canonical item-to-type assignment table, one group per item per type.
+  - This is what allows a dish to be regular, formal, or both without cloning `menu_items` rows.
+- `menu_group_conflicts`
+  - Shared rule table for conflicting menu groups, currently used by the inquiry/service validation layer.
 
-Compatibility notes:
-- Existing public endpoints (`/api/menu/general/*`, `/api/menu/formal/*`, `/api/menus`) preserve current display behavior.
-- Migration `api/sql/migrations/20260222_menu_unified_item_model.sql` backfills assignments and removes stale split/transitional tables.
+- `service_plan_sections`
+  - Fixed public sections inside the two runtime catalogs: `catering` and `formal`.
+  - Current seeded sections include `catering_packages`, `catering_menu_options`, and `formal_packages`.
+  - Section types currently include `packages` and `include_menu`.
+  - These are not currently user-managed sections.
+- `service_section_menu_groups`
+  - Declares which menu families an `include_menu` section should expose in the public payload.
+  - Example: `catering_menu_options` includes `entree`, `signature_protein`, `side`, and `salad`.
+- `service_plans`
+  - Canonical package rows.
+  - This is the single package model for both catering packages and formal packages.
+  - `selection_mode` is derived as `menu_groups`, `custom_options`, `hybrid`, or `none`.
+  - `is_active` is the only live package status.
+- `service_plan_constraints`
+  - Machine-readable customer-choice requirements for menu-backed package selections.
+  - Example: `entree_signature_protein 1-2`, `sides_salads 2-3`.
+- `service_plan_details`
+  - Fixed included-item bullets.
+  - Example: `Bread`, `Tortillas`, `Toppings`.
+- `service_plan_selection_groups`
+  - Customer-choice groups for custom or hybrid packages.
+  - Example: `Taco Bar Proteins`.
+- `service_plan_selection_options`
+  - Options inside a custom customer-choice group.
+  - Example: `Carne Asada`, `Chicken`, `Marinated Pork`.
 
-CLI maintenance task:
+Important current behavior
+
+- `/api/menu/general/*` and `/api/menu/formal/*` are served from the unified menu-item tables.
+- `/api/menus` is the composed public payload. It merges menu items with service-package data, including `packages` sections and `includeMenu` sections.
+- Catering packages no longer use a separate "tier" persistence model. Buffet offerings are stored as packages like everything else.
+- Formal course-option lists still render as grouped `tiers` blocks in the public payload, so some formal display helpers still depend on `tiers`/`tierTitle` as presentation data only.
+- The admin package surface is `/admin/service-packages`, backed by `/api/admin/service-plans`.
+
+Migration notes
+
+Schema sync applies `api/sql/schema.sql` plus the ordered migrations in `api/sql/migrations` via `api/scripts/menu_admin_sync.py`.
+For table-level maintenance details and SQL examples, see `api/flask_api/config/MENU_DB_MAINTENANCE.md`.
+For current service-package admin/model notes, see `docs/admin-service-packages.md`.
+
+Maintenance task:
 
 ```powershell
 cd api
 python scripts/menu_admin_sync.py --apply-schema --reset
 ```
 
-Admin endpoint example:
+Admin sync endpoint example:
 
 ```http
 POST /api/admin/menu/sync
@@ -444,61 +563,30 @@ Content-Type: application/json
 }
 ```
 
-## Updating Landing Photos
+## Manual Media Recovery / Bulk Sync
 
-Media metadata is database-first:
-- `GET /api/slides` and `GET /api/gallery` both read labels/text from MySQL `slides`.
-- Filenames are treated as storage details only and should not be used as display labels.
+Normal media updates now belong in Admin > Media.
 
-Current canonical media storage:
-- files: `api/flask_api/static/slides`
-- metadata: `slides` table (`title`, `caption`, `alt_text`, `image_url`, `media_type`, `is_slide`, `display_order`, `is_active`)
+Use the manual path below only for recovery, bulk imports, or reconciling files already placed on disk.
 
-Step-by-step (current setup):
-1. Add files to `api/flask_api/static/slides`.
-2. Sync/normalize DB metadata (adds missing rows and writes placeholders for missing labels/text):
+- Canonical media files live in `api/flask_api/static/slides`
+- Canonical metadata lives in MySQL `slides` (`title`, `caption`, `alt_text`, `image_url`, `media_type`, `is_slide`, `display_order`, `is_active`)
+- `GET /api/slides` and `GET /api/gallery` read from `slides`, so filenames should be treated as storage details only
+
+To resync file-backed media rows:
 
 ```powershell
 cd api
 python scripts/sync_gallery_media.py
 ```
 
-3. Replace placeholder metadata with owner-provided values in `slides`:
-   - `title` (label shown in gallery/modal)
-   - `caption` (description text)
-   - `alt_text` (accessibility text)
-   - `is_slide` (`1` to include on landing carousel, `0` to keep only in gallery)
-4. Disable retired media with `is_active = 0` instead of deleting rows.
-5. Verify in browser:
-   - `GET /api/gallery` returns expected labels/text and ordering
-   - `GET /api/slides` returns only rows where `is_slide = 1`
-   - Landing carousel and `/showcase` reflect metadata updates
-
-Example SQL update:
-
-```sql
-UPDATE slides
-SET
-  title = 'Community Dinner',
-  caption = 'Seasonal menu highlights',
-  image_url = '/api/assets/slides/community-dinner-2026.jpg',
-  alt_text = 'Community dinner service line',
-  display_order = 1,
-  is_active = 1
-WHERE id = 1;
-```
-
-Future-ready option (recommended when moving off-repo assets):
-1. Upload images to object storage/CDN (S3, R2, etc.).
-2. Save full CDN URLs in `slides.image_url` (no frontend code changes required).
-3. Use versioned filenames or query params for cache busting (example: `hero-2026-05.jpg?v=2`).
-4. Keep `GET /api/slides` as the single source of truth so updates remain operational, not code-driven.
+After syncing, finish cleanup in the admin media panel by reviewing titles, captions, alt text, slide status, active status, and ordering.
 
 ## Inquiry Flow
 
 Frontend:
 - Loads menu config from `/api/menus`
-- Builds service/package/tier selections dynamically
+- Builds service package selections dynamically, including menu-backed and custom customer-choice groups
 - Posts inquiry payload to `/api/inquiries`
 
 Current frontend UX notes:
@@ -537,157 +625,18 @@ Backend:
 - Add production file-based logging (for example `api/logs/app.log`) alongside console logging for persistent operational/audit troubleshooting.
 - Implement Docker containers for backend, frontend, and MySQL (with a `docker-compose` workflow for local and deployment parity).
 
-### Menu Schema Consolidation Status (February 22, 2026)
-- Implemented: single canonical `menu_items` table with per-type group assignments via `menu_item_type_groups`.
-- Implemented: reference-driven type/group validity via `menu_types`, `menu_groups`, and `menu_type_groups`.
-- Implemented: optional logical-path restrictions via `menu_group_conflicts` and shared service-layer validation.
-- Implemented: compatibility updates across API/admin/public menu queries to preserve current display behavior.
+## Program And Menu Reference
 
-## TODO (Audit Follow-Up)
+This README is not the source of truth for live pricing or current package/menu inventory. Runtime offerings are DB-backed and admin-editable, so static snapshots drift quickly.
 
-Audit snapshot from March 1, 2026:
-- DB structure is current for the simplified menu schema (required tables/columns present, no legacy menu tables detected), so the remaining DB work is data cleanup rather than schema repair.
-- Seed or create the `menu_config` row for `inquiry_email_content`. Current DB keys are only `FORMAL_PLAN_OPTIONS`, `MENU`, and `MENU_OPTIONS`, so the DB-first inquiry email copy described in this README is not populated yet.
-- Remove or normalize the two inactive orphan `menu_items` rows with no `menu_item_type_groups` assignment (`id` 75 `ygkygkjghjk`, `id` 76 `efhsrhsh`). These look like stray test/manual entries and currently fail the “every item has a typed assignment” expectation.
-- Replace placeholder slide metadata. The current DB still has 29 `slides` rows using placeholder title/caption values, which means gallery/landing content is structurally valid but not fully curated.
-- Resolve current frontend lint warnings: `client/src/components/admin/AdminDashboard.jsx` has four `react-hooks/exhaustive-deps` warnings around `createItem`, `saveItem`, `uploadMedia`, and `saveMedia`; `client/src/components/admin/ConfirmActionModal.jsx` has one missing dependency warning for `runPrimaryAction`.
+Use these sources instead:
+- Live public payload: `GET /api/menus`
+- Menu item admin maintenance: `/admin/menu-items`
+- Service package admin maintenance: `/admin/service-packages`
+- Fallback/seed baseline: `api/sql/menu_seed_payload.json`
+- Service-package model notes: `docs/admin-service-packages.md`
 
-## Program And Menu Reference (Current Data)
-
-This section preserves the current business/program content and pricing snapshot for maintainers.
-
-## American Legion Post 468
-
-### Catering And Community Food Programs
-
-American Legion Post 468 Catering brings together professional culinary experience, large-scale event execution, and community mission alignment.
-
-Leadership background includes fine dining, banquets, bartending, kitchen operations, banquet captain roles, and event coordination. The team operates from a commercial kitchen with volunteer support and can scale from small gatherings to large events.
-
-Most importantly, each catered event supports veteran outreach in Julian and surrounding areas.
-
-### Monday Meal Program (Community Impact)
-
-The Monday Meal Program was created to support local veterans with reliable meals, especially for people facing mobility, fixed-income, or service-access challenges. Catering operations help sustain this effort.
-
-### To-Go And Take-And-Bake Trays
-
-Served hot or chilled to reheat.
-
-Tray sizes:
-- Half tray: serves 8-10
-- Full tray: serves 16-20
-
-#### Baked And Hearty Entree Trays
-
-| Entree | Half Tray | Full Tray |
-| --- | --- | --- |
-| Lasagna (Meat or Veg) | $75 | $135 |
-| Enchiladas (Cheese or Chicken, Red or Green) | $70 | $130 |
-| Baked Ziti (Veg or Beef) | $65 | $120 |
-| BBQ Pulled Pork | $75 | $140 |
-| Shepherd's Pie | $80 | $150 |
-| Beef Stroganoff | $85 | $160 |
-| Beef & Pancetta Bolognese Pappardelle | $90 | $170 |
-
-#### Signature Protein Trays
-
-| Entree | Half Tray | Full Tray |
-| --- | --- | --- |
-| Bone-In Herb Roasted Chicken Thighs | $75 | $140 |
-| Apple Cider-Marinated Pork Chops | $85 | $160 |
-| Marinated Pork Stir-Fry | $80 | $150 |
-| Stuffed Chicken Breast (Spinach, Mushroom, Cheese) | $90 | $170 |
-| Herb-Marinated Tri-Tip w/ Chimichurri | $110 | $210 |
-| Braised Short Ribs | $120 | $225 |
-
-#### Sides And Salads
-
-| Side | Half | Full |
-| --- | --- | --- |
-| Garlic Mashed Potatoes | $40 | $75 |
-| Herb Roasted Fingerlings | $40 | $75 |
-| Rice Pilaf | $35 | $65 |
-| Mac & Cheese | $45 | $85 |
-| Pasta Salad (Creamy or Pesto) | $35 | $65 |
-| Coleslaw | $30 | $55 |
-| Roasted Seasonal Vegetables | $40 | $75 |
-| Caesar Salad | $35 | $65 |
-| Watermelon & Feta Salad | $40 | $75 |
-| Beet & Citrus Salad | $40 | $75 |
-| Cucumber Tomato Salad | $35 | $65 |
-| Caprese Salad | $45 | $85 |
-| Au Gratin Potatoes | $45 | $85 |
-| Strawberry Arugula Salad | $40 | $75 |
-| Garlic Bread / Rolls / Cornbread | $25 | $45 |
-| Fried Rice | $45 | $85 |
-| Lumpia | $55 | $100 |
-| Charcuterie Board (Serves 10-12) | - | $95 |
-
-### Community And Crew Catering (Per Person)
-
-Drop-off or buffet setup. Minimums apply.
-
-#### Taco Bar (Carne Asada or Chicken)
-
-Includes Spanish rice, refried beans, tortillas, toppings.
-$18-$25 per person
-
-#### Hearty Homestyle Packages
-
-Choose:
-- 1 protein or entree
-- 2 sides
-- bread
-
-$20-$28 per person
-
-#### Event Catering - Buffet Style
-
-Tier 1: Casual Buffet ($30-$40 per person)
-- 2 entrees
-- 2 sides
-- 1 salad
-- bread
-
-Tier 2: Elevated Buffet / Family-Style ($45-$65 per person)
-- 2-3 entrees
-- 3 sides
-- 2 salads
-- bread
-
-### Formal Events - Plated And Full Service
-
-#### Three-Course Dinner
-
-$75-$110+ per person
-
-Choose:
-- 2 passed appetizers
-- 1 starter
-- 1 or 2 entrees
-- bread
-
-Passed appetizers (choose two):
-- Bruschetta
-- Caprese Crostini
-- Prosciutto & Brie Bites
-- Sirloin Sliders
-
-Starter (choose one):
-- Caesar
-- Beet & Citrus Salad
-- Caprese
-- Strawberry Arugula Salad
-
-Entree (choose one or two):
-- Braised Short Rib
-- Apple Cider-Marinated Pork Chop
-- Herb-Marinated Tri-Tip
-- Spinach and Mushroom Stuffed Chicken Breast
-- Mushroom Risotto (Vegetarian)
-
-Sides:
-- Garlic Mashed Potatoes or Au Gratin
-- Seasonal Vegetables
-- Rice Pilaf
+Current source hierarchy:
+- `/api/menus` is the live runtime source used by the frontend.
+- Admin edits to menu items and service packages flow through the admin routes above and persist to MySQL.
+- `api/sql/menu_seed_payload.json` is a fallback/bootstrap baseline, not the normal live source when DB-backed menu data is available.

@@ -18,7 +18,7 @@ def _make_inquiry(**overrides):
         "phone": "(212) 555-1212",
         "event_type": "Wedding",
         "event_date": "2026-06-15",
-        "service_interest": "community buffet",
+        "service_interest": "catering packages",
         "message": "Looking for a quote.",
     }
     base.update(overrides)
