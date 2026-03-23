@@ -2,12 +2,14 @@
 set -Eeuo pipefail
 
 # Expected overrides via environment:
-# APP_DIR, BRANCH, API_SERVICE, WEB_ROOT, HEALTH_URL
+# APP_DIR, BRANCH, API_SERVICE, WEB_ROOT, HEALTH_URL, API_ENV_FILE, DB_MIGRATION_ARGS
 APP_DIR="${APP_DIR:-/home/ubuntu/PostCatering}"
 BRANCH="${BRANCH:-main}"
 API_SERVICE="${API_SERVICE:-postcatering-api}"
 WEB_ROOT="${WEB_ROOT:-/var/www/postcatering}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1/api/health}"
+API_ENV_FILE="${API_ENV_FILE:-/etc/postcatering/api.env}"
+DB_MIGRATION_ARGS="${DB_MIGRATION_ARGS:---apply-schema --no-seed}"
 
 if sudo -n true >/dev/null 2>&1; then
   SUDO="sudo -n"
@@ -17,6 +19,22 @@ fi
 
 log() {
   printf '[%s] %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"
+}
+
+load_api_env() {
+  local env_path="$1"
+  if [ ! -f "$env_path" ]; then
+    return 1
+  fi
+
+  log "Loading API environment from $env_path"
+  set -a
+  if ! source "$env_path"; then
+    set +a
+    return 1
+  fi
+  set +a
+  return 0
 }
 
 lock_file="/tmp/postcatering-deploy.lock"
@@ -44,6 +62,17 @@ source venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 python -m pip install gunicorn cryptography
+
+if ! load_api_env "$API_ENV_FILE"; then
+  if ! load_api_env ".env"; then
+    log "No API environment file found at $API_ENV_FILE or $(pwd)/.env; relying on current shell environment"
+  fi
+fi
+
+log "Running database schema sync ($DB_MIGRATION_ARGS)"
+# Intentional word splitting so multiple flags can be supplied via DB_MIGRATION_ARGS.
+# shellcheck disable=SC2086
+python scripts/menu_admin_sync.py $DB_MIGRATION_ARGS
 deactivate
 
 log "Building frontend"

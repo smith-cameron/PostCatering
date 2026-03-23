@@ -39,6 +39,8 @@ Optional overrides:
 - `EC2_DEPLOY_PATH` (default: `/home/ubuntu/PostCatering`)
 - `EC2_API_SERVICE` (default: `postcatering-api`)
 - `EC2_HEALTH_URL` (default: `http://127.0.0.1/api/health`)
+- `EC2_API_ENV_FILE` (default: `/etc/postcatering/api.env`)
+- `EC2_DB_MIGRATION_ARGS` (default: `--apply-schema --no-seed`)
 
 ## Workflow Behavior
 
@@ -48,10 +50,13 @@ Optional overrides:
 - Deploy script:
   - pulls latest `main` with fast-forward only
   - installs backend deps in `api/venv`
+  - loads API env from `/etc/postcatering/api.env` (or `api/.env` fallback) and runs `python scripts/menu_admin_sync.py --apply-schema --no-seed`
   - builds frontend with `npm ci && npm run build`
   - publishes `client/dist` to `/var/www/postcatering`
   - restarts API service and reloads Nginx
   - validates `/api/health`
+
+Make sure the deploy user can read the API env file used for migrations.
 
 ## Rollback
 

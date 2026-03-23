@@ -62,12 +62,16 @@ jobs:
           EC2_DEPLOY_PATH: ${{ secrets.EC2_DEPLOY_PATH }}
           EC2_API_SERVICE: ${{ secrets.EC2_API_SERVICE }}
           EC2_HEALTH_URL: ${{ secrets.EC2_HEALTH_URL }}
+          EC2_API_ENV_FILE: ${{ secrets.EC2_API_ENV_FILE }}
+          EC2_DB_MIGRATION_ARGS: ${{ secrets.EC2_DB_MIGRATION_ARGS }}
           GITHUB_BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           APP_DIR="${EC2_DEPLOY_PATH:-/home/ubuntu/PostCatering}"
           API_SERVICE="${EC2_API_SERVICE:-postcatering-api}"
           HEALTH_URL="${EC2_HEALTH_URL:-http://127.0.0.1/api/health}"
+          API_ENV_FILE="${EC2_API_ENV_FILE:-/etc/postcatering/api.env}"
+          DB_MIGRATION_ARGS="${EC2_DB_MIGRATION_ARGS:---apply-schema --no-seed}"
 
           ssh -i "$HOME/.ssh/id_ed25519" "$EC2_SSH_USER@$EC2_SSH_HOST" \
-            "chmod +x /tmp/postcatering-deploy.sh && APP_DIR='$APP_DIR' BRANCH='$GITHUB_BRANCH' API_SERVICE='$API_SERVICE' HEALTH_URL='$HEALTH_URL' /tmp/postcatering-deploy.sh && rm -f /tmp/postcatering-deploy.sh"
+            "chmod +x /tmp/postcatering-deploy.sh && APP_DIR='$APP_DIR' BRANCH='$GITHUB_BRANCH' API_SERVICE='$API_SERVICE' HEALTH_URL='$HEALTH_URL' API_ENV_FILE='$API_ENV_FILE' DB_MIGRATION_ARGS='$DB_MIGRATION_ARGS' /tmp/postcatering-deploy.sh && rm -f /tmp/postcatering-deploy.sh"

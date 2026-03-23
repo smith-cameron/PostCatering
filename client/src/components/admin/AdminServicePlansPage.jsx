@@ -381,12 +381,14 @@ const AdminServicePlansPage = ({
 
   useEffect(() => {
     if (!editableSections.length) return;
-    const hasCurrentSection = editableSections.some(
-      (section) => Number(section?.id) === Number(planForm.sectionId)
-    );
-    if (hasCurrentSection) return;
-    setPlanForm((prev) => buildEmptyPlanForm(editableSections[0]?.id || prev.sectionId));
-  }, [editableSections, planForm.sectionId]);
+    setPlanForm((prev) => {
+      const hasCurrentSection = editableSections.some(
+        (section) => Number(section?.id) === Number(prev.sectionId)
+      );
+      if (hasCurrentSection) return prev;
+      return buildEmptyPlanForm(editableSections[0]?.id || prev.sectionId);
+    });
+  }, [editableSections]);
 
   const openCreateEditor = (section) => {
     const nextForm = buildEmptyPlanForm(section?.id || selectedSection?.id || editableSections[0]?.id || "");
