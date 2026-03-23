@@ -1,5 +1,7 @@
 # Admin Service Packages
 
+Last updated: March 22, 2026
+
 This document covers the current service-package model used by the admin dashboard and `/api/menus`.
 
 ## Scope
@@ -8,7 +10,12 @@ The runtime package catalogs are fixed:
 - `catering`
 - `formal`
 
-There is no admin CRUD for package sections. Sections are fixed operational buckets behind those catalogs.
+There is no admin CRUD for section definitions. Sections are fixed operational buckets behind those catalogs.
+
+Current seeded sections:
+- `catering_packages` (`packages`)
+- `catering_menu_options` (`include_menu`)
+- `formal_packages` (`packages`)
 
 ## Admin Routes
 
@@ -33,6 +40,7 @@ Menu dishes:
 
 Service packages:
 - `service_plan_sections`
+- `service_section_menu_groups`
 - `service_plans`
 - `service_plan_constraints`
 - `service_plan_details`
@@ -44,38 +52,55 @@ Service packages:
 The admin UI is intentionally simpler than the storage model.
 
 What admins manage:
-- Core fields: title, price, active
+- destination package section
+- core fields: title, price, active
 - `Included Items`
 - `Customer Chooses`
 
 What that maps to under the hood:
+- selected package section -> `service_plans.section_id`
 - `Included Items` -> `service_plan_details`
-- Menu-backed customer choices -> `service_plan_constraints`
-- Custom-option customer choices -> `service_plan_selection_groups` + `service_plan_selection_options`
+- menu-backed customer choices -> `service_plan_constraints`
+- custom-option customer choices -> `service_plan_selection_groups` + `service_plan_selection_options`
+- `include_menu` section families -> `service_section_menu_groups` (fixed/seeded, not edited in the current admin UI)
 
-The editor derives `selection_mode` instead of asking admins to manage it directly.
+The editor derives `selection_mode` instead of asking admins to manage it directly:
+- `menu_groups`: menu-backed customer choices only
+- `custom_options`: custom-option groups only
+- `hybrid`: both menu-backed and custom-option choices
+- `none`: no customer-choice rows
+
+Plans cannot be created inside `include_menu` sections.
 
 ## Package Rules
 
 - `is_active` is the only live package status.
-- Inactive packages are archived and hidden from public service pages and the inquiry flow.
+- Inactive packages are hidden from public package data and the inquiry flow.
 - Save-time validation rejects packages where `Included Items` duplicate `Customer Chooses`.
-- Catering packages can use combined or specific choice families such as:
+- Catering packages can use menu-backed choice families such as:
   - `entree_signature_protein`
   - `entree`
   - `signature_protein`
   - `sides`
   - `salads`
   - `sides_salads`
+- Formal packages can use menu-backed choice families such as:
+  - `passed`
+  - `starter`
+  - `entree`
+  - `side`
+- Package price display is stored in `service_plans.price_display`, with parsed numeric metadata persisted alongside it.
 
 ## Public Payload Notes
 
 `/api/menus` remains the public source of truth for service-package rendering.
 
 Current important behaviors:
-- Catering packages render through package sections, not one section per package.
+- Catering package data renders through section entries, not one section per package.
+- `packages` sections become package collections in the public payload.
+- `include_menu` sections become `includeMenu` sections with `includeKeys`.
 - Formal package options are separate from formal course-option lists.
-- Formal course-option lists still use grouped option blocks, which is why `tier_title` remains in the `/api/menus` field mapping.
+- Formal course-option lists still use grouped `tiers` blocks, and the client mapping layer still carries legacy compatibility for `tier_title` while current payloads use `tierTitle` as presentation data.
 
 ## Operational Notes
 

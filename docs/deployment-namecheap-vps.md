@@ -1,7 +1,7 @@
 # Namecheap VPS Production Deployment Runbook
 
 This runbook adapts the current single-server deployment model to a Namecheap VPS.
-It is intended for the production migration to `post460catering.com` after the remaining updates have been shipped to the current EC2 staging environment.
+It is intended for a production migration to `your-production-domain.com` after the remaining updates have been shipped to the current EC2 staging environment.
 
 Current app shape:
 
@@ -44,7 +44,7 @@ Recommended order:
 3. Freeze non-critical content and admin changes.
 4. Build the Namecheap production server using that same commit SHA.
 5. Perform final DB/media sync from EC2.
-6. Cut over DNS to `post460catering.com`.
+6. Cut over DNS to `your-production-domain.com`.
 
 ## 1) Provision The VPS
 
@@ -183,7 +183,7 @@ DB_USER=postcatering_app
 DB_PASSWORD=CHANGE_ME_STRONG_PASSWORD
 DB_NAME=post_catering
 
-CORS_ALLOW_ORIGIN=https://post460catering.com
+CORS_ALLOW_ORIGIN=https://your-production-domain.com
 MENU_ADMIN_TOKEN=replace-with-strong-admin-token
 
 SMTP_HOST=smtp.gmail.com
@@ -254,7 +254,7 @@ If memory gets tight during the frontend build, add a small swap file before ret
 sudo tee /etc/nginx/sites-available/postcatering > /dev/null <<'EOF'
 server {
     listen 80;
-    server_name post460catering.com www.post460catering.com;
+    server_name your-production-domain.com www.your-production-domain.com;
 
     root /var/www/postcatering;
     index index.html;
@@ -297,7 +297,7 @@ Before changing DNS, verify the app directly by IP or temporary host mapping:
 
 ```bash
 curl -f http://127.0.0.1/api/health
-curl -H "Host: post460catering.com" http://YOUR_NAMECHEAP_IP/api/health
+curl -H "Host: your-production-domain.com" http://YOUR_NAMECHEAP_IP/api/health
 ```
 
 Manual checks:
@@ -308,12 +308,12 @@ Manual checks:
 - Submit one real inquiry test
 - Confirm SMTP messages are delivered correctly
 
-## 11) DNS Cutover For `post460catering.com`
+## 11) DNS Cutover For `your-production-domain.com`
 
 After the new server is verified:
 
 1. Lower DNS TTL in advance if you have not already done so.
-2. Update the root `A` record for `post460catering.com` to the Namecheap VPS IP.
+2. Update the root `A` record for `your-production-domain.com` to the Namecheap VPS IP.
 3. Update the `www` `A` record to the same IP, or point `www` with a `CNAME` to the root if your DNS setup allows it.
 4. Wait for propagation to begin.
 
@@ -321,14 +321,14 @@ Once the domain resolves to the new VPS, issue TLS:
 
 ```bash
 sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d post460catering.com -d www.post460catering.com
+sudo certbot --nginx -d your-production-domain.com -d www.your-production-domain.com
 ```
 
 Then verify:
 
 ```bash
-curl -I https://post460catering.com/
-curl -f https://post460catering.com/api/health
+curl -I https://your-production-domain.com/
+curl -f https://your-production-domain.com/api/health
 ```
 
 ## 12) Post-Cutover Tasks
