@@ -23,7 +23,8 @@ log() {
 
 load_api_env() {
   local env_path="$1"
-  local tmp_env
+  local tmp_env=""
+  local env_source line key value
 
   if [ -z "$env_path" ]; then
     return 1
@@ -36,28 +37,53 @@ load_api_env() {
   log "Loading API environment from $env_path"
 
   if [ -r "$env_path" ]; then
-    set -a
-    if ! source "$env_path"; then
-      set +a
+    env_source="$env_path"
+  else
+    tmp_env="$(mktemp)"
+    if ! $SUDO cat "$env_path" >"$tmp_env"; then
+      rm -f "$tmp_env"
       return 1
     fi
-    set +a
-    return 0
+    env_source="$tmp_env"
   fi
 
-  tmp_env="$(mktemp)"
-  if ! $SUDO cat "$env_path" >"$tmp_env"; then
-    rm -f "$tmp_env"
-    return 1
-  fi
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
 
-  set -a
-  if ! source "$tmp_env"; then
-    set +a
-    rm -f "$tmp_env"
-    return 1
-  fi
-  set +a
+    if [[ "$line" =~ ^[[:space:]]*$ ]] || [[ "$line" =~ ^[[:space:]]*# ]]; then
+      continue
+    fi
+
+    if [[ "$line" =~ ^[[:space:]]*export[[:space:]]+ ]]; then
+      line="${line#export }"
+      line="${line#"${line%%[![:space:]]*}"}"
+    fi
+
+    if [[ ! "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
+      log "Skipping unsupported env line in $env_path"
+      continue
+    fi
+
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+
+    if [[ "$value" =~ ^\"(.*)\"$ ]]; then
+      value="${BASH_REMATCH[1]}"
+      value="${value//\\\"/\"}"
+      value="${value//\\\\/\\}"
+      value="${value//\\n/$'\n'}"
+      value="${value//\\t/$'\t'}"
+      value="${value//\\r/$'\r'}"
+    elif [[ "$value" =~ ^\'(.*)\'$ ]]; then
+      value="${BASH_REMATCH[1]}"
+    fi
+
+    export "$key=$value"
+  done <"$env_source"
+
   rm -f "$tmp_env"
   return 0
 }
