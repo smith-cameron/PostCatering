@@ -605,7 +605,10 @@ describe("AdminServicePlansPage", () => {
     expect(screen.queryByText("Select section")).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox")).not.toBeChecked();
     expect(screen.getByPlaceholderText("45-89")).toBeInTheDocument();
-    expect(screen.getByText(/Dollar signs and/i)).toBeInTheDocument();
+    expect(screen.getByText("$ signs")).toBeInTheDocument();
+    expect(screen.getByText(/are added automatically later/i)).toBeInTheDocument();
+    expect(screen.getByText("Example input:")).toBeInTheDocument();
+    expect(screen.getAllByText("45-89").length).toBeGreaterThan(0);
 
     fireEvent.change(screen.getAllByRole("textbox")[0], {
       target: { value: "Omelette Bar" },
@@ -909,16 +912,12 @@ describe("AdminServicePlansPage", () => {
     await screen.findByRole("heading", { name: "Catering Packages" });
     fireEvent.click(screen.getByRole("button", { name: "Add Package" }));
 
+    expect(screen.getByText("Use one row per thing the customer picks.")).toBeInTheDocument();
+    expect(screen.getByText("Menu options pull from shared package families and require Min and Max.")).toBeInTheDocument();
     expect(
-      screen.getByText(
-        "Use one row per thing the customer picks. Menu options pull from shared package families and require Min and Max."
-      )
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText(
-        "Custom options cover package-specific choices like Taco Bar proteins. Min/Max can stay blank when there is no fixed selection count."
-      )
+      screen.queryByText("Custom options cover package-specific choices like Taco Bar proteins.")
     ).not.toBeInTheDocument();
+    expect(screen.queryByText("Min/Max can stay blank when there is no fixed selection count.")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Title"), {
       target: { value: "Taco Bar" },
@@ -928,21 +927,15 @@ describe("AdminServicePlansPage", () => {
       target: { value: "custom_options" },
     });
 
-    expect(
-      screen.getByText(
-        "Custom options cover package-specific choices like Taco Bar proteins. Min/Max can stay blank when there is no fixed selection count."
-      )
-    ).toBeInTheDocument();
+    expect(screen.getByText("Custom options cover package-specific choices like Taco Bar proteins.")).toBeInTheDocument();
+    expect(screen.getByText("Min/Max can stay blank when there is no fixed selection count.")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Choice source 1"), {
       target: { value: "menu_group" },
     });
 
-    expect(
-      screen.queryByText(
-        "Custom options cover package-specific choices like Taco Bar proteins. Min/Max can stay blank when there is no fixed selection count."
-      )
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Custom options cover package-specific choices like Taco Bar proteins.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Min/Max can stay blank when there is no fixed selection count.")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Choice source 1"), {
       target: { value: "custom_options" },
