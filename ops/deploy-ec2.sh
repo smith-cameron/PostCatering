@@ -23,18 +23,78 @@ log() {
 
 load_api_env() {
   local env_path="$1"
-  if [ ! -f "$env_path" ]; then
+  local tmp_env
+
+  if [ -z "$env_path" ]; then
+    return 1
+  fi
+
+  if [ ! -f "$env_path" ] && ! $SUDO test -f "$env_path" >/dev/null 2>&1; then
     return 1
   fi
 
   log "Loading API environment from $env_path"
-  set -a
-  if ! source "$env_path"; then
+
+  if [ -r "$env_path" ]; then
+    set -a
+    if ! source "$env_path"; then
+      set +a
+      return 1
+    fi
     set +a
+    return 0
+  fi
+
+  tmp_env="$(mktemp)"
+  if ! $SUDO cat "$env_path" >"$tmp_env"; then
+    rm -f "$tmp_env"
+    return 1
+  fi
+
+  set -a
+  if ! source "$tmp_env"; then
+    set +a
+    rm -f "$tmp_env"
     return 1
   fi
   set +a
+  rm -f "$tmp_env"
   return 0
+}
+
+discover_api_env_file() {
+  local raw token
+
+  raw="$($SUDO systemctl show "$API_SERVICE" --property=EnvironmentFiles --value 2>/dev/null || true)"
+  if [ -z "$raw" ]; then
+    raw="$($SUDO systemctl cat "$API_SERVICE" 2>/dev/null | sed -n 's/^[[:space:]]*EnvironmentFile=//p' || true)"
+  fi
+
+  for token in $raw; do
+    case "$token" in
+      EnvironmentFiles=*)
+        token="${token#EnvironmentFiles=}"
+        ;;
+      "(ignore_errors="*)
+        continue
+        ;;
+    esac
+
+    token="${token#-}"
+    token="${token%\"}"
+    token="${token#\"}"
+    token="${token%\'}"
+    token="${token#\'}"
+
+    case "$token" in
+      /*)
+        printf '%s\n' "$token"
+        return 0
+        ;;
+    esac
+  done
+
+  return 1
 }
 
 lock_file="/tmp/postcatering-deploy.lock"
@@ -64,6 +124,14 @@ python -m pip install -r requirements.txt
 python -m pip install gunicorn cryptography
 
 if ! load_api_env "$API_ENV_FILE"; then
+  SYSTEMD_API_ENV_FILE="$(discover_api_env_file || true)"
+  if [ -n "${SYSTEMD_API_ENV_FILE:-}" ] && [ "$SYSTEMD_API_ENV_FILE" != "$API_ENV_FILE" ]; then
+    API_ENV_FILE="$SYSTEMD_API_ENV_FILE"
+    load_api_env "$API_ENV_FILE" || true
+  fi
+fi
+
+if [ -z "${DB_HOST:-}" ] && [ -z "${DB_USER:-}" ] && [ -z "${DB_NAME:-}" ]; then
   if ! load_api_env ".env"; then
     log "No API environment file found at $API_ENV_FILE or $(pwd)/.env; relying on current shell environment"
   fi
