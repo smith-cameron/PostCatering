@@ -254,6 +254,16 @@ const AdminServicePlansPage = ({
     () => (Array.isArray(planForm.choiceRows) ? planForm.choiceRows : []).some((row) => row?.source_type === "custom_options"),
     [planForm.choiceRows]
   );
+  const selectedPlanTitle = useMemo(
+    () => String(planFormOriginal?.title || planForm.title || "").trim(),
+    [planForm.title, planFormOriginal]
+  );
+  const editorHeading = useMemo(() => {
+    if (planForm.planId) {
+      return `Edit ${selectedPlanTitle || "Package"}`;
+    }
+    return `Create New ${activeCatalogLabel} Package`;
+  }, [activeCatalogLabel, planForm.planId, selectedPlanTitle]);
 
   const loadSections = useCallback(async (nextCatalogKey = catalogKey) => {
     setLoading(true);
@@ -390,8 +400,15 @@ const AdminServicePlansPage = ({
     setIsEditorOpen(true);
   };
 
-  const openEditEditor = (plan) => {
-    const nextForm = toPlanForm(plan);
+  const openEditEditor = (plan, fallbackSection = null) => {
+    const normalizedPlan = fallbackSection
+      ? {
+          ...plan,
+          section_id: plan?.section_id || fallbackSection?.id,
+          catalog_key: plan?.catalog_key || fallbackSection?.catalog_key,
+        }
+      : plan;
+    const nextForm = toPlanForm(normalizedPlan, fallbackSection?.id || "");
     setEditorError("");
     setEditorFieldErrors(EMPTY_EDITOR_FIELD_ERRORS);
     setEditorChoiceRowErrors([]);
@@ -894,7 +911,6 @@ const AdminServicePlansPage = ({
                             <th>Price</th>
                             <th className="text-center">Active</th>
                             <th className="admin-order-cell text-center">Order</th>
-                            <th className="text-end">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -960,13 +976,13 @@ const AdminServicePlansPage = ({
                               }}
                               onClick={() => {
                                 if (!plan?.id) return;
-                                openEditEditor(plan);
+                                openEditEditor(plan, section);
                               }}
                               onKeyDown={(event) => {
                                 if (!plan?.id) return;
                                 if (event.key !== "Enter" && event.key !== " ") return;
                                 event.preventDefault();
-                                openEditEditor(plan);
+                                openEditEditor(plan, section);
                               }}>
                               <td>
                                 <div className="fw-semibold">{plan.title}</div>
@@ -999,20 +1015,6 @@ const AdminServicePlansPage = ({
                                   </span>
                                 ) : null}
                               </td>
-                              <td className="text-end">
-                                <div className="d-inline-flex flex-wrap justify-content-end gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant="outline-danger"
-                                    disabled={busyPlanId === plan.id}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      void handleDeletePlan(plan);
-                                    }}>
-                                    Delete
-                                  </Button>
-                                </div>
-                              </td>
                               </tr>
                             );
                           })}
@@ -1033,9 +1035,7 @@ const AdminServicePlansPage = ({
             <Card>
               <Card.Body>
                 <div className="d-flex justify-content-between align-items-center mb-3">
-                  <h3 className="h6 mb-0">
-                    {planForm.planId ? "Edit Package" : `Create New ${activeCatalogLabel} Package`}
-                  </h3>
+                  <h3 className="h6 mb-0">{editorHeading}</h3>
                   <Button variant="outline-secondary" size="sm" onClick={clearEditor}>
                     Clear
                   </Button>
@@ -1294,7 +1294,7 @@ const AdminServicePlansPage = ({
                       : "Select a section before saving."}
                   </div>
 
-                  <div className="d-flex gap-2">
+                  <div className="d-flex gap-2 align-items-center">
                     <Button
                       type="submit"
                       className="btn-inquiry-action"
@@ -1305,6 +1305,21 @@ const AdminServicePlansPage = ({
                     <Button type="button" variant="outline-secondary" onClick={resetEditor} disabled={saving}>
                       Cancel
                     </Button>
+                    {planForm.planId ? (
+                      <Button
+                        type="button"
+                        className="ms-auto"
+                        variant="danger"
+                        disabled={saving || busyPlanId === planForm.planId}
+                        onClick={() =>
+                          void handleDeletePlan({
+                            id: planForm.planId,
+                            title: planFormOriginal?.title || planForm.title,
+                          })
+                        }>
+                        Delete Package
+                      </Button>
+                    ) : null}
                   </div>
                 </Form>
               </Card.Body>

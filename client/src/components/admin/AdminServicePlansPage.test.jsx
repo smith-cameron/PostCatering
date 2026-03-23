@@ -80,7 +80,7 @@ describe("AdminServicePlansPage", () => {
     expect(screen.getAllByRole("img", { name: "Active" })).toHaveLength(1);
     expect(screen.queryByRole("heading", { name: "Menu Options" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Create New Catering Package" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Edit Package" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Edit Taco Bar" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Up" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Down" })).not.toBeInTheDocument();
@@ -180,10 +180,10 @@ describe("AdminServicePlansPage", () => {
 
     await screen.findByRole("button", { name: "Set inactive" });
     expect(screen.getByRole("img", { name: "Active" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Edit Package" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Edit Taco Bar" })).not.toBeInTheDocument();
   });
 
-  it("deletes a package from the admin table with the shared confirm modal", async () => {
+  it("deletes a selected package from the edit form with the shared confirm modal", async () => {
     let listRequestCount = 0;
     const confirmSpy = vi.spyOn(window, "confirm");
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((url, options = {}) => {
@@ -248,7 +248,14 @@ describe("AdminServicePlansPage", () => {
     );
 
     await screen.findByText("Taco Bar");
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(screen.queryByRole("button", { name: "Delete Package" })).not.toBeInTheDocument();
+
+    const packageRow = screen.getByText("Taco Bar").closest("tr");
+    expect(packageRow).toBeTruthy();
+    fireEvent.click(packageRow);
+    await screen.findByRole("heading", { name: "Edit Taco Bar" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Package" }));
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("This permanently removes the package from both the admin table and the public catalog.")).toBeInTheDocument();
@@ -430,7 +437,7 @@ describe("AdminServicePlansPage", () => {
     await screen.findByText("Entree and Salad Lunch");
     fireEvent.click(screen.getByText("Entree and Salad Lunch").closest("tr"));
 
-    expect(screen.getByRole("heading", { name: "Edit Package" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Edit Entree and Salad Lunch" })).toBeInTheDocument();
     expect(screen.getByDisplayValue("Entrees Only")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Salads Only")).toBeInTheDocument();
     expect(screen.getAllByPlaceholderText("Min")).toHaveLength(2);
@@ -512,7 +519,7 @@ describe("AdminServicePlansPage", () => {
     await screen.findByText("Taco Bar");
     fireEvent.click(screen.getByText("Taco Bar").closest("tr"));
 
-    expect(screen.getByRole("heading", { name: "Edit Package" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Edit Taco Bar" })).toBeInTheDocument();
     expect(screen.getByDisplayValue("Custom options")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Taco Bar Proteins")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Add one option per line")).toHaveValue("Carne Asada\nChicken\nMarinated Pork");
