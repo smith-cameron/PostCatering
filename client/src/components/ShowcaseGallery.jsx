@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Alert, Button, Modal, Spinner } from "react-bootstrap";
 import { useSearchParams } from "react-router-dom";
 import useAsyncData from "../hooks/useAsyncData";
+import { requestJson } from "../utils/http";
 
 const MEDIA_PARAM_KEY = "media";
 const FALLBACK_LABEL = "placeholder title";
@@ -12,12 +13,9 @@ const ShowcaseGallery = () => {
   const touchStartRef = useRef({ x: null, y: null });
 
   const loadGallery = useCallback(async () => {
-    const response = await fetch("/api/gallery");
-    if (!response.ok) {
-      throw new Error("Unable to load showcase media right now.");
-    }
-
-    const body = await response.json();
+    const body = await requestJson("/api/gallery", {
+      fallbackMessage: "Unable to load showcase media right now.",
+    });
     return Array.isArray(body.media) ? body.media : [];
   }, []);
 

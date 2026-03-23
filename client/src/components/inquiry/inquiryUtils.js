@@ -3,6 +3,12 @@ import {
   filterGeneratedPackageDetails,
   normalizePackageConstraintMap,
 } from "../../utils/servicePackageUtils";
+import {
+  getFormalPlanDetails as getSharedFormalPlanDetails,
+  getSelectionGroupBullets,
+  getServicePlanId,
+  mergeUniquePlanDetails,
+} from "../../utils/servicePlanDisplayUtils";
 
 export const EMPTY_FORM = {
   full_name: "",
@@ -47,7 +53,7 @@ export const formatBudgetInput = (value) => {
 };
 
 export const toIdPart = (value) => String(value).toLowerCase().replace(/[^a-z0-9]+/g, "-");
-const getPlanId = (plan) => String(plan?.planId || plan?.id || "").trim();
+const getPlanId = (plan) => getServicePlanId(plan);
 const CATERING_BUFFET_PACKAGE_IDS = new Set(["catering:buffet_tier_1", "catering:buffet_tier_2"]);
 const isLegacyBuffetPackageTitle = (plan) => {
   const normalizedTitle = String(plan?.title || "").toLowerCase();
@@ -78,23 +84,6 @@ export const getMinEventDateISO = () => {
   const tzOffset = now.getTimezoneOffset() * 60000;
   return new Date(now.getTime() - tzOffset).toISOString().slice(0, 10);
 };
-
-const getPackageSelectionGroupDetail = (group) => {
-  const title = String(group?.title || group?.groupTitle || "").trim();
-  const optionLabels = (group?.options || [])
-    .map((option) => String(option?.label || option?.optionLabel || "").trim())
-    .filter(Boolean);
-  if (title && optionLabels.length) {
-    return `${title}: ${optionLabels.join(", ")}`;
-  }
-  if (title) return title;
-  return "";
-};
-
-const getPackageSelectionGroupDetails = (plan) =>
-  (Array.isArray(plan?.selectionGroups) ? plan.selectionGroups : [])
-    .map((group) => getPackageSelectionGroupDetail(group))
-    .filter(Boolean);
 
 export const buildCateringSelectionRules = (plan) => {
   if (!plan) return null;
@@ -169,21 +158,10 @@ const getCateringPackageDetails = (plan) => {
 
 export const getDisplayPlanDetails = (serviceKey, plan, cateringLimits) => {
   if (!plan) return [];
-  const selectionGroupDetails = getPackageSelectionGroupDetails(plan);
-  const mergeDetails = (details) =>
-    [...(Array.isArray(details) ? details : []), ...selectionGroupDetails].filter(
-      (detail, index, rows) => detail && rows.indexOf(detail) === index
-    );
+  const selectionGroupDetails = getSelectionGroupBullets(plan?.selectionGroups);
+  const mergeDetails = (details) => mergeUniquePlanDetails(details, selectionGroupDetails);
   if (serviceKey === "formal") {
-    if (Array.isArray(plan.details) && plan.details.length) {
-      return mergeDetails(plan.details);
-    }
-    if (getPlanId(plan) === "formal:3-course") {
-      return mergeDetails(["2 Passed Appetizers", "1 Starter", "1 or 2 Entrees", "Bread"]);
-    }
-    if (getPlanId(plan) === "formal:2-course") {
-      return mergeDetails(["1 Starter", "1 Entree", "Bread"]);
-    }
+    return mergeDetails(getSharedFormalPlanDetails(plan));
   }
   if (serviceKey !== "catering") return mergeDetails(plan.details || []);
   const fixedDetails = getCateringPackageDetails(plan);

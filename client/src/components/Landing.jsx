@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { Button, Carousel } from "react-bootstrap";
 import { Link } from "react-router-dom";
 import useAsyncData from "../hooks/useAsyncData";
+import { requestJson } from "../utils/http";
 import { SITE_SERVICE_LINKS } from "./siteNavigationConfig";
 
 const normalizeSortNumber = (value, fallback) => {
@@ -60,12 +61,7 @@ const normalizeLandingSlides = (slides) => {
 const Landing = () => {
   const loadSlides = useCallback(async () => {
     try {
-      const response = await fetch("/api/slides");
-      if (!response.ok) {
-        return [];
-      }
-
-      const body = await response.json();
+      const body = await requestJson("/api/slides");
       return normalizeLandingSlides(body.slides);
     } catch {
       // Keep page functional even if slide API is temporarily unavailable.
