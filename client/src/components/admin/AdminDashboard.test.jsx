@@ -1538,7 +1538,7 @@ describe("AdminDashboard", () => {
       expect(within(uploadCard).queryByRole("alert")).not.toBeInTheDocument();
     });
 
-    fireEvent.keyDown(document, { key: "Enter", code: "Enter", charCode: 13 });
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Fix" }));
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });

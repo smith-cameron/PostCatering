@@ -2,36 +2,14 @@ import re
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from flask_api.config.mysqlconnection import db_transaction, query_db, query_db_many
+from flask_api.services._shared import serialize_decimal_string, to_bool, to_int, to_iso
 
 
 class AdminMenuService:
     ITEM_KEY_PATTERN = re.compile(r"[^a-z0-9]+")
     _FORMAL_ID_OFFSET = 1_000_000
-
-    @staticmethod
-    def _to_bool(value, default=None):
-        if value is None:
-            return default
-        if isinstance(value, bool):
-            return value
-        normalized = str(value).strip().lower()
-        if normalized in ("1", "true", "yes", "on"):
-            return True
-        if normalized in ("0", "false", "no", "off"):
-            return False
-        return default
-
-    @staticmethod
-    def _to_int(value, default=None, minimum=None, maximum=None):
-        try:
-            normalized = int(value)
-        except (TypeError, ValueError):
-            return default
-        if minimum is not None and normalized < minimum:
-            normalized = minimum
-        if maximum is not None and normalized > maximum:
-            normalized = maximum
-        return normalized
+    _to_bool = staticmethod(to_bool)
+    _to_int = staticmethod(to_int)
 
     @staticmethod
     def _decode_is_active_filter(value):
@@ -118,19 +96,8 @@ class AdminMenuService:
             ordered.append("formal")
         return ordered
 
-    @staticmethod
-    def _to_iso(value):
-        return value.isoformat() if hasattr(value, "isoformat") else None
-
-    @staticmethod
-    def _serialize_price(value):
-        if value is None:
-            return None
-        try:
-            normalized = Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            return format(normalized, "f")
-        except (InvalidOperation, ValueError):
-            return None
+    _to_iso = staticmethod(to_iso)
+    _serialize_price = staticmethod(serialize_decimal_string)
 
     @staticmethod
     def _to_price_decimal(value, default=Decimal("0.00")):

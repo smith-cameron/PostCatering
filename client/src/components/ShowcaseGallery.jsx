@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Alert, Button, Modal, Spinner } from "react-bootstrap";
 import { useSearchParams } from "react-router-dom";
+import useAsyncData from "../hooks/useAsyncData";
+import { requestJson } from "../utils/http";
 
 const MEDIA_PARAM_KEY = "media";
 const FALLBACK_LABEL = "placeholder title";
@@ -8,44 +10,23 @@ const SWIPE_MIN_DISTANCE_PX = 48;
 
 const ShowcaseGallery = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [mediaItems, setMediaItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const touchStartRef = useRef({ x: null, y: null });
 
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadGallery = async () => {
-      try {
-        const response = await fetch("/api/gallery");
-        if (!response.ok) {
-          throw new Error("Gallery data is unavailable.");
-        }
-
-        const body = await response.json();
-        const nextItems = Array.isArray(body.media) ? body.media : [];
-        if (isMounted) {
-          setMediaItems(nextItems);
-          setError("");
-        }
-      } catch {
-        if (isMounted) {
-          setError("Unable to load showcase media right now.");
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    loadGallery();
-
-    return () => {
-      isMounted = false;
-    };
+  const loadGallery = useCallback(async () => {
+    const body = await requestJson("/api/gallery", {
+      fallbackMessage: "Unable to load showcase media right now.",
+    });
+    return Array.isArray(body.media) ? body.media : [];
   }, []);
+
+  const {
+    data: mediaItems,
+    loading,
+    error,
+  } = useAsyncData({
+    initialData: [],
+    loadData: loadGallery,
+  });
 
   const activeMediaId = searchParams.get(MEDIA_PARAM_KEY);
 

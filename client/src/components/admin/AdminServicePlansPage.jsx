@@ -1,14 +1,11 @@
-import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Card, Col, Form, Row, Spinner, Table } from "react-bootstrap";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { useOutletContext } from "react-router-dom";
 import Context from "../../context";
-import ThemeToggleButton from "../ThemeToggleButton";
 import {
   createAdminServicePlan,
   deleteAdminServicePlan,
-  getAdminSession,
   listAdminServicePlanSections,
-  logoutAdminSession,
   reorderAdminServicePlans,
   updateAdminServicePlan,
 } from "./adminApi";
@@ -26,6 +23,7 @@ import {
 } from "../../utils/servicePackageAdminUtils";
 import ConfirmActionModal from "./ConfirmActionModal";
 import ConfirmReviewList from "./ConfirmReviewList";
+import useAdminSession from "./useAdminSession";
 
 const EMPTY_PLAN_FORM = {
   planId: null,
@@ -199,17 +197,18 @@ const getCatalogLabel = (catalogKey = "") => {
   return "Catering";
 };
 
-const AdminServicePlansPage = ({
-  embedded = false,
-  adminUser: externalAdminUser = null,
-  sessionLoading: externalSessionLoading,
-}) => {
-  const { isDarkTheme, setThemeMode } = useContext(Context);
-  const navigate = useNavigate();
-  const location = useLocation();
-  const hasExternalSession = typeof externalSessionLoading === "boolean";
-  const [internalSessionLoading, setInternalSessionLoading] = useState(hasExternalSession ? externalSessionLoading : true);
-  const [internalAdminUser, setInternalAdminUser] = useState(null);
+const AdminServicePlansPage = (props) => {
+  const { isDarkTheme } = useContext(Context);
+  const outletContext = useOutletContext();
+  const hasPropAdminUser = Object.prototype.hasOwnProperty.call(props, "adminUser");
+  const hasPropSessionLoading = Object.prototype.hasOwnProperty.call(props, "sessionLoading");
+  const hasOutletSession = outletContext && typeof outletContext.sessionLoading === "boolean";
+  const shouldHydrateStandaloneSession = !hasPropAdminUser && !hasPropSessionLoading && !hasOutletSession;
+  const { adminUser: fallbackAdminUser, sessionLoading: fallbackSessionLoading } = useAdminSession({
+    enabled: shouldHydrateStandaloneSession,
+  });
+  const adminUser = props.adminUser ?? outletContext?.adminUser ?? fallbackAdminUser ?? null;
+  const sessionLoading = props.sessionLoading ?? outletContext?.sessionLoading ?? fallbackSessionLoading ?? false;
   const [catalogKey, setCatalogKey] = useState("catering");
   const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -231,8 +230,6 @@ const AdminServicePlansPage = ({
   const [confirmState, setConfirmState] = useState(EMPTY_CONFIRM_STATE);
   const [confirmBusy, setConfirmBusy] = useState(false);
   const editorFormRef = useRef(null);
-  const adminUser = externalAdminUser || internalAdminUser;
-  const sessionLoading = hasExternalSession ? externalSessionLoading : internalSessionLoading;
 
   const editableSections = useMemo(
     () => sortSections(sections).filter((section) => section?.section_type !== "include_menu"),
@@ -281,31 +278,6 @@ const AdminServicePlansPage = ({
       setLoading(false);
     }
   }, [catalogKey]);
-
-  useEffect(() => {
-    if (hasExternalSession) return undefined;
-    let mounted = true;
-
-    const hydrate = async () => {
-      try {
-        const payload = await getAdminSession();
-        if (!mounted) return;
-        setInternalAdminUser(payload.user || null);
-      } catch {
-        if (!mounted) return;
-        setInternalAdminUser(null);
-      } finally {
-        if (mounted) {
-          setInternalSessionLoading(false);
-        }
-      }
-    };
-
-    hydrate();
-    return () => {
-      mounted = false;
-    };
-  }, [hasExternalSession]);
 
   useEffect(() => {
     if (sessionLoading || !adminUser) return;
@@ -807,60 +779,20 @@ const AdminServicePlansPage = ({
     }
   };
 
-  const logout = async () => {
-    try {
-      await logoutAdminSession();
-    } finally {
-      navigate("/admin/login", { replace: true });
-    }
-  };
-
   if (sessionLoading) {
-    return (
-      <main className="container py-5 d-flex justify-content-center">
-        <Spinner animation="border" role="status" />
-      </main>
-    );
+    return null;
   }
 
   if (!adminUser) {
-    return embedded ? null : <Navigate to="/admin/login" replace state={{ from: location }} />;
+    return null;
   }
 
-  const Shell = embedded ? Fragment : "main";
-  const shellProps = embedded
-    ? {}
-    : {
-        className: `container-fluid py-4 admin-dashboard ${isDarkTheme ? "admin-dashboard-dark" : ""}`,
-        "data-bs-theme": isDarkTheme ? "dark" : "light",
-      };
-
   return (
-    <Shell {...shellProps}>
-      {!embedded ? (
-        <header className="admin-header mb-3">
-          <div className="admin-header-main">
-            <h2 className="h4 mb-1">Service Packages</h2>
-            <p className="text-secondary mb-0">
-              Signed in as <strong>{adminUser?.display_name || adminUser?.username}</strong>
-            </p>
-            <ThemeToggleButton
-              isDarkTheme={isDarkTheme}
-              onToggle={() => setThemeMode?.(isDarkTheme ? "light" : "dark")}
-              className="mt-2"
-            />
-          </div>
-          <div className="admin-header-actions d-flex gap-2">
-            <Button variant="outline-secondary" onClick={() => navigate("/admin/menu-items")}>
-              Back to Dashboard
-            </Button>
-            <Button variant="outline-danger" onClick={logout}>
-              Sign Out
-            </Button>
-          </div>
-        </header>
-      ) : null}
-
+    <>
+      <div className="mb-3">
+        <h2 className="h4 mb-1">Service Packages</h2>
+        <p className="text-secondary mb-0">Create, reorder, and manage package offerings for each catalog.</p>
+      </div>
       <div className="d-flex flex-wrap gap-2 mb-3">
         <Button
           variant={catalogKey === "catering" ? "secondary" : "outline-secondary"}
@@ -1356,7 +1288,7 @@ const AdminServicePlansPage = ({
         onExtraAction={confirmState.extraAction}
         onConfirm={runConfirmedAction}
       />
-    </Shell>
+    </>
   );
 };
 
