@@ -20,6 +20,12 @@ class AdminMediaService:
             return "video"
         return None
 
+    @staticmethod
+    def _validate_slide_media_type(media_type, is_slide):
+        if bool(is_slide) and str(media_type or "").strip().lower() != "image":
+            return {"error": "Only images can be used as landing slides."}, 400
+        return None
+
     @classmethod
     def _apply_display_order_sequence(cls, ordered_ids, connection=None):
         normalized_ids = normalize_id_list(ordered_ids, minimum=1)
@@ -218,8 +224,12 @@ class AdminMediaService:
         if not resolved_caption:
             return {"error": "Caption is required."}, 400
 
+        resolved_is_slide = cls._to_bool((payload or {}).get("is_slide"), default=False)
+        slide_validation = cls._validate_slide_media_type(media_type, resolved_is_slide)
+        if slide_validation is not None:
+            return slide_validation
+
         with db_transaction() as connection:
-            resolved_is_slide = cls._to_bool((payload or {}).get("is_slide"), default=False)
             next_display_order = cls._to_int(
                 (payload or {}).get("display_order"),
                 default=cls._next_group_display_order(is_slide=True, connection=connection) if resolved_is_slide else 1,
@@ -305,6 +315,9 @@ class AdminMediaService:
         with db_transaction() as connection:
             display_order_explicit = "display_order" in (payload or {})
             next_is_slide = cls._to_bool((payload or {}).get("is_slide"), default=existing["is_slide"])
+            slide_validation = cls._validate_slide_media_type(existing.get("media_type"), next_is_slide)
+            if slide_validation is not None:
+                return slide_validation
             moved_from_slide_to_gallery = existing["is_slide"] and not next_is_slide
             next_display_order = cls._to_int(
                 (payload or {}).get("display_order"),

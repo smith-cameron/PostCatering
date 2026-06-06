@@ -1,5 +1,6 @@
 import io
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -178,6 +179,38 @@ class AdminEndpointTests(unittest.TestCase):
             response.get_json(),
             {"error": "Unsupported file type. Allowed: image and video formats."},
         )
+
+    @patch(
+        "flask_api.controllers.main_controller.AdminAuthService.get_user_by_id",
+        return_value={"id": 1, "username": "admin", "display_name": "Admin", "is_active": 1},
+    )
+    @patch("flask_api.controllers.main_controller._sanitize_upload_filename", return_value="hero-video.mp4")
+    def test_admin_media_upload_rejects_video_landing_slide_and_removes_saved_file(
+        self,
+        _mock_filename,
+        _mock_get_user,
+    ):
+        with self.client.session_transaction() as session:
+            session["admin_user_id"] = 1
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            asset_dir = Path(temp_dir)
+            with patch("flask_api.controllers.main_controller.SLIDES_ASSET_DIR", asset_dir):
+                response = self.client.post(
+                    "/api/admin/media/upload",
+                    data={
+                        "title": "Event Reel",
+                        "caption": "Fast-paced event recap",
+                        "is_slide": "true",
+                        "file": (io.BytesIO(b"video"), "hero-video.mp4"),
+                    },
+                    content_type="multipart/form-data",
+                )
+
+            self.assertFalse((asset_dir / "hero-video.mp4").exists())
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json(), {"error": "Only images can be used as landing slides."})
 
     @patch(
         "flask_api.controllers.main_controller.AdminAuthService.get_user_by_id",

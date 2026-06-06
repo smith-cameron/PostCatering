@@ -91,6 +91,8 @@ const INITIAL_MEDIA_FILTERS = {
   is_active: "all",
   is_slide: "all",
 };
+const IMAGE_FILE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"]);
+const VIDEO_FILE_EXTENSIONS = new Set([".mp4", ".webm", ".mov", ".m4v", ".ogv"]);
 
 const mapCreateValidationErrors = (message) => {
   const normalized = String(message || "").toLowerCase();
@@ -122,6 +124,9 @@ const mapUploadValidationErrors = (message) => {
 
   if (normalized.includes("file") || normalized.includes("unsupported file type") || normalized.includes("media file")) {
     mapped.file = String(message || "Invalid media file.");
+  }
+  if (normalized.includes("landing slide")) {
+    mapped.file = String(message || "Invalid landing slide selection.");
   }
   if (normalized.includes("title")) {
     mapped.title = String(message || "Invalid title.");
@@ -206,6 +211,20 @@ const formatMediaSourceFilename = (value) => {
   }
 };
 
+const inferMediaTypeFromFile = (file) => {
+  if (!file) return "";
+  const mimeType = normalizeFilterText(file.type);
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.startsWith("video/")) return "video";
+
+  const fileName = normalizeFilterText(file.name);
+  if (!fileName.includes(".")) return "";
+  const extension = fileName.slice(fileName.lastIndexOf("."));
+  if (IMAGE_FILE_EXTENSIONS.has(extension)) return "image";
+  if (VIDEO_FILE_EXTENSIONS.has(extension)) return "video";
+  return "";
+};
+
 const renderMediaTypeIcon = (value) => {
   const type = normalizeFilterText(value);
   if (type === "image") {
@@ -283,6 +302,7 @@ const buildMediaForm = (item) => ({
   title: item?.title ?? "",
   caption: item?.caption ?? "",
   src: item?.src ?? item?.image_url ?? "",
+  media_type: normalizeFilterText(item?.media_type) || "image",
   display_order: item?.display_order ?? 1,
   is_slide: Boolean(item?.is_slide),
   is_active: Boolean(item?.is_active),
@@ -792,6 +812,11 @@ const AdminDashboard = ({
       Boolean(String(uploadForm.caption || "").trim()),
     [uploadForm]
   );
+  const uploadMediaType = useMemo(() => inferMediaTypeFromFile(uploadForm.file), [uploadForm.file]);
+  const uploadAllowsSlide = uploadMediaType !== "video";
+  const editMediaType = normalizeFilterText(mediaForm?.media_type) || "image";
+  const editMediaAllowsSlide = editMediaType !== "video";
+  const editMediaHasVideoSlideConflict = editMediaType === "video" && Boolean(mediaForm?.is_slide);
 
   const loadReferenceData = useCallback(async () => {
     const [generalPayload, formalPayload] = await Promise.all([
@@ -1339,6 +1364,9 @@ const AdminDashboard = ({
     }
     if (!normalizedCaption) {
       nextUploadFieldErrors.caption = "Caption is required.";
+    }
+    if (uploadForm.is_slide && uploadMediaType === "video") {
+      nextUploadFieldErrors.file = "Videos cannot be used as landing slides.";
     }
 
     const validationMessages = Object.values(nextUploadFieldErrors).filter(Boolean);
@@ -2048,11 +2076,25 @@ const AdminDashboard = ({
               type="switch"
               label="Landing Slide"
               checked={mediaForm.is_slide}
+              disabled={!editMediaAllowsSlide && !mediaForm.is_slide}
               onChange={(event) => {
                 setShowCreatedMediaHighlight(false);
-                setMediaForm((prev) => ({ ...prev, is_slide: event.target.checked }));
+                setMediaForm((prev) => {
+                  if (!prev) return prev;
+                  if ((normalizeFilterText(prev.media_type) || "image") === "video" && event.target.checked) {
+                    return { ...prev, is_slide: false };
+                  }
+                  return { ...prev, is_slide: event.target.checked };
+                });
               }}
             />
+            {!editMediaAllowsSlide ? (
+              <Form.Text className={`d-block mb-2 ${editMediaHasVideoSlideConflict ? "text-warning" : "text-secondary"}`}>
+                {editMediaHasVideoSlideConflict
+                  ? "This video was previously flagged as a landing slide. Turn the switch off to keep it gallery-only."
+                  : "Video media can stay active in the gallery, but it cannot be used as a landing slide."}
+              </Form.Text>
+            ) : null}
             <Form.Check
               className="mb-2"
               type="switch"
@@ -2494,7 +2536,13 @@ const AdminDashboard = ({
 	                  ref={uploadFileInputRef}
 	                  onChange={(event) => {
                       const hadFieldError = Boolean(uploadFieldErrors.file);
-                      setUploadForm((prev) => ({ ...prev, file: event.target.files?.[0] || null }));
+                      const nextFile = event.target.files?.[0] || null;
+                      const nextMediaType = inferMediaTypeFromFile(nextFile);
+                      setUploadForm((prev) => ({
+                        ...prev,
+                        file: nextFile,
+                        is_slide: nextMediaType === "video" ? false : prev.is_slide,
+                      }));
                       if (hadFieldError) {
                         setUploadFieldErrors((prev) => ({ ...prev, file: "" }));
                         setUploadValidationLocked(false);
@@ -2534,8 +2582,14 @@ const AdminDashboard = ({
 	                  type="switch"
 	                  label="Landing Slide"
 	                  checked={uploadForm.is_slide}
+                    disabled={!uploadAllowsSlide}
 	                  onChange={(event) => setUploadForm((prev) => ({ ...prev, is_slide: event.target.checked }))}
 	                />
+                  {!uploadAllowsSlide ? (
+                    <Form.Text className="d-block text-secondary mb-2">
+                      Video uploads stay in the gallery only. Choose an image to use the landing slide slot.
+                    </Form.Text>
+                  ) : null}
                 <Form.Check
                   className="mb-2"
                   type="switch"

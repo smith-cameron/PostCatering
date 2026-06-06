@@ -1551,6 +1551,46 @@ describe("AdminDashboard", () => {
     expect(within(uploadCard).getByRole("button", { name: "Upload" })).not.toBeDisabled();
   });
 
+  it("keeps video uploads out of the landing slide slot", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+      if (url === "/api/admin/auth/me") {
+        return Promise.resolve(
+          buildResponse({ user: { id: 1, username: "admin", display_name: "Admin", is_active: true } })
+        );
+      }
+      if (url === "/api/menu/general/groups") return Promise.resolve(buildResponse({ groups: [] }));
+      if (url === "/api/menu/formal/groups") return Promise.resolve(buildResponse({ groups: [] }));
+      if (String(url).startsWith("/api/admin/menu/items?")) return Promise.resolve(buildResponse({ items: [] }));
+      if (String(url).startsWith("/api/admin/media?")) return Promise.resolve(buildResponse({ media: [] }));
+      if (url === "/api/admin/audit?limit=200") return Promise.resolve(buildResponse({ entries: [] }));
+      return Promise.resolve(buildResponse({}, false));
+    });
+
+    renderAdminRoutes();
+
+    await screen.findByText("Menu Operations");
+    fireEvent.click(screen.getByRole("tab", { name: "Media Manager" }));
+    await screen.findByText("Upload Media");
+
+    const uploadCard = screen.getByText("Upload Media").closest(".card");
+    expect(uploadCard).toBeTruthy();
+    const fileInput = uploadCard.querySelector('input[type="file"]');
+    expect(fileInput).toBeTruthy();
+
+    const [landingSlideSwitch] = within(uploadCard).getAllByRole("checkbox");
+    fireEvent.click(landingSlideSwitch);
+    expect(landingSlideSwitch).toBeChecked();
+
+    const videoFile = new File(["binary"], "event-reel.mp4", { type: "video/mp4" });
+    fireEvent.change(fileInput, { target: { files: [videoFile] } });
+
+    expect(landingSlideSwitch).not.toBeChecked();
+    expect(landingSlideSwitch).toBeDisabled();
+    expect(
+      within(uploadCard).getByText("Video uploads stay in the gallery only. Choose an image to use the landing slide slot.")
+    ).toBeInTheDocument();
+  });
+
   it("shows changed media fields in the update confirmation modal", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation((url, options) => {
       if (url === "/api/admin/auth/me") {
