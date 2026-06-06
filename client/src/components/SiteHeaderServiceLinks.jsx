@@ -16,10 +16,7 @@ const SiteHeaderServiceLinks = ({ isMobile }) => {
   }
 
   return (
-    <NavDropdown
-      title={<span className="fw-semibold">Services</span>}
-      id="basic-nav-dropdown"
-      align="end">
+    <>
       {SITE_SERVICE_LINKS.map((serviceLink) => (
         <NavDropdown.Item
           key={serviceLink.key}
@@ -29,7 +26,7 @@ const SiteHeaderServiceLinks = ({ isMobile }) => {
           {serviceLink.navLabel}
         </NavDropdown.Item>
       ))}
-    </NavDropdown>
+    </>
   );
 };
 

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import Context from "../context";
@@ -34,14 +34,19 @@ describe("Site navigation links", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /services/i }));
-    const aboutItem = screen.getByRole("button", { name: "About Us" });
-    const mondayMealItem = screen.getByRole("button", { name: "Monday Meal Program" });
-    const photoShowcaseItem = screen.getByRole("link", { name: "Photos" });
-    const inquiryItem = screen.getByRole("button", { name: /send catering inquiry/i });
-    const contactItem = screen.getByRole("button", { name: /contact us/i });
-    const toGoItem = screen.getByRole("link", { name: /to-go & take-and-bake trays/i });
-    const communityItem = screen.getByRole("link", { name: /community & crew catering/i });
-    const formalItem = screen.getByRole("link", { name: /formal events catering/i });
+    const dropdownMenu = document.querySelector(".dropdown-menu.show");
+
+    expect(dropdownMenu).toBeInTheDocument();
+
+    const dropdownQueries = within(dropdownMenu);
+    const aboutItem = dropdownQueries.getByRole("button", { name: "About Us" });
+    const mondayMealItem = dropdownQueries.getByRole("button", { name: "Monday Meal Program" });
+    const photoShowcaseItem = dropdownQueries.getByRole("link", { name: "Photos" });
+    const inquiryItem = dropdownQueries.getByRole("button", { name: /send catering inquiry/i });
+    const contactItem = dropdownQueries.getByRole("button", { name: /contact us/i });
+    const toGoItem = dropdownQueries.getByRole("link", { name: /to-go & take-and-bake trays/i });
+    const communityItem = dropdownQueries.getByRole("link", { name: /community & crew catering/i });
+    const formalItem = dropdownQueries.getByRole("link", { name: /formal events catering/i });
 
     expect(photoShowcaseItem).toHaveAttribute("href", "/showcase");
     expect(communityItem).toHaveAttribute("href", "/services/catering");

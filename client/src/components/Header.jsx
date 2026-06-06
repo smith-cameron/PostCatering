@@ -34,12 +34,28 @@ const Header = ({ onOpenInquiry }) => {
         <Navbar.Toggle className="site-header-toggle" aria-controls="basic-navbar-nav" />
         <Navbar.Collapse id="basic-navbar-nav" className="justify-content-end">
           <Nav className="ms-lg-auto site-header-nav">
-            <SiteHeaderServiceLinks isMobile={isMobile} />
-            <SiteHeaderAuxiliaryLinks
-              isMobile={isMobile}
-              onOpenInquiry={onOpenInquiry}
-              onOpenModal={setActiveModal}
-            />
+            {isMobile ? (
+              <>
+                <SiteHeaderServiceLinks isMobile />
+                <SiteHeaderAuxiliaryLinks
+                  isMobile
+                  onOpenInquiry={onOpenInquiry}
+                  onOpenModal={setActiveModal}
+                />
+              </>
+            ) : (
+              <NavDropdown
+                title={<span className="fw-semibold">Services</span>}
+                id="basic-nav-dropdown"
+                align="end">
+                <SiteHeaderServiceLinks isMobile={false} />
+                <SiteHeaderAuxiliaryLinks
+                  isMobile={false}
+                  onOpenInquiry={onOpenInquiry}
+                  onOpenModal={setActiveModal}
+                />
+              </NavDropdown>
+            )}
           </Nav>
         </Navbar.Collapse>
       </Container>
