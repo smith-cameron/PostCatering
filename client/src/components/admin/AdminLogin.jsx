@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { Alert, Button, Card, Form, InputGroup, Spinner } from "react-bootstrap";
+import { Alert, Button, Card, Form, Spinner } from "react-bootstrap";
 import { useLocation, useNavigate } from "react-router-dom";
-import PasswordVisibilityButton from "./PasswordVisibilityButton";
-import { requestJson } from "./adminApi";
+import PasswordField from "./PasswordField";
+import { getAdminSession, requestJson } from "./adminApi";
 
 const AdminLogin = () => {
   const navigate = useNavigate();
@@ -18,7 +18,7 @@ const AdminLogin = () => {
     let mounted = true;
     const hydrateSession = async () => {
       try {
-        await requestJson("/api/admin/auth/me");
+        await getAdminSession();
         if (mounted) {
           navigate("/admin", { replace: true });
         }
@@ -83,24 +83,16 @@ const AdminLogin = () => {
               />
             </Form.Group>
 
-            <Form.Group className="mb-4" controlId="adminPassword">
-              <Form.Label>Password</Form.Label>
-              <InputGroup>
-                <Form.Control
-                  type={passwordVisible ? "text" : "password"}
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  required
-                />
-                <PasswordVisibilityButton
-                  visible={passwordVisible}
-                  label={passwordVisible ? "Hide password" : "Show password"}
-                  onToggle={() => setPasswordVisible((prev) => !prev)}
-                  disabled={submitting}
-                />
-              </InputGroup>
-            </Form.Group>
+            <PasswordField
+              controlId="adminPassword"
+              className="mb-4"
+              label="Password"
+              value={password}
+              visible={passwordVisible}
+              disabled={submitting}
+              onChange={(event) => setPassword(event.target.value)}
+              onToggle={() => setPasswordVisible((prev) => !prev)}
+            />
 
             <Button className="btn-inquiry-action w-100" variant="secondary" type="submit" disabled={submitting}>
               {submitting ? "Signing In..." : "Sign In"}

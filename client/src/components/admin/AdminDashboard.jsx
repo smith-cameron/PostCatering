@@ -1,16 +1,20 @@
 import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Accordion, Alert, Badge, Button, Card, Col, Form, InputGroup, Modal, Nav, Row, Spinner, Table } from "react-bootstrap";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Accordion, Alert, Badge, Button, Card, Col, Form, InputGroup, Modal, Row, Spinner, Table } from "react-bootstrap";
 import Context from "../../context";
-import ThemeToggleButton from "../ThemeToggleButton";
 import ConfirmActionModal from "./ConfirmActionModal";
 import ConfirmReviewList from "./ConfirmReviewList";
-import PasswordVisibilityButton from "./PasswordVisibilityButton";
+import PasswordField from "./PasswordField";
 import { requestJson, requestWithFormData } from "./adminApi";
+import {
+  ACCESS_TIER_MANAGER,
+  ACCESS_TIER_OPERATOR,
+  ACCESS_TIER_OWNER,
+  ADMIN_TAB_MEDIA,
+  ADMIN_TAB_MENU,
+  ADMIN_TAB_SETTINGS,
+  toAccessTier,
+} from "./adminShared";
 
-const TAB_MENU = "menu";
-const TAB_MEDIA = "media";
-const TAB_AUDIT = "audit";
 const MOBILE_LAYOUT_MAX_WIDTH = 767;
 const FORMAL_ID_OFFSET = 1000000;
 const FORM_ERROR_CREATE_ITEM = "create_item";
@@ -18,9 +22,6 @@ const FORM_ERROR_EDIT_ITEM = "edit_item";
 const FORM_ERROR_UPLOAD_MEDIA = "upload_media";
 const FORM_ERROR_EDIT_MEDIA = "edit_media";
 const MENU_TYPE_OPTIONS = ["regular", "formal"];
-const ACCESS_TIER_OWNER = 0;
-const ACCESS_TIER_MANAGER = 1;
-const ACCESS_TIER_OPERATOR = 2;
 const ACCESS_TIER_OPTIONS = [
   { value: ACCESS_TIER_OWNER, label: "Protected" },
   { value: ACCESS_TIER_MANAGER, label: "Tier 1 (Manager)" },
@@ -44,13 +45,6 @@ const EMPTY_UPLOAD_FIELD_ERRORS = {
   title: "",
   caption: "",
 };
-const EMPTY_PROFILE_FIELD_ERRORS = {
-  username: "",
-  display_name: "",
-  current_password: "",
-  new_password: "",
-  confirm_password: "",
-};
 const EMPTY_NEW_ADMIN_FIELD_ERRORS = {
   username: "",
   display_name: "",
@@ -73,13 +67,6 @@ const INITIAL_UPLOAD_FORM = {
   is_active: true,
   file: null,
 };
-const INITIAL_PROFILE_FORM = {
-  username: "",
-  display_name: "",
-  current_password: "",
-  new_password: "",
-  confirm_password: "",
-};
 const INITIAL_NEW_ADMIN_FORM = {
   username: "",
   display_name: "",
@@ -87,11 +74,6 @@ const INITIAL_NEW_ADMIN_FORM = {
   password: "",
   confirm_password: "",
   is_active: true,
-};
-const INITIAL_PROFILE_PASSWORD_VISIBILITY = {
-  current: false,
-  next: false,
-  confirm: false,
 };
 const INITIAL_CREATE_ADMIN_PASSWORD_VISIBILITY = {
   password: false,
@@ -150,29 +132,6 @@ const mapUploadValidationErrors = (message) => {
   return mapped;
 };
 
-const mapProfileValidationErrors = (message) => {
-  const normalized = String(message || "").toLowerCase();
-  const mapped = {};
-  if (!normalized) return mapped;
-
-  if (normalized.includes("username")) {
-    mapped.username = String(message || "Invalid username.");
-  }
-  if (normalized.includes("display name")) {
-    mapped.display_name = String(message || "Invalid display name.");
-  }
-  if (normalized.includes("current password")) {
-    mapped.current_password = String(message || "Invalid current password.");
-  }
-  if (normalized.includes("new password")) {
-    mapped.new_password = String(message || "Invalid new password.");
-  }
-  if (normalized.includes("confirm password") || normalized.includes("must match")) {
-    mapped.confirm_password = String(message || "Confirm password does not match.");
-  }
-  return mapped;
-};
-
 const mapNewAdminValidationErrors = (message) => {
   const normalized = String(message || "").toLowerCase();
   const mapped = {};
@@ -220,12 +179,6 @@ const formatCurrencyDisplay = (value) => {
 };
 
 const formatBooleanLabel = (value) => (value ? "Yes" : "No");
-
-const toAccessTier = (value, fallback = ACCESS_TIER_MANAGER) => {
-  const parsed = Number.parseInt(String(value ?? "").trim(), 10);
-  if ([ACCESS_TIER_OWNER, ACCESS_TIER_MANAGER, ACCESS_TIER_OPERATOR].includes(parsed)) return parsed;
-  return fallback;
-};
 
 const formatAccessTierLabel = (value) => {
   const tier = toAccessTier(value, ACCESS_TIER_MANAGER);
@@ -666,24 +619,14 @@ const MEDIA_ITEM_FILTERS = [
 ];
 
 const AdminDashboard = ({
-  embedded = false,
-  forcedTab = null,
-  adminUser: externalAdminUser = null,
-  sessionLoading: externalSessionLoading,
+  section = ADMIN_TAB_MENU,
+  adminUser = null,
+  sessionLoading = false,
+  canAccessDashboardSettings = false,
+  canManageAdminUsers = false,
   onAdminUserChange = null,
 }) => {
-  const { isDarkTheme, setThemeMode } = useContext(Context);
-  const navigate = useNavigate();
-  const hasExternalSession = typeof externalSessionLoading === "boolean";
-  const [internalSessionLoading, setInternalSessionLoading] = useState(hasExternalSession ? externalSessionLoading : true);
-  const [authError, setAuthError] = useState("");
-  const [sessionAdminUser, setSessionAdminUser] = useState(null);
-  const [showProfileModal, setShowProfileModal] = useState(false);
-  const [profileForm, setProfileForm] = useState(INITIAL_PROFILE_FORM);
-  const [profileFieldErrors, setProfileFieldErrors] = useState(EMPTY_PROFILE_FIELD_ERRORS);
-  const [profileError, setProfileError] = useState("");
-  const [profileBusy, setProfileBusy] = useState(false);
-  const [profilePasswordVisibility, setProfilePasswordVisibility] = useState(INITIAL_PROFILE_PASSWORD_VISIBILITY);
+  const { isDarkTheme } = useContext(Context);
   const [showCreateAdminModal, setShowCreateAdminModal] = useState(false);
   const [newAdminForm, setNewAdminForm] = useState(INITIAL_NEW_ADMIN_FORM);
   const [newAdminFieldErrors, setNewAdminFieldErrors] = useState(EMPTY_NEW_ADMIN_FIELD_ERRORS);
@@ -698,7 +641,6 @@ const AdminDashboard = ({
     INITIAL_CREATE_ADMIN_PASSWORD_VISIBILITY
   );
 
-  const [activeTab, setActiveTab] = useState(forcedTab || TAB_MENU);
   const [formErrors, setFormErrors] = useState(EMPTY_FORM_ERRORS);
   const [, setBusy] = useState(false);
   const [menuTableError, setMenuTableError] = useState("");
@@ -754,21 +696,14 @@ const AdminDashboard = ({
   const editCardRef = useRef(null);
   const mediaEditCardRef = useRef(null);
   const uploadFileInputRef = useRef(null);
-  const sessionLoading = hasExternalSession ? externalSessionLoading : internalSessionLoading;
-  const adminUser = externalAdminUser || sessionAdminUser;
   const setAdminUser = useCallback(
     (nextUser) => {
-      setSessionAdminUser(nextUser);
       onAdminUserChange?.(nextUser);
     },
     [onAdminUserChange]
   );
-  const currentTab = forcedTab || activeTab;
   const adminAccessTier = toAccessTier(adminUser?.access_tier, ACCESS_TIER_MANAGER);
   const isOwnerSession = adminAccessTier === ACCESS_TIER_OWNER;
-  const canAccessDashboardSettings = adminAccessTier === ACCESS_TIER_OWNER || adminAccessTier === ACCESS_TIER_MANAGER;
-  const canManageAdminUsers =
-    isOwnerSession || (adminAccessTier === ACCESS_TIER_MANAGER && Boolean(adminUser?.can_manage_admin_users));
   const assignableTierOptions = useMemo(
     () => ACCESS_TIER_OPTIONS.filter((option) => option.value !== ACCESS_TIER_OWNER),
     []
@@ -857,11 +792,6 @@ const AdminDashboard = ({
       Boolean(String(uploadForm.caption || "").trim()),
     [uploadForm]
   );
-
-  useEffect(() => {
-    if (!forcedTab) return;
-    setActiveTab(forcedTab);
-  }, [forcedTab]);
 
   const loadReferenceData = useCallback(async () => {
     const [generalPayload, formalPayload] = await Promise.all([
@@ -953,29 +883,7 @@ const AdminDashboard = ({
   );
 
   useEffect(() => {
-    if (hasExternalSession) return undefined;
-    let mounted = true;
-    const hydrateSession = async () => {
-      try {
-        const payload = await requestJson("/api/admin/auth/me");
-        if (!mounted) return;
-        setAdminUser(payload.user || null);
-      } catch {
-        if (!mounted) return;
-        setAuthError("unauthorized");
-      } finally {
-        if (mounted) setInternalSessionLoading(false);
-      }
-    };
-    hydrateSession();
-    return () => {
-      mounted = false;
-    };
-  }, [hasExternalSession, setAdminUser]);
-
-  useEffect(() => {
-    if (!adminUser) return;
-    if (embedded && currentTab !== TAB_MENU) return;
+    if (sessionLoading || !adminUser || section !== ADMIN_TAB_MENU) return;
     const loadInitial = async () => {
       try {
         setBusy(true);
@@ -987,12 +895,12 @@ const AdminDashboard = ({
       }
     };
     loadInitial();
-  }, [adminUser, currentTab, embedded, loadReferenceData, loadMenuItems]);
+  }, [adminUser, loadReferenceData, loadMenuItems, section, sessionLoading]);
 
   useEffect(() => {
-    if (!adminUser) return;
-    const needsMediaLoad = currentTab === TAB_MEDIA && !hasLoadedMediaTab;
-    const needsAuditLoad = canAccessDashboardSettings && currentTab === TAB_AUDIT && !hasLoadedAuditTab;
+    if (sessionLoading || !adminUser) return;
+    const needsMediaLoad = section === ADMIN_TAB_MEDIA && !hasLoadedMediaTab;
+    const needsAuditLoad = canAccessDashboardSettings && section === ADMIN_TAB_SETTINGS && !hasLoadedAuditTab;
     if (!needsMediaLoad && !needsAuditLoad) return;
 
     let mounted = true;
@@ -1021,21 +929,17 @@ const AdminDashboard = ({
     return () => {
       mounted = false;
     };
-  }, [adminUser, canAccessDashboardSettings, currentTab, hasLoadedAuditTab, hasLoadedMediaTab, loadAudit, loadMedia]);
+  }, [adminUser, canAccessDashboardSettings, hasLoadedAuditTab, hasLoadedMediaTab, loadAudit, loadMedia, section, sessionLoading]);
 
   useEffect(() => {
-    if (forcedTab) return;
     if (canAccessDashboardSettings) return;
-    if (activeTab === TAB_AUDIT) {
-      setActiveTab(TAB_MENU);
-    }
     if (showCreateAdminModal) {
       setShowCreateAdminModal(false);
     }
     if (showManageAdminsModal) {
       setShowManageAdminsModal(false);
     }
-  }, [activeTab, canAccessDashboardSettings, forcedTab, showCreateAdminModal, showManageAdminsModal]);
+  }, [canAccessDashboardSettings, showCreateAdminModal, showManageAdminsModal]);
 
   useEffect(() => {
     if (canManageAdminUsers) return;
@@ -1630,116 +1534,6 @@ const AdminDashboard = ({
     }
   };
 
-  const logout = async () => {
-    await requestJson("/api/admin/auth/logout", { method: "POST" });
-    navigate("/admin/login", { replace: true });
-  };
-
-  const openProfileEditor = () => {
-    if (!adminUser) return;
-    setProfileForm({
-      ...INITIAL_PROFILE_FORM,
-      username: String(adminUser.username || ""),
-      display_name: String(adminUser.display_name || ""),
-    });
-    setProfileFieldErrors(EMPTY_PROFILE_FIELD_ERRORS);
-    setProfileError("");
-    setProfilePasswordVisibility(INITIAL_PROFILE_PASSWORD_VISIBILITY);
-    setShowProfileModal(true);
-  };
-
-  const closeProfileEditor = () => {
-    if (profileBusy) return;
-    setShowProfileModal(false);
-    setProfileFieldErrors(EMPTY_PROFILE_FIELD_ERRORS);
-    setProfileError("");
-    setProfileForm(INITIAL_PROFILE_FORM);
-    setProfilePasswordVisibility(INITIAL_PROFILE_PASSWORD_VISIBILITY);
-  };
-
-  const submitProfileUpdate = async (event) => {
-    event.preventDefault();
-    const normalizedUsername = String(profileForm.username || "").trim().toLowerCase();
-    const normalizedDisplayName = String(profileForm.display_name || "").trim();
-    const currentPassword = String(profileForm.current_password || "");
-    const newPassword = String(profileForm.new_password || "");
-    const confirmPassword = String(profileForm.confirm_password || "");
-    const wantsPasswordChange = Boolean(currentPassword || newPassword || confirmPassword);
-
-    const nextErrors = { ...EMPTY_PROFILE_FIELD_ERRORS };
-    if (!normalizedUsername) {
-      nextErrors.username = "Username is required.";
-    } else if (normalizedUsername.length < 3) {
-      nextErrors.username = "Username must be at least 3 characters.";
-    } else if (normalizedUsername.length > 120) {
-      nextErrors.username = "Username must be 120 characters or fewer.";
-    } else if (!/^[a-z0-9._-]+$/.test(normalizedUsername)) {
-      nextErrors.username = "Use lowercase letters, numbers, periods, underscores, or hyphens.";
-    }
-
-    if (normalizedDisplayName.length > 150) {
-      nextErrors.display_name = "Display name must be 150 characters or fewer.";
-    }
-
-    if (wantsPasswordChange) {
-      if (!currentPassword) {
-        nextErrors.current_password = "Current password is required.";
-      }
-      if (!newPassword) {
-        nextErrors.new_password = "New password is required.";
-      } else if (newPassword.length < 10) {
-        nextErrors.new_password = "New password must be at least 10 characters.";
-      }
-      if (!confirmPassword) {
-        nextErrors.confirm_password = "Confirm password is required.";
-      } else if (newPassword && confirmPassword !== newPassword) {
-        nextErrors.confirm_password = "New password and confirm password must match.";
-      }
-      if (currentPassword && newPassword && currentPassword === newPassword) {
-        nextErrors.new_password = "New password must be different from current password.";
-      }
-    }
-
-    if (Object.values(nextErrors).some(Boolean)) {
-      setProfileFieldErrors(nextErrors);
-      setProfileError("");
-      return;
-    }
-
-    setProfileBusy(true);
-    setProfileError("");
-    setProfileFieldErrors(EMPTY_PROFILE_FIELD_ERRORS);
-    try {
-      const payload = await requestJson("/api/admin/auth/profile", {
-        method: "PATCH",
-        body: JSON.stringify({
-          username: normalizedUsername,
-          display_name: normalizedDisplayName,
-          current_password: currentPassword,
-          new_password: newPassword,
-          confirm_password: confirmPassword,
-        }),
-      });
-      if (payload?.user) {
-        setAdminUser(payload.user);
-      }
-      setShowProfileModal(false);
-      setProfileForm(INITIAL_PROFILE_FORM);
-      setProfilePasswordVisibility(INITIAL_PROFILE_PASSWORD_VISIBILITY);
-      await refreshAuditIfAllowed().catch(() => {});
-    } catch (error) {
-      const message = error.message || "Failed to update profile.";
-      const mappedErrors = mapProfileValidationErrors(message);
-      if (Object.keys(mappedErrors).length) {
-        setProfileFieldErrors((prev) => ({ ...prev, ...mappedErrors }));
-      } else {
-        setProfileError(message);
-      }
-    } finally {
-      setProfileBusy(false);
-    }
-  };
-
   const openCreateAdminModal = () => {
     if (!canManageAdminUsers) return;
     setNewAdminForm(INITIAL_NEW_ADMIN_FORM);
@@ -1803,7 +1597,6 @@ const AdminDashboard = ({
         await Promise.all([loadManagedAdminUsers(), refreshAuditIfAllowed()]);
       } else {
         setShowManageAdminsModal(false);
-        if (currentTab === TAB_AUDIT && !forcedTab) setActiveTab(TAB_MENU);
       }
     } catch (error) {
       setManageAdminsError(error.message || "Failed to update admin status.");
@@ -1839,7 +1632,6 @@ const AdminDashboard = ({
         await Promise.all([loadManagedAdminUsers(), refreshAuditIfAllowed()]);
       } else {
         setShowManageAdminsModal(false);
-        if (currentTab === TAB_AUDIT && !forcedTab) setActiveTab(TAB_MENU);
       }
     } catch (error) {
       setManageAdminsError(error.message || "Failed to update admin tier.");
@@ -2299,95 +2091,16 @@ const AdminDashboard = ({
   ) : null;
 
   if (sessionLoading) {
-    return (
-      <main className="container py-5 d-flex justify-content-center">
-        <Spinner animation="border" role="status" />
-      </main>
-    );
-  }
-
-  if (authError) {
-    return <Navigate to="/admin/login" replace />;
+    return null;
   }
 
   if (!adminUser) {
-    return embedded ? null : <Navigate to="/admin/login" replace />;
+    return null;
   }
 
-  const Shell = embedded ? Fragment : "main";
-  const shellProps = embedded
-    ? {}
-    : {
-        className: `container-fluid py-4 admin-dashboard ${isDarkTheme ? "admin-dashboard-dark" : ""}`,
-        "data-bs-theme": isDarkTheme ? "dark" : "light",
-      };
-
   return (
-    <Shell {...shellProps}>
-      {!embedded ? (
-        <header className="admin-header mb-3">
-        <div className="admin-header-main">
-          <h2 className="h4 mb-1">Admin Dashboard</h2>
-          <p className="text-secondary mb-0">
-            Signed in as{" "}
-            <strong>{adminUser?.display_name || adminUser?.username}</strong>
-            <button
-              type="button"
-              className="admin-profile-edit-btn ms-2"
-              aria-label="Edit admin profile"
-              title="Edit profile"
-              onClick={openProfileEditor}>
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path
-                  d="m11.01 1.927 3.063 3.063-8.93 8.93-3.673.61.61-3.673 8.93-8.93Zm1.06-1.06a1.5 1.5 0 0 1 2.122 0l1.941 1.94a1.5 1.5 0 0 1 0 2.122l-.53.53-3.063-3.063.53-.53Z"
-                  fill="currentColor"
-                />
-              </svg>
-            </button>
-          </p>
-          <ThemeToggleButton
-            isDarkTheme={isDarkTheme}
-            onToggle={() => setThemeMode?.(isDarkTheme ? "light" : "dark")}
-            className="mt-2"
-          />
-        </div>
-        <div className="admin-header-actions">
-          <Button variant="outline-secondary" className="me-2" onClick={() => navigate("/admin/service-packages")}>
-            Service Packages
-          </Button>
-          <Button variant="outline-danger" onClick={logout}>
-            Sign Out
-          </Button>
-        </div>
-        </header>
-      ) : null}
-
-      {!embedded ? (
-        <Nav variant="tabs" activeKey={currentTab} onSelect={(key) => setActiveTab(key || TAB_MENU)} className="mb-3" role="tablist">
-        <Nav.Item>
-          <Nav.Link eventKey={TAB_MENU} role="tab" aria-label="Menu Operations" aria-selected={currentTab === TAB_MENU}>
-            <span className="admin-tab-label-full">Menu Operations</span>
-            <span className="admin-tab-label-short">Menu</span>
-          </Nav.Link>
-        </Nav.Item>
-        <Nav.Item>
-          <Nav.Link eventKey={TAB_MEDIA} role="tab" aria-label="Media Manager" aria-selected={currentTab === TAB_MEDIA}>
-            <span className="admin-tab-label-full">Media Manager</span>
-            <span className="admin-tab-label-short">Media</span>
-          </Nav.Link>
-        </Nav.Item>
-        {canAccessDashboardSettings ? (
-          <Nav.Item>
-            <Nav.Link eventKey={TAB_AUDIT} role="tab" aria-label="Dashboard Settings" aria-selected={currentTab === TAB_AUDIT}>
-              <span className="admin-tab-label-full">Dashboard Settings</span>
-              <span className="admin-tab-label-short">Settings</span>
-            </Nav.Link>
-          </Nav.Item>
-        ) : null}
-        </Nav>
-      ) : null}
-
-      {currentTab === TAB_MENU ? (
+    <>
+      {section === ADMIN_TAB_MENU ? (
 	        <Row className="g-3">
 	          <Col lg={4}>
 	            <Card className="mb-3">
@@ -2766,7 +2479,7 @@ const AdminDashboard = ({
         </Row>
       ) : null}
 
-	      {currentTab === TAB_MEDIA ? (
+      {section === ADMIN_TAB_MEDIA ? (
 	        <Row className="g-3">
 	          <Col lg={4}>
 	            <Card className="mb-3">
@@ -3080,7 +2793,7 @@ const AdminDashboard = ({
         </Row>
       ) : null}
 
-      {canAccessDashboardSettings && currentTab === TAB_AUDIT ? (
+      {canAccessDashboardSettings && section === ADMIN_TAB_SETTINGS ? (
         <>
           {canManageAdminUsers ? (
             <div className="d-flex flex-wrap justify-content-start gap-2 mb-3">
@@ -3123,145 +2836,6 @@ const AdminDashboard = ({
           </Card>
         </>
       ) : null}
-
-      <Modal
-        show={showProfileModal}
-        onHide={closeProfileEditor}
-        centered
-        className={`admin-profile-modal ${isDarkTheme ? "admin-confirm-modal-dark" : ""}`.trim()}>
-        <Modal.Header closeButton>
-          <Modal.Title>Edit Admin Profile</Modal.Title>
-        </Modal.Header>
-        <Form noValidate onSubmit={submitProfileUpdate}>
-          <Modal.Body>
-            {profileError ? <Alert variant="danger">{profileError}</Alert> : null}
-            <Form.Group className="mb-3" controlId="admin-profile-username">
-              <Form.Label>Username</Form.Label>
-              <Form.Control
-                autoComplete="username"
-                value={profileForm.username}
-                isInvalid={Boolean(profileFieldErrors.username)}
-                onChange={(event) => {
-                  const nextValue = event.target.value;
-                  setProfileForm((prev) => ({ ...prev, username: nextValue }));
-                  setProfileFieldErrors((prev) => ({ ...prev, username: "" }));
-                }}
-              />
-            </Form.Group>
-            <Form.Group className="mb-3" controlId="admin-profile-display-name">
-              <Form.Label>Display Name</Form.Label>
-              <Form.Control
-                value={profileForm.display_name}
-                isInvalid={Boolean(profileFieldErrors.display_name)}
-                onChange={(event) => {
-                  const nextValue = event.target.value;
-                  setProfileForm((prev) => ({ ...prev, display_name: nextValue }));
-                  setProfileFieldErrors((prev) => ({ ...prev, display_name: "" }));
-                }}
-              />
-            </Form.Group>
-            <Form.Text className="text-secondary d-block mb-3">
-              Leave password fields blank to keep your current password.
-            </Form.Text>
-            <Form.Group className="mb-3" controlId="admin-profile-current-password">
-              <Form.Label>Current Password</Form.Label>
-              <InputGroup hasValidation>
-                <Form.Control
-                  type={profilePasswordVisibility.current ? "text" : "password"}
-                  autoComplete="current-password"
-                  value={profileForm.current_password}
-                  isInvalid={Boolean(profileFieldErrors.current_password)}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    setProfileForm((prev) => ({ ...prev, current_password: nextValue }));
-                    setProfileFieldErrors((prev) => ({ ...prev, current_password: "" }));
-                  }}
-                />
-                <PasswordVisibilityButton
-                  visible={profilePasswordVisibility.current}
-                  label={profilePasswordVisibility.current ? "Hide current password" : "Show current password"}
-                  onToggle={() =>
-                    setProfilePasswordVisibility((prev) => ({
-                      ...prev,
-                      current: !prev.current,
-                    }))
-                  }
-                  disabled={profileBusy}
-                />
-              </InputGroup>
-            </Form.Group>
-            <Form.Group className="mb-3" controlId="admin-profile-new-password">
-              <Form.Label>New Password</Form.Label>
-              <InputGroup hasValidation>
-                <Form.Control
-                  type={profilePasswordVisibility.next ? "text" : "password"}
-                  autoComplete="new-password"
-                  value={profileForm.new_password}
-                  isInvalid={Boolean(profileFieldErrors.new_password)}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    setProfileForm((prev) => ({ ...prev, new_password: nextValue }));
-                    setProfileFieldErrors((prev) => ({ ...prev, new_password: "" }));
-                  }}
-                />
-                <PasswordVisibilityButton
-                  visible={profilePasswordVisibility.next}
-                  label={profilePasswordVisibility.next ? "Hide new password" : "Show new password"}
-                  onToggle={() =>
-                    setProfilePasswordVisibility((prev) => ({
-                      ...prev,
-                      next: !prev.next,
-                    }))
-                  }
-                  disabled={profileBusy}
-                />
-              </InputGroup>
-            </Form.Group>
-            <Form.Group controlId="admin-profile-confirm-password">
-              <Form.Label>Confirm New Password</Form.Label>
-              <InputGroup hasValidation>
-                <Form.Control
-                  type={profilePasswordVisibility.confirm ? "text" : "password"}
-                  autoComplete="new-password"
-                  value={profileForm.confirm_password}
-                  isInvalid={Boolean(profileFieldErrors.confirm_password)}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    setProfileForm((prev) => ({ ...prev, confirm_password: nextValue }));
-                    setProfileFieldErrors((prev) => ({ ...prev, confirm_password: "" }));
-                  }}
-                />
-                <PasswordVisibilityButton
-                  visible={profilePasswordVisibility.confirm}
-                  label={profilePasswordVisibility.confirm ? "Hide confirm new password" : "Show confirm new password"}
-                  onToggle={() =>
-                    setProfilePasswordVisibility((prev) => ({
-                      ...prev,
-                      confirm: !prev.confirm,
-                    }))
-                  }
-                  disabled={profileBusy}
-                />
-              </InputGroup>
-            </Form.Group>
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="outline-secondary" onClick={closeProfileEditor} disabled={profileBusy}>
-              Cancel
-            </Button>
-            <Button className="btn-inquiry-action" variant="secondary" type="submit" disabled={profileBusy}>
-              {profileBusy ? (
-                <>
-                  <Spinner size="sm" className="me-2" />
-                  Saving...
-                </>
-              ) : (
-                "Save Profile"
-              )}
-            </Button>
-          </Modal.Footer>
-        </Form>
-      </Modal>
 
       <Modal
         show={showCreateAdminModal}
@@ -3357,83 +2931,60 @@ const AdminDashboard = ({
                 ))}
               </Form.Select>
             </Form.Group>
-            <Form.Group className="mb-3" controlId="admin-create-user-password">
-              <div className="d-flex flex-wrap align-items-center gap-2 mb-1">
-                <Form.Label className={`mb-0 ${createAdminPasswordInvalid ? "admin-field-label-invalid" : ""}`}>
-                  Password
-                  <span className="text-danger ms-1" aria-hidden="true">
-                    *
-                  </span>
-                </Form.Label>
-                <span className={`admin-form-requirement-text ${createAdminPasswordInvalid ? "admin-form-requirement-text-invalid" : ""}`}>
-                  min 10 chars
-                </span>
-              </div>
-              <InputGroup hasValidation>
-                <Form.Control
-                  aria-label="Password"
-                  type={createAdminPasswordVisibility.password ? "text" : "password"}
-                  autoComplete="new-password"
-                  value={newAdminForm.password}
-                  isInvalid={Boolean(newAdminFieldErrors.password)}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    setNewAdminForm((prev) => ({ ...prev, password: nextValue }));
-                    setNewAdminFieldErrors((prev) => ({ ...prev, password: "" }));
-                  }}
-                />
-                <PasswordVisibilityButton
-                  visible={createAdminPasswordVisibility.password}
-                  label={createAdminPasswordVisibility.password ? "Hide password" : "Show password"}
-                  onToggle={() =>
-                    setCreateAdminPasswordVisibility((prev) => ({
-                      ...prev,
-                      password: !prev.password,
-                    }))
-                  }
-                  disabled={newAdminBusy}
-                />
-              </InputGroup>
-            </Form.Group>
-            <Form.Group className="mb-3" controlId="admin-create-user-confirm-password">
-              <div className="d-flex flex-wrap align-items-center gap-2 mb-1">
-                <Form.Label className={`mb-0 ${createAdminConfirmPasswordInvalid ? "admin-field-label-invalid" : ""}`}>
-                  Confirm Password
-                  <span className="text-danger ms-1" aria-hidden="true">
-                    *
-                  </span>
-                </Form.Label>
-                <span
-                  className={`admin-form-requirement-text ${createAdminConfirmPasswordInvalid ? "admin-form-requirement-text-invalid" : ""}`}>
-                  must match password
-                </span>
-              </div>
-              <InputGroup hasValidation>
-                <Form.Control
-                  aria-label="Confirm Password"
-                  type={createAdminPasswordVisibility.confirm ? "text" : "password"}
-                  autoComplete="new-password"
-                  value={newAdminForm.confirm_password}
-                  isInvalid={Boolean(newAdminFieldErrors.confirm_password)}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    setNewAdminForm((prev) => ({ ...prev, confirm_password: nextValue }));
-                    setNewAdminFieldErrors((prev) => ({ ...prev, confirm_password: "" }));
-                  }}
-                />
-                <PasswordVisibilityButton
-                  visible={createAdminPasswordVisibility.confirm}
-                  label={createAdminPasswordVisibility.confirm ? "Hide confirm password" : "Show confirm password"}
-                  onToggle={() =>
-                    setCreateAdminPasswordVisibility((prev) => ({
-                      ...prev,
-                      confirm: !prev.confirm,
-                    }))
-                  }
-                  disabled={newAdminBusy}
-                />
-              </InputGroup>
-            </Form.Group>
+            <PasswordField
+              controlId="admin-create-user-password"
+              label="Password"
+              ariaLabel="Password"
+              autoComplete="new-password"
+              value={newAdminForm.password}
+              visible={createAdminPasswordVisibility.password}
+              isInvalid={Boolean(newAdminFieldErrors.password)}
+              disabled={newAdminBusy}
+              required
+              labelClassName={createAdminPasswordInvalid ? "admin-field-label-invalid" : ""}
+              helperText="min 10 chars"
+              helperTextClassName={`admin-form-requirement-text ${
+                createAdminPasswordInvalid ? "admin-form-requirement-text-invalid" : ""
+              }`}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setNewAdminForm((prev) => ({ ...prev, password: nextValue }));
+                setNewAdminFieldErrors((prev) => ({ ...prev, password: "" }));
+              }}
+              onToggle={() =>
+                setCreateAdminPasswordVisibility((prev) => ({
+                  ...prev,
+                  password: !prev.password,
+                }))
+              }
+            />
+            <PasswordField
+              controlId="admin-create-user-confirm-password"
+              label="Confirm Password"
+              ariaLabel="Confirm Password"
+              autoComplete="new-password"
+              value={newAdminForm.confirm_password}
+              visible={createAdminPasswordVisibility.confirm}
+              isInvalid={Boolean(newAdminFieldErrors.confirm_password)}
+              disabled={newAdminBusy}
+              required
+              labelClassName={createAdminConfirmPasswordInvalid ? "admin-field-label-invalid" : ""}
+              helperText="must match password"
+              helperTextClassName={`admin-form-requirement-text ${
+                createAdminConfirmPasswordInvalid ? "admin-form-requirement-text-invalid" : ""
+              }`}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setNewAdminForm((prev) => ({ ...prev, confirm_password: nextValue }));
+                setNewAdminFieldErrors((prev) => ({ ...prev, confirm_password: "" }));
+              }}
+              onToggle={() =>
+                setCreateAdminPasswordVisibility((prev) => ({
+                  ...prev,
+                  confirm: !prev.confirm,
+                }))
+              }
+            />
             <Form.Check
               className="mb-1"
               type="switch"
@@ -3653,7 +3204,7 @@ const AdminDashboard = ({
         }
         onConfirm={runConfirmedAction}
       />
-    </Shell>
+    </>
   );
 };
 

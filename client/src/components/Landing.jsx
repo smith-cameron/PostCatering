@@ -1,6 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback } from "react";
 import { Button, Carousel } from "react-bootstrap";
 import { Link } from "react-router-dom";
+import useAsyncData from "../hooks/useAsyncData";
+import { requestJson } from "../utils/http";
+import { SITE_SERVICE_LINKS } from "./siteNavigationConfig";
 
 const normalizeSortNumber = (value, fallback) => {
   const parsed = Number(value);
@@ -56,33 +59,19 @@ const normalizeLandingSlides = (slides) => {
 };
 
 const Landing = () => {
-  const [slides, setSlides] = useState([]);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadSlides = async () => {
-      try {
-        const response = await fetch("/api/slides");
-        if (!response.ok) {
-          return;
-        }
-
-        const body = await response.json();
-        if (isMounted) {
-          setSlides(normalizeLandingSlides(body.slides));
-        }
-      } catch {
-        // Keep page functional even if slide API is temporarily unavailable.
-      }
-    };
-
-    loadSlides();
-
-    return () => {
-      isMounted = false;
-    };
+  const loadSlides = useCallback(async () => {
+    try {
+      const body = await requestJson("/api/slides");
+      return normalizeLandingSlides(body.slides);
+    } catch {
+      // Keep page functional even if slide API is temporarily unavailable.
+      return [];
+    }
   }, []);
+  const { data: slides } = useAsyncData({
+    initialData: [],
+    loadData: loadSlides,
+  });
 
   return (
     <main className="landing-container text-center">
@@ -100,30 +89,16 @@ const Landing = () => {
         </strong>
       </p>
       <div className="landing-info-actions my-4 px-3">
-        <Button
-          as={Link}
-          to="/services/togo"
-          className="fw-semibold btn-inquiry-action landing-info-action"
-          variant="secondary"
-        >
-          To-Go / Take & Bake
-        </Button>
-        <Button
-          as={Link}
-          to="/services/catering"
-          className="fw-semibold btn-inquiry-action landing-info-action"
-          variant="secondary"
-        >
-          Community/Crew Catering
-        </Button>
-        <Button
-          as={Link}
-          to="/services/formal"
-          className="fw-semibold btn-inquiry-action landing-info-action"
-          variant="secondary"
-        >
-          Formal Events
-        </Button>
+        {SITE_SERVICE_LINKS.map((serviceLink) => (
+          <Button
+            key={serviceLink.key}
+            as={Link}
+            to={serviceLink.to}
+            className="fw-semibold btn-inquiry-action landing-info-action"
+            variant="secondary">
+            {serviceLink.ctaLabel}
+          </Button>
+        ))}
       </div>
       <Carousel>
         {slides.map((slide) => (

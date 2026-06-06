@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 
 from flask_api.config.mysqlconnection import connect_to_mysql, db_transaction, query_db, query_db_many
+from flask_api.services._shared import serialize_decimal_string, to_bool
 from flask_api.services.admin_service_plan_service import AdminServicePlanService
 
 
@@ -68,18 +69,7 @@ class MenuService:
         },
     )
 
-    @staticmethod
-    def _to_bool(value, default=None):
-        if value is None:
-            return default
-        if isinstance(value, bool):
-            return value
-        normalized = str(value).strip().lower()
-        if normalized in ("1", "true", "yes", "on"):
-            return True
-        if normalized in ("0", "false", "no", "off"):
-            return False
-        return default
+    _to_bool = staticmethod(to_bool)
 
     @staticmethod
     def _to_snake_case(value):
@@ -265,15 +255,7 @@ class MenuService:
             return None
         return float(parsed)
 
-    @staticmethod
-    def _serialize_price(value):
-        if value is None:
-            return None
-        try:
-            normalized = Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            return format(normalized, "f")
-        except (InvalidOperation, ValueError):
-            return None
+    _serialize_price = staticmethod(serialize_decimal_string)
 
     @staticmethod
     def _service_plan_price_meta_to_public(price_meta):

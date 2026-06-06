@@ -1,8 +1,10 @@
 import { Button, Modal } from "react-bootstrap";
 
-const InfoModal = ({ show, onHide, title, subtitle, children }) => {
+const InfoModal = ({ show, onHide, title, subtitle, children, centered = false, className = "" }) => {
+  const modalClassName = ["info-modal", "inquiry-modal", className].filter(Boolean).join(" ");
+
   return (
-    <Modal show={show} onHide={onHide} className="info-modal inquiry-modal">
+    <Modal show={show} onHide={onHide} centered={centered} className={modalClassName}>
       <Modal.Header closeButton>
         {title || subtitle ? (
           <div>
