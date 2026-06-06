@@ -2,8 +2,8 @@ from flask_api.models.slide import Slide
 
 
 class GalleryService:
-    DEFAULT_TITLE = "placeholder title"
-    DEFAULT_TEXT = "placeholder text"
+    DEFAULT_TITLE = "Post 468 Catering Media"
+    DEFAULT_TEXT = "Photos and videos from Post 468 Catering events and community programs."
 
     @classmethod
     def _normalize_text(cls, value):

@@ -5,7 +5,7 @@ import useAsyncData from "../hooks/useAsyncData";
 import { requestJson } from "../utils/http";
 
 const MEDIA_PARAM_KEY = "media";
-const FALLBACK_LABEL = "placeholder title";
+const FALLBACK_LABEL = "Post 468 Catering Media";
 const SWIPE_MIN_DISTANCE_PX = 48;
 
 const ShowcaseGallery = () => {

@@ -43,9 +43,12 @@ class GalleryServiceTests(unittest.TestCase):
         self.assertEqual(items[0]["id"], 99)
         self.assertEqual(items[1]["media_type"], "video")
         self.assertFalse(items[1]["is_slide"])
-        self.assertEqual(items[1]["title"], "placeholder title")
-        self.assertEqual(items[1]["slide_text"], "placeholder text")
-        self.assertEqual(items[1]["alt"], "placeholder title")
+        self.assertEqual(items[1]["title"], "Post 468 Catering Media")
+        self.assertEqual(
+            items[1]["slide_text"],
+            "Photos and videos from Post 468 Catering events and community programs.",
+        )
+        self.assertEqual(items[1]["alt"], "Post 468 Catering Media")
 
 
 if __name__ == "__main__":
