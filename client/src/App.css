@@ -1786,6 +1786,10 @@ button {
   padding: 0.45rem 0.6rem;
 }
 
+.admin-manage-users-table tbody > tr > td {
+  vertical-align: middle;
+}
+
 .admin-manage-users-modal .admin-scroll-card table thead th {
   background: var(--admin-surface);
   box-shadow: 0 2px 0 0 var(--admin-border);

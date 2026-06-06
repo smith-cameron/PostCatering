@@ -1825,7 +1825,7 @@ const AdminDashboard = ({
           </Row>
 
           <div className="admin-assignment-panel mb-3">
-            <h4 className="h6 mb-2">Menu Type</h4>
+            <h4 className="h6 mb-2">Service Packages</h4>
             <div className="d-flex gap-3 flex-wrap">
               {MENU_TYPE_OPTIONS.map((typeKey) => {
                 const normalizedType = normalizeFilterText(typeKey);
@@ -1899,7 +1899,7 @@ const AdminDashboard = ({
                 );
               })
             ) : (
-              <div className="small text-secondary">Select at least one menu type to configure group assignments.</div>
+              <div className="small text-secondary">Select at least one service package to configure group assignments.</div>
             )}
           </div>
 
@@ -2359,7 +2359,7 @@ const AdminDashboard = ({
 	                    <tr>
 	                      <th>Item</th>
 	                      <th>Active</th>
-	                      <th>Menu(s)</th>
+	                      <th>Package(s)</th>
 	                      <th>Group(s)</th>
 	                      <th className="admin-tray-prices-col">Tray Prices</th>
 	                    </tr>
@@ -3025,8 +3025,11 @@ const AdminDashboard = ({
         </Modal.Header>
         <Modal.Body>
           {manageAdminsError ? <Alert variant="danger">{manageAdminsError}</Alert> : null}
-          <Form.Text className="text-secondary d-block mb-3">
-            Update tier, toggle active status, or delete accounts from this list. Your current account cannot be deactivated or deleted.
+          <Form.Text as="div" className="text-secondary d-block mb-3">
+            <ul className="mb-0 ps-3">
+              <li>Update tier, toggle active status, or delete accounts from this list.</li>
+              <li>Your current account cannot be deactivated or deleted.</li>
+            </ul>
           </Form.Text>
           {manageAdminsLoading ? (
             <div className="py-4 text-center">

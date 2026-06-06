@@ -2099,6 +2099,7 @@ describe("AdminDashboard", () => {
     await screen.findByText("Jerk Chicken");
     fireEvent.click(screen.getByText("Jerk Chicken"));
     await screen.findByText("Edit Menu Item");
+    expect(screen.getByRole("heading", { name: "Service Packages" })).toBeInTheDocument();
 
     expect(screen.getByLabelText("Regular")).toBeChecked();
     expect(screen.getByLabelText("Formal")).toBeChecked();
