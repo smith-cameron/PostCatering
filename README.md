@@ -628,6 +628,7 @@ Backend:
 
 ### Stretch goals
 - Deferred (Production Readiness): Adopt Flask app-factory + blueprint structure for clearer initialization and easier testing.
+- Inquiry delivery resilience and observability: keep inquiry saves successful when the database write succeeds even if email delivery is partial, return a structured partial-success state from `/api/inquiries`, show delivery warnings in the customer success UI instead of only logging them to the browser console, keep server-side email failure logging/alerting, and add an Admin Settings `Email Delivery` status surface backed by persisted per-inquiry delivery outcomes plus a recent summary/history API.
 - Migrate inquiry email transport from SMTP to Mailgun HTTP API for richer delivery telemetry, event/webhook handling, and provider-specific controls.
 - Add production file-based logging (for example `api/logs/app.log`) alongside console logging for persistent operational/audit troubleshooting.
 - Implement Docker containers for backend, frontend, and MySQL (with a `docker-compose` workflow for local and deployment parity).
