@@ -216,6 +216,13 @@ Use `api/.env.example` as the source of truth for variable names.
 - `SMTP_PORT`: SMTP server port
 - `SMTP_USERNAME`: SMTP username
 - `SMTP_PASSWORD`: SMTP password or app password
+
+Production startup requires these to be explicitly configured:
+
+- `FLASK_SECRET_KEY`
+- `SESSION_COOKIE_SAMESITE`
+- `SESSION_COOKIE_SECURE=true`
+- `CORS_ALLOW_ORIGIN` set to the real frontend origin
 - `SMTP_USE_TLS`: `true`/`false` for TLS
 - `INQUIRY_TO_EMAIL`: destination inbox for inquiry notifications
 - `INQUIRY_FROM_EMAIL`: sender address used by outbound inquiry emails

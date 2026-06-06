@@ -217,6 +217,8 @@ Use values that match `api/.env.example`:
 FLASK_ENV=production
 FLASK_DEBUG=false
 FLASK_SECRET_KEY=replace-with-random-secret
+SESSION_COOKIE_SAMESITE=Lax
+SESSION_COOKIE_SECURE=true
 LOG_LEVEL=INFO
 
 DB_HOST=127.0.0.1
