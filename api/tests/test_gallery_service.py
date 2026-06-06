@@ -12,7 +12,9 @@ from flask_api.services.gallery_service import GalleryService  # noqa: E402
 
 class GalleryServiceTests(unittest.TestCase):
     def test_get_gallery_items_merges_static_assets_with_slide_flags(self):
-        with patch("flask_api.services.gallery_service.Slide.get_active_media_rows") as mock_rows:
+        with patch("flask_api.services.gallery_service.Slide.get_active_media_rows") as mock_rows, patch(
+            "flask_api.services.gallery_service.MediaAssetService.thumbnail_url_for_image_url"
+        ) as mock_thumbnail_url:
             mock_rows.return_value = [
                 {
                     "id": 99,
@@ -35,12 +37,17 @@ class GalleryServiceTests(unittest.TestCase):
                     "is_slide": 0,
                 },
             ]
+            mock_thumbnail_url.side_effect = [
+                "/api/assets/slides/thumbs/gallery-photo--jpg.jpg",
+                "/api/assets/slides/event-reel.mp4",
+            ]
 
             items = GalleryService.get_gallery_items()
 
         self.assertEqual(len(items), 2)
         self.assertTrue(items[0]["is_slide"])
         self.assertEqual(items[0]["id"], 99)
+        self.assertEqual(items[0]["thumbnail_src"], "/api/assets/slides/thumbs/gallery-photo--jpg.jpg")
         self.assertEqual(items[1]["media_type"], "video")
         self.assertFalse(items[1]["is_slide"])
         self.assertEqual(items[1]["title"], "Post 468 Catering Media")
@@ -49,6 +56,9 @@ class GalleryServiceTests(unittest.TestCase):
             "Photos and videos from Post 468 Catering events and community programs.",
         )
         self.assertEqual(items[1]["alt"], "Post 468 Catering Media")
+
+        mock_thumbnail_url.assert_any_call("/api/assets/slides/gallery-photo.jpg", media_type="image")
+        mock_thumbnail_url.assert_any_call("/api/assets/slides/event-reel.mp4", media_type="video")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 from flask_api.models.slide import Slide
+from flask_api.services.media_asset_service import MediaAssetService
 
 
 class GalleryService:
@@ -36,7 +37,10 @@ class GalleryService:
                 {
                     "id": row.get("id"),
                     "src": row.get("image_url"),
-                    "thumbnail_src": row.get("image_url"),
+                    "thumbnail_src": MediaAssetService.thumbnail_url_for_image_url(
+                        row.get("image_url"),
+                        media_type=row.get("media_type") or "image",
+                    ),
                     "title": title,
                     "slide_title": title,
                     "caption": caption,

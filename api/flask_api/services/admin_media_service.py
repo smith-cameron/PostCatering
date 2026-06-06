@@ -1,4 +1,5 @@
 from flask_api.config.mysqlconnection import db_transaction, query_db
+from flask_api.services.media_asset_service import MediaAssetService
 from flask_api.services._shared import merge_requested_ids, normalize_id_list, to_bool, to_int, to_iso
 
 
@@ -119,6 +120,10 @@ class AdminMediaService:
             "alt_text": str(row.get("alt_text") or "").strip(),
             "src": row.get("image_url"),
             "image_url": row.get("image_url"),
+            "thumbnail_src": MediaAssetService.thumbnail_url_for_image_url(
+                row.get("image_url"),
+                media_type=row.get("media_type") or "image",
+            ),
             "media_type": row.get("media_type") or "image",
             "display_order": row.get("display_order"),
             "is_slide": bool(row.get("is_slide", 0)),
