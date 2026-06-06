@@ -395,6 +395,10 @@ class AdminMediaService:
             )
             cls._resequence_group(is_slide=bool(existing.get("is_slide")), connection=connection)
 
+        MediaAssetService.delete_local_asset_bundle(
+            existing.get("image_url"),
+            media_type=existing.get("media_type") or "image",
+        )
         return {
             "ok": True,
             "deleted_media_id": normalized_media_id,

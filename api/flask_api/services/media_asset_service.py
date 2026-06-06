@@ -62,12 +62,55 @@ class MediaAssetService:
         return str(image_url or "").strip()
 
     @classmethod
+    def delete_local_asset_bundle(cls, asset_url, media_type="image"):
+        paths_to_delete = []
+        source_path = cls.resolve_local_asset_path(asset_url)
+        if source_path is not None:
+            paths_to_delete.append(source_path)
+
+        thumbnail_path = cls._thumbnail_path_for_image_url(asset_url, media_type=media_type)
+        if thumbnail_path is not None:
+            paths_to_delete.append(thumbnail_path)
+
+        deleted_paths = []
+        seen_paths = set()
+        for candidate_path in paths_to_delete:
+            normalized_candidate = candidate_path.resolve()
+            if normalized_candidate in seen_paths:
+                continue
+            seen_paths.add(normalized_candidate)
+            if cls._delete_file_if_present(normalized_candidate):
+                deleted_paths.append(normalized_candidate)
+
+        return {
+            "deleted_original": source_path is not None and source_path.resolve() in deleted_paths,
+            "deleted_thumbnail": thumbnail_path is not None and thumbnail_path.resolve() in deleted_paths,
+            "deleted_paths": [str(path) for path in deleted_paths],
+        }
+
+    @classmethod
     def _thumbnail_relative_path(cls, relative_source):
         extension_token = relative_source.suffix.lower().lstrip(".") or "image"
         thumbnail_name = f"{relative_source.stem}--{extension_token}.jpg"
         if relative_source.parent == Path("."):
             return Path(cls.THUMBNAIL_DIR_NAME) / thumbnail_name
         return Path(cls.THUMBNAIL_DIR_NAME) / relative_source.parent / thumbnail_name
+
+    @classmethod
+    def _thumbnail_path_for_image_url(cls, image_url, media_type="image"):
+        if str(media_type or "").strip().lower() != "image":
+            return None
+
+        source_path = cls.resolve_local_asset_path(image_url)
+        if source_path is None:
+            return None
+        try:
+            relative_source = source_path.relative_to(cls.LOCAL_MEDIA_DIR.resolve())
+        except ValueError:
+            return None
+        if relative_source.parts and relative_source.parts[0] == cls.THUMBNAIL_DIR_NAME:
+            return source_path
+        return cls.LOCAL_MEDIA_DIR / cls._thumbnail_relative_path(relative_source)
 
     @classmethod
     def _ensure_thumbnail(cls, source_path, thumbnail_path):
@@ -103,6 +146,34 @@ class MediaAssetService:
             background.paste(image, mask=image.getchannel("A"))
             return background
         return image.convert("RGB")
+
+    @classmethod
+    def _delete_file_if_present(cls, candidate_path):
+        media_root = cls.LOCAL_MEDIA_DIR.resolve()
+        try:
+            candidate_path.relative_to(media_root)
+        except ValueError:
+            return False
+
+        try:
+            if not candidate_path.exists() or not candidate_path.is_file():
+                return False
+            candidate_path.unlink()
+            cls._prune_empty_parent_dirs(candidate_path.parent)
+            return True
+        except OSError:
+            return False
+
+    @classmethod
+    def _prune_empty_parent_dirs(cls, directory_path):
+        media_root = cls.LOCAL_MEDIA_DIR.resolve()
+        current_path = directory_path.resolve()
+        while current_path != media_root:
+            try:
+                current_path.rmdir()
+            except OSError:
+                break
+            current_path = current_path.parent
 
     @classmethod
     def _url_for_relative_path(cls, relative_path):

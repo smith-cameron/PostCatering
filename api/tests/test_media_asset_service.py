@@ -35,3 +35,24 @@ class MediaAssetServiceTests(unittest.TestCase):
     def test_thumbnail_url_for_image_url_ignores_external_assets(self):
         thumbnail_url = MediaAssetService.thumbnail_url_for_image_url("https://cdn.example.com/hero.jpg")
         self.assertEqual(thumbnail_url, "https://cdn.example.com/hero.jpg")
+
+    def test_delete_local_asset_bundle_removes_original_and_thumbnail(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            media_root = Path(temp_dir)
+            source_path = media_root / "events" / "hero.jpg"
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_bytes(b"source-bytes")
+            thumbnail_path = media_root / "thumbs" / "events" / "hero--jpg.jpg"
+            thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
+            thumbnail_path.write_bytes(b"thumb-bytes")
+
+            with patch.object(MediaAssetService, "LOCAL_MEDIA_DIR", media_root):
+                result = MediaAssetService.delete_local_asset_bundle(
+                    "/api/assets/slides/events/hero.jpg",
+                    media_type="image",
+                )
+
+            self.assertTrue(result["deleted_original"])
+            self.assertTrue(result["deleted_thumbnail"])
+            self.assertFalse(source_path.exists())
+            self.assertFalse(thumbnail_path.exists())
