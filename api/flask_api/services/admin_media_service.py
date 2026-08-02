@@ -317,12 +317,13 @@ class AdminMediaService:
         if not resolved_caption:
             return {"error": "Caption is required."}, 400
 
+        display_order_explicit = "display_order" in (payload or {})
+        next_is_slide = cls._to_bool((payload or {}).get("is_slide"), default=existing["is_slide"])
+        slide_validation = cls._validate_slide_media_type(existing.get("media_type"), next_is_slide)
+        if slide_validation is not None:
+            return slide_validation
+
         with db_transaction() as connection:
-            display_order_explicit = "display_order" in (payload or {})
-            next_is_slide = cls._to_bool((payload or {}).get("is_slide"), default=existing["is_slide"])
-            slide_validation = cls._validate_slide_media_type(existing.get("media_type"), next_is_slide)
-            if slide_validation is not None:
-                return slide_validation
             moved_from_slide_to_gallery = existing["is_slide"] and not next_is_slide
             next_display_order = cls._to_int(
                 (payload or {}).get("display_order"),
