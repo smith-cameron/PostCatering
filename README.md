@@ -628,10 +628,37 @@ Backend:
 
 ### Stretch goals
 - Deferred (Production Readiness): Adopt Flask app-factory + blueprint structure for clearer initialization and easier testing.
-- Inquiry delivery resilience and observability: keep inquiry saves successful when the database write succeeds even if email delivery is partial, return a structured partial-success state from `/api/inquiries`, show delivery warnings in the customer success UI instead of only logging them to the browser console, keep server-side email failure logging/alerting, and add an Admin Settings `Email Delivery` status surface backed by persisted per-inquiry delivery outcomes plus a recent summary/history API.
-- Migrate inquiry email transport from SMTP to Mailgun HTTP API for richer delivery telemetry, event/webhook handling, and provider-specific controls.
 - Add production file-based logging (for example `api/logs/app.log`) alongside console logging for persistent operational/audit troubleshooting.
 - Implement Docker containers for backend, frontend, and MySQL (with a `docker-compose` workflow for local and deployment parity).
+
+### Styling fixes
+
+### Inquiry delivery follow-up roadmap
+
+Current baseline:
+- The public inquiry flow posts to `/api/inquiries`.
+- The backend saves the inquiry first, then sends the owner notification email and customer confirmation email synchronously over SMTP.
+- The customer success UI still assumes full success; `body.warning` from `/api/inquiries` is only logged to the browser console today.
+- Persistence is minimal: `inquiries.email_sent` records only owner-email success, and there is no per-message delivery table, provider event table, webhook ingestion, or admin delivery summary/history API.
+
+Target end state:
+- `/api/inquiries` still returns `201` when the inquiry save succeeds, even if one or both email paths partially fail.
+- The response keeps the current top-level booleans for compatibility, but adds a structured `delivery` object with `overall_status` plus owner/customer outcome details.
+- The customer success UI distinguishes full success, partial success, and saved-with-delivery-warning states so users are clearly told their inquiry was saved.
+- Admin Settings gains an `Email Delivery` surface backed by persisted per-message delivery outcomes and recent summary/history data.
+- Mailgun becomes the primary transport behind `INQUIRY_EMAIL_PROVIDER=smtp|mailgun`, while SMTP remains available as a rollout fallback.
+
+Recommended implementation phases:
+1. Add structured delivery state to `/api/inquiries` and render customer-facing warning states in the inquiry success UI.
+2. Persist message-level delivery outcomes and add read-only admin summary/history endpoints.
+3. Introduce provider abstraction, switch Mailgun on behind a flag, and ingest Mailgun webhooks/events.
+4. Optionally add manual staff follow-up workflow using `inquiries.status` if inquiry handling needs to expand beyond delivery telemetry.
+
+Planned APIs and persistence:
+- `GET /api/admin/inquiry-delivery/summary`
+- `GET /api/admin/inquiry-delivery/history?limit=100&status=failed|partial_success|sent`
+- `POST /api/webhooks/mailgun`
+- New `inquiry_email_deliveries` and `inquiry_email_events` tables, while `inquiries.email_sent` remains a legacy summary field during rollout.
 
 ## Program And Menu Reference
 
