@@ -46,9 +46,15 @@ pipenv requirements > requirements.txt
 
 ## 2) Launch EC2 (us-east-2)
 
+This is the Ubuntu image used by the existing development/staging runbook:
+`Ubuntu Server 24.04 LTS` (x86_64). Keep the production instance in the site
+owner's AWS account, not the developer's account.
+
 1. EC2 -> Launch instance
 2. AMI: `Ubuntu Server 24.04 LTS`
-3. Instance type: `t3.small`
+3. Instance type: start with `t3a.small` where available (or `t3.small` to match
+   development): both provide 2 GiB RAM. Do not assume `t3.micro` will be stable:
+   this single host runs MySQL, Gunicorn, Nginx, and an on-host Node build.
 4. Storage: `gp3`, 20+ GB
 5. IAM role: attach `AmazonSSMManagedInstanceCore`
 6. Metadata options: set IMDSv2 to required
@@ -61,6 +67,11 @@ pipenv requirements > requirements.txt
 Cost/security notes:
 
 - Public IPv4 addresses are billable
+- Use an Elastic IP only if the instance needs a stable IP for DNS; it does not
+  avoid the public-IPv4 charge. A single Nginx EC2 host avoids the extra cost of an
+  Application Load Balancer while traffic is small.
+- Use `gp3` and configure EBS snapshot retention; do not delete the only database
+  volume before verifying a backup restore.
 - EC2 free tier eligibility changed on July 15, 2025
 - Keep SSH restricted, or use Session Manager only
 

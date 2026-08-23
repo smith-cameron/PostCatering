@@ -1,10 +1,15 @@
 name: Deploy EC2
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
   workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
 
 concurrency:
   group: deploy-ec2-production
@@ -13,65 +18,87 @@ concurrency:
 jobs:
   deploy:
     name: Deploy To EC2
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Validate required secrets
+      - name: Validate deployment configuration
         env:
-          EC2_SSH_HOST: ${{ secrets.EC2_SSH_HOST }}
-          EC2_SSH_USER: ${{ secrets.EC2_SSH_USER }}
-          EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
         run: |
           set -euo pipefail
-          [ -n "${EC2_SSH_HOST:-}" ] || { echo "Missing secret: EC2_SSH_HOST"; exit 1; }
-          [ -n "${EC2_SSH_USER:-}" ] || { echo "Missing secret: EC2_SSH_USER"; exit 1; }
-          [ -n "${EC2_SSH_PRIVATE_KEY:-}" ] || { echo "Missing secret: EC2_SSH_PRIVATE_KEY"; exit 1; }
+          [ -n "${AWS_REGION:-}" ] || { echo "Missing repository variable: AWS_REGION"; exit 1; }
+          [[ "$EC2_INSTANCE_ID" =~ ^i-[0-9a-f]+$ ]] || { echo "Invalid or missing repository variable: EC2_INSTANCE_ID"; exit 1; }
+          [ -n "${AWS_DEPLOY_ROLE_ARN:-}" ] || { echo "Missing Actions secret: AWS_DEPLOY_ROLE_ARN"; exit 1; }
 
-      - name: Prepare SSH key
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Deploy tested commit through Systems Manager
         env:
-          EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          DEPLOY_REF: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/.ssh"
-          printf '%s\n' "$EC2_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
-          chmod 600 "$HOME/.ssh/id_ed25519"
+          [[ "$DEPLOY_REF" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid deployment commit SHA"; exit 1; }
 
-      - name: Add host key
-        env:
-          EC2_SSH_HOST: ${{ secrets.EC2_SSH_HOST }}
-        run: |
-          set -euo pipefail
-          ssh-keyscan -H "$EC2_SSH_HOST" >> "$HOME/.ssh/known_hosts"
+          cat > /tmp/postcatering-remote-deploy.sh <<EOF
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          APP_DIR=/home/ubuntu/PostCatering
+          DEPLOY_REF=$DEPLOY_REF
+          export GIT_SSH_COMMAND='ssh -i /home/ubuntu/.ssh/postcatering_github -o IdentitiesOnly=yes -o UserKnownHostsFile=/home/ubuntu/.ssh/known_hosts -o StrictHostKeyChecking=yes'
 
-      - name: Upload deploy script
-        env:
-          EC2_SSH_HOST: ${{ secrets.EC2_SSH_HOST }}
-          EC2_SSH_USER: ${{ secrets.EC2_SSH_USER }}
-        run: |
-          set -euo pipefail
-          scp -i "$HOME/.ssh/id_ed25519" ops/deploy-ec2.sh "$EC2_SSH_USER@$EC2_SSH_HOST:/tmp/postcatering-deploy.sh"
+          git config --global --add safe.directory "\$APP_DIR"
+          cd "\$APP_DIR"
+          git fetch origin main
+          git cat-file -e "\${DEPLOY_REF}^{commit}"
+          git checkout --detach "\$DEPLOY_REF"
 
-      - name: Run deploy script on EC2
-        env:
-          EC2_SSH_HOST: ${{ secrets.EC2_SSH_HOST }}
-          EC2_SSH_USER: ${{ secrets.EC2_SSH_USER }}
-          EC2_DEPLOY_PATH: ${{ secrets.EC2_DEPLOY_PATH }}
-          EC2_API_SERVICE: ${{ secrets.EC2_API_SERVICE }}
-          EC2_HEALTH_URL: ${{ secrets.EC2_HEALTH_URL }}
-          EC2_API_ENV_FILE: ${{ secrets.EC2_API_ENV_FILE }}
-          EC2_DB_MIGRATION_ARGS: ${{ secrets.EC2_DB_MIGRATION_ARGS }}
-          GITHUB_BRANCH: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          APP_DIR="${EC2_DEPLOY_PATH:-/home/ubuntu/PostCatering}"
-          API_SERVICE="${EC2_API_SERVICE:-postcatering-api}"
-          HEALTH_URL="${EC2_HEALTH_URL:-http://127.0.0.1/api/health}"
-          API_ENV_FILE="${EC2_API_ENV_FILE:-/etc/postcatering/api.env}"
-          DB_MIGRATION_ARGS="${EC2_DB_MIGRATION_ARGS:---apply-schema --no-seed}"
+          APP_DIR="\$APP_DIR" BRANCH=main DEPLOY_REF="\$DEPLOY_REF" \
+            API_SERVICE=postcatering-api HEALTH_URL=http://127.0.0.1/api/health \
+            API_ENV_FILE=/etc/postcatering/api.env DB_MIGRATION_ARGS='--apply-schema --no-seed' \
+            bash "\$APP_DIR/ops/deploy-ec2.sh"
 
-          ssh -i "$HOME/.ssh/id_ed25519" "$EC2_SSH_USER@$EC2_SSH_HOST" \
-            "chmod +x /tmp/postcatering-deploy.sh && APP_DIR='$APP_DIR' BRANCH='$GITHUB_BRANCH' API_SERVICE='$API_SERVICE' HEALTH_URL='$HEALTH_URL' API_ENV_FILE='$API_ENV_FILE' DB_MIGRATION_ARGS='$DB_MIGRATION_ARGS' /tmp/postcatering-deploy.sh && rm -f /tmp/postcatering-deploy.sh"
+          chown -R ubuntu:ubuntu "\$APP_DIR"
+          chown -R ubuntu:www-data /var/www/postcatering
+          curl -fsS http://127.0.0.1/api/health >/dev/null
+          EOF
+
+          jq -Rs '{commands: [.]} ' /tmp/postcatering-remote-deploy.sh > /tmp/postcatering-ssm-parameters.json
+          command_id="$(aws ssm send-command \
+            --document-name AWS-RunShellScript \
+            --instance-ids "$EC2_INSTANCE_ID" \
+            --parameters file:///tmp/postcatering-ssm-parameters.json \
+            --timeout-seconds 1200 \
+            --comment "PostCatering deploy $DEPLOY_REF" \
+            --query 'Command.CommandId' \
+            --output text)"
+          echo "Started SSM command: $command_id"
+
+          for attempt in {1..120}; do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$EC2_INSTANCE_ID" --query 'Status' --output text 2>/dev/null || true)"
+            case "$status" in
+              Success)
+                aws ssm get-command-invocation --command-id "$command_id" --instance-id "$EC2_INSTANCE_ID" --query 'StandardOutputContent' --output text
+                exit 0
+                ;;
+              Failed|Cancelled|TimedOut|Cancelling)
+                aws ssm get-command-invocation --command-id "$command_id" --instance-id "$EC2_INSTANCE_ID" --output json || true
+                echo "Remote deployment ended with status: $status"
+                exit 1
+                ;;
+            esac
+            sleep 5
+          done
+
+          echo "Timed out waiting for Systems Manager deployment command: $command_id"
+          exit 1
