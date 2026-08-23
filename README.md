@@ -123,8 +123,25 @@ Vite defaults to `http://localhost:5173` and proxies `/api` to `http://localhost
 ## Deployment
 
 - AWS EC2 runbook: `docs/deployment-aws-ec2.md`
+- GitHub-to-EC2 automatic deployment: `docs/deploy-automation-ec2.md`
+- Owner-account launch/cutover checklist: `docs/pre-cutover-checklist.md`
 - Namecheap VPS runbook: `docs/deployment-namecheap-vps.md`
 - Documentation map: `docs/README.md`
+
+### Production baseline
+
+The existing development/staging runbook uses **Ubuntu Server 24.04 LTS** in
+`us-east-2` with a `t3.small`. For a low-traffic production launch, keep the
+same Ubuntu release and use one small x86 instance (`t3a.small` where available,
+otherwise `t3.small`) with a 20 GB `gp3` volume. This application runs MySQL and
+builds the Vite client on the same host, so do not start with a 1 GB `*.micro`
+instance unless you have tested its build and memory use.
+
+Deployments are deliberately gated: a merge to `main` runs CI, and a successful
+CI run deploys that exact commit to EC2. Before enabling the workflow, complete
+the EC2 runbook, data/media migration, DNS/TLS setup, and the required GitHub
+Actions secrets. See the automation runbook for the one-time configuration and
+the maintenance/security checklist.
 
 ## Testing
 

@@ -2,7 +2,8 @@
 set -Eeuo pipefail
 
 # Expected overrides via environment:
-# APP_DIR, BRANCH, API_SERVICE, WEB_ROOT, HEALTH_URL, API_ENV_FILE, DB_MIGRATION_ARGS
+# APP_DIR, BRANCH, DEPLOY_REF, API_SERVICE, WEB_ROOT, HEALTH_URL, API_ENV_FILE,
+# DB_MIGRATION_ARGS.  DEPLOY_REF is an immutable commit SHA supplied by CI.
 APP_DIR="${APP_DIR:-/home/ubuntu/PostCatering}"
 BRANCH="${BRANCH:-main}"
 API_SERVICE="${API_SERVICE:-postcatering-api}"
@@ -10,6 +11,7 @@ WEB_ROOT="${WEB_ROOT:-/var/www/postcatering}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1/api/health}"
 API_ENV_FILE="${API_ENV_FILE:-/etc/postcatering/api.env}"
 DB_MIGRATION_ARGS="${DB_MIGRATION_ARGS:---apply-schema --no-seed}"
+DEPLOY_REF="${DEPLOY_REF:-}"
 
 if sudo -n true >/dev/null 2>&1; then
   SUDO="sudo -n"
@@ -134,8 +136,21 @@ log "Starting deploy in $APP_DIR (branch: $BRANCH)"
 cd "$APP_DIR"
 
 git fetch origin "$BRANCH"
-git checkout "$BRANCH"
-git pull --ff-only origin "$BRANCH"
+if [ -n "$DEPLOY_REF" ]; then
+  if ! [[ "$DEPLOY_REF" =~ ^[0-9a-f]{40}$ ]]; then
+    log "DEPLOY_REF must be a full 40-character commit SHA."
+    exit 1
+  fi
+  if ! git cat-file -e "${DEPLOY_REF}^{commit}" 2>/dev/null; then
+    log "Commit $DEPLOY_REF is not available after fetching $BRANCH."
+    exit 1
+  fi
+  git checkout --detach "$DEPLOY_REF"
+else
+  # Kept for an operator's manual deployment. CI deployments always use DEPLOY_REF.
+  git checkout "$BRANCH"
+  git pull --ff-only origin "$BRANCH"
+fi
 DEPLOY_SHA="$(git rev-parse --short HEAD)"
 log "Checked out $DEPLOY_SHA"
 
