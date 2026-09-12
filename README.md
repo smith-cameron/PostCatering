@@ -1,7 +1,7 @@
 # American Legion Post 468 Catering Application
 
 ## Mission And Program Context
-Web application for American Legion Post 468 catering services and community food programs.
+American Legion Post 468 Catering is a full-stack web application that helps a veteran-focused community catering program present its services, collect qualified event inquiries, and manage its live content in one place. Customers can explore responsive, admin-editable menus and service packages, gallery and landing media, and an accessible inquiry flow that enforces package-selection constraints, validates event details, and sends email notifications. Authorized owners use a secure, routed admin dashboard with authenticated CRUD workflows for normalized menu and package data, asset uploads and ordering, settings, and audit visibility. Built with reusable React UI components, Vite, Flask, MySQL, and REST APIs, the project demonstrates normalized relational data design and migrations, frontend/backend validation, security-aware sessions and rate-limit controls, automated linting and unit/component/Playwright E2E coverage, GitHub Actions CI, and AWS SSM-based production deployment automation.
 
 Food prepared with purpose. American Legion Post 468 Catering combines professional culinary and event experience with a mission to serve the local community. The same team supports events and the weekly Monday Meal Program for veterans, and catering proceeds support veteran outreach.
 
