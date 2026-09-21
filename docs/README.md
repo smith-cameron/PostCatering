@@ -14,8 +14,8 @@ Use this file as the entry point for repo documentation.
   - current single-server EC2 deployment runbook
 - `deployment-namecheap-vps.md`
   - VPS migration/deployment runbook with placeholder production-domain values
-- `deploy-automation-ec2.md`
-  - GitHub Actions + SSH deployment automation for the EC2 layout
+- `deploy-automation-production.md`
+  - GitHub Actions + SSH deployment automation for the production host
 - `pre-cutover-checklist.md`
   - launch-day cutover checklist
 - `cutover-command-sheet.md`

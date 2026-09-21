@@ -1,0 +1,102 @@
+name: Deploy Production
+
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy Tested Commit
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL }}
+    env:
+      DEPLOY_REF: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      PRODUCTION_SSH_HOST: ${{ vars.PRODUCTION_SSH_HOST }}
+      PRODUCTION_SSH_USER: ${{ vars.PRODUCTION_SSH_USER }}
+      PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+
+    steps:
+      - name: Validate deployment configuration
+        env:
+          PRODUCTION_SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          PRODUCTION_SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_REF" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid deployment commit SHA"; exit 1; }
+          [ -n "${PRODUCTION_SSH_HOST:-}" ] || { echo "Missing production variable: PRODUCTION_SSH_HOST"; exit 1; }
+          [ -n "${PRODUCTION_SSH_USER:-}" ] || { echo "Missing production variable: PRODUCTION_SSH_USER"; exit 1; }
+          [ -n "${PRODUCTION_URL:-}" ] || { echo "Missing production variable: PRODUCTION_URL"; exit 1; }
+          [ -n "${PRODUCTION_SSH_PRIVATE_KEY:-}" ] || { echo "Missing production secret: PRODUCTION_SSH_PRIVATE_KEY"; exit 1; }
+          [ -n "${PRODUCTION_SSH_KNOWN_HOSTS:-}" ] || { echo "Missing production secret: PRODUCTION_SSH_KNOWN_HOSTS"; exit 1; }
+
+      - name: Check out tested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_REF }}
+
+      - name: Prepare SSH credentials
+        env:
+          PRODUCTION_SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SSH_PRIVATE_KEY }}
+          PRODUCTION_SSH_KNOWN_HOSTS: ${{ secrets.PRODUCTION_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$PRODUCTION_SSH_PRIVATE_KEY" > "$HOME/.ssh/production_deploy"
+          printf '%s\n' "$PRODUCTION_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/production_deploy" "$HOME/.ssh/known_hosts"
+
+      - name: Upload deployment script
+        run: |
+          set -euo pipefail
+          scp -o BatchMode=yes -o IdentitiesOnly=yes \
+            -i "$HOME/.ssh/production_deploy" \
+            ops/deploy-ec2.sh \
+            "$PRODUCTION_SSH_USER@$PRODUCTION_SSH_HOST:/tmp/postcatering-deploy-$DEPLOY_REF.sh"
+
+      - name: Deploy to production host
+        env:
+          APP_DIR: ${{ vars.PRODUCTION_DEPLOY_PATH }}
+          API_SERVICE: ${{ vars.PRODUCTION_API_SERVICE }}
+          HEALTH_URL: ${{ vars.PRODUCTION_HEALTH_URL }}
+          API_ENV_FILE: ${{ vars.PRODUCTION_API_ENV_FILE }}
+          DB_MIGRATION_ARGS: ${{ vars.PRODUCTION_DB_MIGRATION_ARGS }}
+        run: |
+          set -euo pipefail
+          APP_DIR="${APP_DIR:-/home/ubuntu/PostCatering}"
+          API_SERVICE="${API_SERVICE:-postcatering-api}"
+          HEALTH_URL="${HEALTH_URL:-http://127.0.0.1/api/health}"
+          API_ENV_FILE="${API_ENV_FILE:-/etc/postcatering/api.env}"
+          DB_MIGRATION_ARGS="${DB_MIGRATION_ARGS:---apply-schema --no-seed}"
+          remote_script="/tmp/postcatering-deploy-$DEPLOY_REF.sh"
+
+          printf -v remote_command \
+            "chmod 700 %q && APP_DIR=%q BRANCH=main DEPLOY_REF=%q API_SERVICE=%q HEALTH_URL=%q API_ENV_FILE=%q DB_MIGRATION_ARGS=%q %q; status=\$?; rm -f %q; exit \$status" \
+            "$remote_script" "$APP_DIR" "$DEPLOY_REF" "$API_SERVICE" "$HEALTH_URL" \
+            "$API_ENV_FILE" "$DB_MIGRATION_ARGS" "$remote_script" "$remote_script"
+
+          ssh -o BatchMode=yes -o IdentitiesOnly=yes \
+            -i "$HOME/.ssh/production_deploy" \
+            "$PRODUCTION_SSH_USER@$PRODUCTION_SSH_HOST" \
+            "$remote_command"
+
+      - name: Verify public production health
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 \
+            "${PRODUCTION_URL%/}/api/health" >/dev/null

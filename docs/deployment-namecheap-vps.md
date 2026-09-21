@@ -136,7 +136,7 @@ If the repository remains private, use the same auth approach you trust today fo
 
 ## 5) Import The Current Staging Data
 
-Use the current EC2 deployment as the source of truth until cutover.
+Use the currently deployed environment as the source of truth until cutover.
 
 From the EC2 source host, create a final backup:
 
@@ -369,5 +369,5 @@ Expected differences from the current AWS docs:
 
 - No IAM or Session Manager equivalent is assumed here.
 - SSH hardening matters more because access is direct.
-- The current GitHub Actions EC2 deploy workflow is not plug-and-play for Namecheap and should be updated separately if you move production there.
+- Configure the `production` GitHub environment described in `deploy-automation-production.md` so successful `main` builds deploy to this VPS after cutover.
 - Namecheap managed VPS options are not a good match for this repo's current Ubuntu-based runbook because their managed tiers depend on a different OS/control-panel path.
