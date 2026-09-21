@@ -3,8 +3,8 @@ import sys
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-PLACEHOLDER_TITLE = "placeholder title"
-PLACEHOLDER_TEXT = "placeholder text"
+PLACEHOLDER_TITLE = "Post 468 Catering Media"
+PLACEHOLDER_TEXT = "Photos and videos from Post 468 Catering events and community programs."
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".m4v", ".ogv"}
 SUPPORTED_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS

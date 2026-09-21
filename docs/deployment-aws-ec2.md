@@ -11,6 +11,10 @@ It is written for a single Ubuntu EC2 instance running:
 - Nginx for static hosting and API proxy
 - MySQL on the same instance
 
+Commands use source/target placeholders so the same procedure works for a
+staging-to-production cutover, a production host replacement, or an account
+migration. Resolve and record those values before starting a deployment.
+
 ## 1) Local Preflight
 
 ### Backend
@@ -44,11 +48,20 @@ If you use Pipenv in another workflow, prefer:
 pipenv requirements > requirements.txt
 ```
 
-## 2) Launch EC2 (us-east-2)
+## 2) Launch EC2
+
+Use the intended target AWS Region unless there is a deliberate reason to
+change it. Record the selected Region and use it consistently for
+EC2, Systems Manager, IAM policies, and GitHub deployment configuration.
+
+Use `Ubuntu Server 24.04 LTS` (x86_64). Keep the production instance in the
+AWS account designated for long-term production ownership.
 
 1. EC2 -> Launch instance
 2. AMI: `Ubuntu Server 24.04 LTS`
-3. Instance type: `t3.small`
+3. Instance type: start with `t3a.small` where available (or `t3.small` to match
+   development): both provide 2 GiB RAM. Do not assume `t3.micro` will be stable:
+   this single host runs MySQL, Gunicorn, Nginx, and an on-host Node build.
 4. Storage: `gp3`, 20+ GB
 5. IAM role: attach `AmazonSSMManagedInstanceCore`
 6. Metadata options: set IMDSv2 to required
@@ -58,9 +71,18 @@ pipenv requirements > requirements.txt
 - TCP 22 from your IP only (or skip SSH and use Session Manager)
 - Do not open TCP 3306
 
+For Session Manager, the instance also needs outbound HTTPS access. A public
+subnet with normal outbound internet access is sufficient; a private subnet
+needs the appropriate Systems Manager VPC endpoints instead.
+
 Cost/security notes:
 
 - Public IPv4 addresses are billable
+- Use an Elastic IP only if the instance needs a stable IP for DNS; it does not
+  avoid the public-IPv4 charge. A single Nginx EC2 host avoids the extra cost of an
+  Application Load Balancer while traffic is small.
+- Use `gp3` and configure EBS snapshot retention; do not delete the only database
+  volume before verifying a backup restore.
 - EC2 free tier eligibility changed on July 15, 2025
 - Keep SSH restricted, or use Session Manager only
 
@@ -73,9 +95,18 @@ Preferred:
 SSH alternative:
 
 ```bash
-chmod 400 yourKey.pem
-ssh -i yourKey.pem ubuntu@your-ec2-public-dns
+export SOURCE_HOST=ubuntu@source-instance.example
+export SOURCE_KEY=/path/to/source-instance.pem
+export TARGET_HOST=ubuntu@target-instance.example
+export TARGET_KEY=/path/to/target-instance.pem
+
+chmod 400 "$SOURCE_KEY" "$TARGET_KEY"
+ssh -i "$SOURCE_KEY" "$SOURCE_HOST"
+ssh -i "$TARGET_KEY" "$TARGET_HOST"
 ```
+
+Keep key files private and never add them to this repository. Session Manager
+is preferred when it is available.
 
 ## 4) Install Server Packages
 
@@ -85,10 +116,11 @@ sudo apt upgrade -y
 sudo apt install -y python3-venv python3-pip nginx git mysql-server curl
 ```
 
-Install Node.js compatible with Vite 7:
+Install the Node.js version required by `client/package.json` (currently Node
+24):
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt install -y nodejs
 node -v
 npm -v
@@ -125,7 +157,7 @@ Important:
 macOS/Linux:
 
 ```bash
-mysqldump -u root -p \
+mysqldump -u <source_db_user> -p \
   --single-transaction \
   --routines \
   --triggers \
@@ -138,7 +170,7 @@ Windows PowerShell:
 
 ```powershell
 & "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqldump.exe" `
-  -u root -p `
+  -u <source_db_user> -p `
   --single-transaction `
   --routines `
   --triggers `
@@ -148,11 +180,44 @@ Windows PowerShell:
   post_catering
 ```
 
+Use the source environment account named by `DB_USER` in the deployed API
+environment file; do not assume it is `root`. If that account lacks
+the privileges needed for routines or events and the server uses Ubuntu's
+socket-authenticated MySQL root account, run the export on the source server as
+`sudo mysqldump --single-transaction --routines --triggers --events --default-character-set=utf8mb4 post_catering > post_catering.sql`.
+
 ### 6.2 Upload DB dump and media to EC2
 
+Set the source and target connection values on your local machine:
+
 ```bash
-scp -i yourKey.pem post_catering.sql ubuntu@your-ec2-public-dns:/home/ubuntu/
-scp -i yourKey.pem -r /path/to/PostCatering/api/flask_api/static/slides ubuntu@your-ec2-public-dns:/home/ubuntu/
+export SOURCE_HOST=ubuntu@source-instance.example
+export SOURCE_KEY=/path/to/source-instance.pem
+export TARGET_HOST=ubuntu@target-instance.example
+export TARGET_KEY=/path/to/target-instance.pem
+export SOURCE_APP_DIR=/home/ubuntu/PostCatering
+
+mkdir -p current-production-slides
+scp -i "$SOURCE_KEY" -r \
+  "$SOURCE_HOST:$SOURCE_APP_DIR/api/flask_api/static/slides/." \
+  current-production-slides/
+```
+
+Copy the database dump from the source instance to the same local directory:
+
+```bash
+scp -i "$SOURCE_KEY" \
+  "$SOURCE_HOST:/home/ubuntu/pre_cutover.sql" \
+  pre_cutover.sql
+```
+
+Then upload the dump and downloaded media directory to the target instance:
+
+```bash
+scp -i "$TARGET_KEY" pre_cutover.sql \
+  "$TARGET_HOST:/home/ubuntu/"
+scp -i "$TARGET_KEY" -r current-production-slides/. \
+  "$TARGET_HOST:/home/ubuntu/slides/"
 ```
 
 ### 6.3 Import DB on EC2
@@ -217,6 +282,8 @@ Use values that match `api/.env.example`:
 FLASK_ENV=production
 FLASK_DEBUG=false
 FLASK_SECRET_KEY=replace-with-random-secret
+SESSION_COOKIE_SAMESITE=Lax
+SESSION_COOKIE_SECURE=true
 LOG_LEVEL=INFO
 
 DB_HOST=127.0.0.1
@@ -251,8 +318,8 @@ INQUIRY_INTEGRITY_FIELD=company_website
 ```
 
 For pre-domain staging, set `CORS_ALLOW_ORIGIN` to the exact URL you are serving (EC2 DNS or IP), for example:
-- `http://ec2-3-145-198-183.us-east-2.compute.amazonaws.com`
-- `http://3.145.198.183`
+- `http://target-instance.example`
+- `http://TARGET_PUBLIC_IP`
 
 ## 9) Gunicorn systemd Service
 
@@ -316,6 +383,14 @@ server {
 
     gzip on;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
+    # Admin media uploads can include large photos and videos. 0 disables the
+    # Nginx request-body size limit; the long timeouts avoid failed uploads on
+    # slower connections.
+    client_max_body_size 0;
+    client_body_timeout 10m;
+    proxy_send_timeout 10m;
+    proxy_read_timeout 10m;
 
     location /api/ {
         proxy_pass http://127.0.0.1:5000;
@@ -422,32 +497,33 @@ TOKEN=$(curl -sX PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-met
 curl -sH "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4
 ```
 
-## 16) Temporary Account -> Owner Account Handoff Plan
+## 16) Source Environment -> Target Production Handoff Plan
 
-Use your account as staging, then perform a fresh deploy in the owner account.
-Do not rely on keeping production long-term in your account.
+Use this sequence whenever production ownership moves between accounts,
+instances, or environments. Do not decommission the source until the target is
+validated and the rollback window has closed.
 
 For launch-day execution details, use:
 
 - `docs/pre-cutover-checklist.md`
 - `docs/cutover-command-sheet.md`
 
-1. Build owner account baseline first:
+1. Build the target environment baseline first:
 - VPC/subnet/security groups
 - IAM role for EC2 + SSM
 - EC2 instance + EBS volume
-- DNS/Route53 and TLS certs in owner account
+- DNS and TLS certificates in the target account
 
-2. Deploy application in owner account with this same runbook.
+2. Deploy the application in the target environment with this same runbook.
 
 3. Migrate database:
 - Export from staging (`mysqldump`)
-- Import into owner account DB
+- Import into the target database
 - Validate row counts and critical endpoints
 
 4. Cut over DNS:
 - Lower DNS TTL in advance
-- Switch A/AAAA records to owner account instance/LB
+- Switch A/AAAA records to the target instance or load balancer
 - Verify HTTPS and `/api/health`
 
 5. Rotate secrets after cutover:
@@ -456,7 +532,7 @@ For launch-day execution details, use:
 - `MENU_ADMIN_TOKEN`
 - SMTP credentials
 
-6. Decommission staging in your account after validation:
+6. Decommission the source environment after validation:
 - Stop/remove EC2
 - Remove EBS snapshots with sensitive data
 - Delete old keys/secrets
@@ -477,8 +553,6 @@ Account-bound resource reminder:
   - https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager.html
 - IMDSv2:
   - https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/configuring-IMDS-new-instances.html
-- Ubuntu 20.04 support timeline:
-  - https://ubuntu.com/blog/ubuntu-20-04-lts-end-of-life-standard-support-is-coming-to-an-end-heres-how-to-prepare
 - Vite 7 requirements:
   - https://vite.dev/blog/announcing-vite7
 - Pipenv commands/changelog:

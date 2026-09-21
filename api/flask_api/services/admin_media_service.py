@@ -1,4 +1,5 @@
 from flask_api.config.mysqlconnection import db_transaction, query_db
+from flask_api.services.media_asset_service import MediaAssetService
 from flask_api.services._shared import merge_requested_ids, normalize_id_list, to_bool, to_int, to_iso
 
 
@@ -18,6 +19,12 @@ class AdminMediaService:
             return "image"
         if ext in cls.ALLOWED_VIDEO_EXTENSIONS:
             return "video"
+        return None
+
+    @staticmethod
+    def _validate_slide_media_type(media_type, is_slide):
+        if bool(is_slide) and str(media_type or "").strip().lower() != "image":
+            return {"error": "Only images can be used as landing slides."}, 400
         return None
 
     @classmethod
@@ -113,6 +120,10 @@ class AdminMediaService:
             "alt_text": str(row.get("alt_text") or "").strip(),
             "src": row.get("image_url"),
             "image_url": row.get("image_url"),
+            "thumbnail_src": MediaAssetService.thumbnail_url_for_image_url(
+                row.get("image_url"),
+                media_type=row.get("media_type") or "image",
+            ),
             "media_type": row.get("media_type") or "image",
             "display_order": row.get("display_order"),
             "is_slide": bool(row.get("is_slide", 0)),
@@ -218,8 +229,12 @@ class AdminMediaService:
         if not resolved_caption:
             return {"error": "Caption is required."}, 400
 
+        resolved_is_slide = cls._to_bool((payload or {}).get("is_slide"), default=False)
+        slide_validation = cls._validate_slide_media_type(media_type, resolved_is_slide)
+        if slide_validation is not None:
+            return slide_validation
+
         with db_transaction() as connection:
-            resolved_is_slide = cls._to_bool((payload or {}).get("is_slide"), default=False)
             next_display_order = cls._to_int(
                 (payload or {}).get("display_order"),
                 default=cls._next_group_display_order(is_slide=True, connection=connection) if resolved_is_slide else 1,
@@ -302,9 +317,13 @@ class AdminMediaService:
         if not resolved_caption:
             return {"error": "Caption is required."}, 400
 
+        display_order_explicit = "display_order" in (payload or {})
+        next_is_slide = cls._to_bool((payload or {}).get("is_slide"), default=existing["is_slide"])
+        slide_validation = cls._validate_slide_media_type(existing.get("media_type"), next_is_slide)
+        if slide_validation is not None:
+            return slide_validation
+
         with db_transaction() as connection:
-            display_order_explicit = "display_order" in (payload or {})
-            next_is_slide = cls._to_bool((payload or {}).get("is_slide"), default=existing["is_slide"])
             moved_from_slide_to_gallery = existing["is_slide"] and not next_is_slide
             next_display_order = cls._to_int(
                 (payload or {}).get("display_order"),
@@ -377,6 +396,10 @@ class AdminMediaService:
             )
             cls._resequence_group(is_slide=bool(existing.get("is_slide")), connection=connection)
 
+        MediaAssetService.delete_local_asset_bundle(
+            existing.get("image_url"),
+            media_type=existing.get("media_type") or "image",
+        )
         return {
             "ok": True,
             "deleted_media_id": normalized_media_id,

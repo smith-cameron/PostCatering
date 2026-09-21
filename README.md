@@ -1,7 +1,7 @@
 # American Legion Post 468 Catering Application
 
 ## Mission And Program Context
-Web application for American Legion Post 468 catering services and community food programs.
+American Legion Post 468 Catering is a full-stack web application that helps a veteran-focused community catering program present its services, collect qualified event inquiries, and manage its live content in one place. Customers can explore responsive, admin-editable menus and service packages, gallery and landing media, and an accessible inquiry flow that enforces package-selection constraints, validates event details, and sends email notifications. Authorized owners use a secure, routed admin dashboard with authenticated CRUD workflows for normalized menu and package data, asset uploads and ordering, settings, and audit visibility. Built with reusable React UI components, Vite, Flask, MySQL, and REST APIs, the project demonstrates normalized relational data design and migrations, frontend/backend validation, security-aware sessions and rate-limit controls, automated linting and unit/component/Playwright E2E coverage, GitHub Actions CI, and AWS SSM-based production deployment automation.
 
 Food prepared with purpose. American Legion Post 468 Catering combines professional culinary and event experience with a mission to serve the local community. The same team supports events and the weekly Monday Meal Program for veterans, and catering proceeds support veteran outreach.
 
@@ -123,8 +123,25 @@ Vite defaults to `http://localhost:5173` and proxies `/api` to `http://localhost
 ## Deployment
 
 - AWS EC2 runbook: `docs/deployment-aws-ec2.md`
+- GitHub-to-EC2 automatic deployment: `docs/deploy-automation-ec2.md`
+- Owner-account launch/cutover checklist: `docs/pre-cutover-checklist.md`
 - Namecheap VPS runbook: `docs/deployment-namecheap-vps.md`
 - Documentation map: `docs/README.md`
+
+### Production baseline
+
+The existing development/staging runbook uses **Ubuntu Server 24.04 LTS** in
+`us-east-2` with a `t3.small`. For a low-traffic production launch, keep the
+same Ubuntu release and use one small x86 instance (`t3a.small` where available,
+otherwise `t3.small`) with a 20 GB `gp3` volume. This application runs MySQL and
+builds the Vite client on the same host, so do not start with a 1 GB `*.micro`
+instance unless you have tested its build and memory use.
+
+Deployments are deliberately gated: a merge to `main` runs CI, and a successful
+CI run deploys that exact commit to EC2. Before enabling the workflow, complete
+the EC2 runbook, data/media migration, DNS/TLS setup, and the required GitHub
+Actions secrets. See the automation runbook for the one-time configuration and
+the maintenance/security checklist.
 
 ## Testing
 
@@ -216,6 +233,13 @@ Use `api/.env.example` as the source of truth for variable names.
 - `SMTP_PORT`: SMTP server port
 - `SMTP_USERNAME`: SMTP username
 - `SMTP_PASSWORD`: SMTP password or app password
+
+Production startup requires these to be explicitly configured:
+
+- `FLASK_SECRET_KEY`
+- `SESSION_COOKIE_SAMESITE`
+- `SESSION_COOKIE_SECURE=true`
+- `CORS_ALLOW_ORIGIN` set to the real frontend origin
 - `SMTP_USE_TLS`: `true`/`false` for TLS
 - `INQUIRY_TO_EMAIL`: destination inbox for inquiry notifications
 - `INQUIRY_FROM_EMAIL`: sender address used by outbound inquiry emails
@@ -621,9 +645,37 @@ Backend:
 
 ### Stretch goals
 - Deferred (Production Readiness): Adopt Flask app-factory + blueprint structure for clearer initialization and easier testing.
-- Migrate inquiry email transport from SMTP to Mailgun HTTP API for richer delivery telemetry, event/webhook handling, and provider-specific controls.
 - Add production file-based logging (for example `api/logs/app.log`) alongside console logging for persistent operational/audit troubleshooting.
 - Implement Docker containers for backend, frontend, and MySQL (with a `docker-compose` workflow for local and deployment parity).
+
+### Styling fixes
+
+### Inquiry delivery follow-up roadmap
+
+Current baseline:
+- The public inquiry flow posts to `/api/inquiries`.
+- The backend saves the inquiry first, then sends the owner notification email and customer confirmation email synchronously over SMTP.
+- The customer success UI still assumes full success; `body.warning` from `/api/inquiries` is only logged to the browser console today.
+- Persistence is minimal: `inquiries.email_sent` records only owner-email success, and there is no per-message delivery table, provider event table, webhook ingestion, or admin delivery summary/history API.
+
+Target end state:
+- `/api/inquiries` still returns `201` when the inquiry save succeeds, even if one or both email paths partially fail.
+- The response keeps the current top-level booleans for compatibility, but adds a structured `delivery` object with `overall_status` plus owner/customer outcome details.
+- The customer success UI distinguishes full success, partial success, and saved-with-delivery-warning states so users are clearly told their inquiry was saved.
+- Admin Settings gains an `Email Delivery` surface backed by persisted per-message delivery outcomes and recent summary/history data.
+- Mailgun becomes the primary transport behind `INQUIRY_EMAIL_PROVIDER=smtp|mailgun`, while SMTP remains available as a rollout fallback.
+
+Recommended implementation phases:
+1. Add structured delivery state to `/api/inquiries` and render customer-facing warning states in the inquiry success UI.
+2. Persist message-level delivery outcomes and add read-only admin summary/history endpoints.
+3. Introduce provider abstraction, switch Mailgun on behind a flag, and ingest Mailgun webhooks/events.
+4. Optionally add manual staff follow-up workflow using `inquiries.status` if inquiry handling needs to expand beyond delivery telemetry.
+
+Planned APIs and persistence:
+- `GET /api/admin/inquiry-delivery/summary`
+- `GET /api/admin/inquiry-delivery/history?limit=100&status=failed|partial_success|sent`
+- `POST /api/webhooks/mailgun`
+- New `inquiry_email_deliveries` and `inquiry_email_events` tables, while `inquiries.email_sent` remains a legacy summary field during rollout.
 
 ## Program And Menu Reference
 

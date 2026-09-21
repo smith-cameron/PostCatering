@@ -1,23 +1,21 @@
+import { Suspense, lazy, useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { useEffect, useState } from "react";
 import Context from "./context";
-import {
-  AdminLayout,
-  AdminLogin,
-  AdminMediaPage,
-  AdminMenuItemsPage,
-  AdminServicePackagesPage,
-  AdminSettingsPage,
-  Wrapper,
-  Landing,
-  NotFound,
-  ServiceMenu,
-  ShowcaseGallery,
-} from "./imports";
 import "./App.css";
 
 const THEME_STORAGE_KEY = "post_catering_theme";
 const LEGACY_ADMIN_THEME_STORAGE_KEY = "admin_dashboard_theme";
+const AdminLayout = lazy(() => import("./components/admin/AdminLayout"));
+const AdminLogin = lazy(() => import("./components/admin/AdminLogin"));
+const AdminMediaPage = lazy(() => import("./components/admin/AdminMediaPage"));
+const AdminMenuItemsPage = lazy(() => import("./components/admin/AdminMenuItemsPage"));
+const AdminServicePackagesPage = lazy(() => import("./components/admin/AdminServicePackagesPage"));
+const AdminSettingsPage = lazy(() => import("./components/admin/AdminSettingsPage"));
+const Wrapper = lazy(() => import("./components/Wrapper"));
+const Landing = lazy(() => import("./components/Landing"));
+const NotFound = lazy(() => import("./components/NotFound"));
+const ServiceMenu = lazy(() => import("./components/ServiceMenu"));
+const ShowcaseGallery = lazy(() => import("./components/ShowcaseGallery"));
 
 const getInitialThemeMode = () => {
   if (typeof window === "undefined") return "light";
@@ -34,6 +32,14 @@ const getInitialThemeMode = () => {
 
   return "light";
 };
+
+const RouteLoadingIndicator = () => (
+  <div className="app-route-loading" role="status" aria-live="polite">
+    Loading...
+  </div>
+);
+
+const withRouteLoader = (element) => <Suspense fallback={<RouteLoadingIndicator />}>{element}</Suspense>;
 
 function App() {
   const [inquiryModalState, setInquiryModalState] = useState({
@@ -84,21 +90,21 @@ function App() {
         }}>
         <BrowserRouter>
           <Routes>
-            <Route path="/admin/login" element={<AdminLogin />} />
+            <Route path="/admin/login" element={withRouteLoader(<AdminLogin />)} />
             <Route path="/admin/service-plans" element={<Navigate to="/admin/service-packages" replace />} />
-            <Route path="/admin" element={<AdminLayout />}>
+            <Route path="/admin" element={withRouteLoader(<AdminLayout />)}>
               <Route index element={<Navigate to="menu-items" replace />} />
-              <Route path="menu-items" element={<AdminMenuItemsPage />} />
-              <Route path="service-packages" element={<AdminServicePackagesPage />} />
-              <Route path="media" element={<AdminMediaPage />} />
-              <Route path="settings" element={<AdminSettingsPage />} />
+              <Route path="menu-items" element={withRouteLoader(<AdminMenuItemsPage />)} />
+              <Route path="service-packages" element={withRouteLoader(<AdminServicePackagesPage />)} />
+              <Route path="media" element={withRouteLoader(<AdminMediaPage />)} />
+              <Route path="settings" element={withRouteLoader(<AdminSettingsPage />)} />
               <Route path="*" element={<Navigate to="menu-items" replace />} />
             </Route>
-            <Route path="/" element={<Wrapper />}>
-              <Route index element={<Landing />} />
-              <Route path="services/:menuKey" element={<ServiceMenu />} />
-              <Route path="showcase" element={<ShowcaseGallery />} />
-              <Route path="*" element={<NotFound />} />
+            <Route path="/" element={withRouteLoader(<Wrapper />)}>
+              <Route index element={withRouteLoader(<Landing />)} />
+              <Route path="services/:menuKey" element={withRouteLoader(<ServiceMenu />)} />
+              <Route path="showcase" element={withRouteLoader(<ShowcaseGallery />)} />
+              <Route path="*" element={withRouteLoader(<NotFound />)} />
             </Route>
           </Routes>
         </BrowserRouter>

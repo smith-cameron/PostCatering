@@ -189,6 +189,6 @@ describe("ShowcaseGallery", () => {
 
     expect(await screen.findByAltText("Unlabeled showcase media")).toBeInTheDocument();
     expect(screen.queryByText("2026-private-file.jpg")).not.toBeInTheDocument();
-    expect(screen.getByText("placeholder title")).toBeInTheDocument();
+    expect(screen.getByText("Post 468 Catering Media")).toBeInTheDocument();
   });
 });
