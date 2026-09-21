@@ -123,7 +123,7 @@ Vite defaults to `http://localhost:5173` and proxies `/api` to `http://localhost
 ## Deployment
 
 - AWS EC2 runbook: `docs/deployment-aws-ec2.md`
-- GitHub-to-EC2 automatic deployment: `docs/deploy-automation-ec2.md`
+- GitHub-to-production automatic deployment: `docs/deploy-automation-production.md`
 - Owner-account launch/cutover checklist: `docs/pre-cutover-checklist.md`
 - Namecheap VPS runbook: `docs/deployment-namecheap-vps.md`
 - Documentation map: `docs/README.md`
@@ -138,9 +138,10 @@ builds the Vite client on the same host, so do not start with a 1 GB `*.micro`
 instance unless you have tested its build and memory use.
 
 Deployments are deliberately gated: a merge to `main` runs CI, and a successful
-CI run deploys that exact commit to EC2. Before enabling the workflow, complete
-the EC2 runbook, data/media migration, DNS/TLS setup, and the required GitHub
-Actions secrets. See the automation runbook for the one-time configuration and
+CI run deploys that exact commit to the configured production host. Before
+enabling the workflow, complete the applicable server runbook, data/media
+migration, DNS/TLS setup, and the required GitHub production environment
+configuration. See the automation runbook for the one-time configuration and
 the maintenance/security checklist.
 
 ## Testing
