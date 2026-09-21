@@ -5,6 +5,15 @@ import pymysql
 
 from flask_api.config.mysqlconnection import db_transaction, query_db, query_db_many
 from flask_api.models.menu import Menu
+from flask_api.services._shared import (
+    build_in_clause_payload,
+    merge_requested_ids,
+    normalize_id_list,
+    serialize_decimal_string,
+    to_bool,
+    to_int,
+    to_iso,
+)
 
 
 class ServicePlanValidationError(ValueError):
@@ -611,34 +620,9 @@ class AdminServicePlanService:
     def _missing_tables_response(cls):
         return {"error": cls.MISSING_TABLES_ERROR}, 503
 
-    @staticmethod
-    def _to_bool(value, default=None):
-        if value is None:
-            return default
-        if isinstance(value, bool):
-            return value
-        normalized = str(value).strip().lower()
-        if normalized in ("1", "true", "yes", "on"):
-            return True
-        if normalized in ("0", "false", "no", "off"):
-            return False
-        return default
-
-    @staticmethod
-    def _to_int(value, default=None, minimum=None, maximum=None):
-        try:
-            normalized = int(value)
-        except (TypeError, ValueError):
-            return default
-        if minimum is not None and normalized < minimum:
-            normalized = minimum
-        if maximum is not None and normalized > maximum:
-            normalized = maximum
-        return normalized
-
-    @staticmethod
-    def _to_iso(value):
-        return value.isoformat() if hasattr(value, "isoformat") else None
+    _to_bool = staticmethod(to_bool)
+    _to_int = staticmethod(to_int)
+    _to_iso = staticmethod(to_iso)
 
     @classmethod
     def _slugify(cls, value, separator="-"):
@@ -661,13 +645,7 @@ class AdminServicePlanService:
 
     @staticmethod
     def _serialize_decimal(value):
-        if value in (None, ""):
-            return None
-        try:
-            normalized = Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        except (InvalidOperation, ValueError):
-            return None
-        return format(normalized, "f")
+        return serialize_decimal_string(value, allow_blank=True)
 
     @classmethod
     def _resolve_plan_active_flag(cls, payload, default=True):
@@ -928,26 +906,25 @@ class AdminServicePlanService:
         )
 
     @classmethod
-    def _fetch_plan_constraints(cls, plan_ids):
-        normalized_ids = [cls._to_int(plan_id, minimum=1) for plan_id in plan_ids or []]
-        normalized_ids = [plan_id for plan_id in normalized_ids if plan_id]
+    def _query_rows_for_ids(cls, values, query_template, *, token_prefix="id"):
+        normalized_ids = normalize_id_list(values, minimum=1)
         if not normalized_ids:
-            return {}
+            return []
 
-        payload = {}
-        tokens = []
-        for index, plan_id in enumerate(normalized_ids):
-            token = f"plan_id_{index}"
-            payload[token] = plan_id
-            tokens.append(f"%({token})s")
-        rows = query_db(
-            f"""
+        payload, in_clause = build_in_clause_payload(normalized_ids, token_prefix=token_prefix)
+        return query_db(query_template.format(in_clause=in_clause), payload)
+
+    @classmethod
+    def _fetch_plan_constraints(cls, plan_ids):
+        rows = cls._query_rows_for_ids(
+            plan_ids,
+            """
       SELECT service_plan_id, selection_key, min_select, max_select
       FROM service_plan_constraints
-      WHERE service_plan_id IN ({", ".join(tokens)})
+      WHERE service_plan_id IN ({in_clause})
       ORDER BY service_plan_id ASC, selection_key ASC;
       """,
-            payload,
+            token_prefix="plan_id",
         )
         grouped = {}
         for row in rows:
@@ -962,25 +939,15 @@ class AdminServicePlanService:
 
     @classmethod
     def _fetch_plan_details(cls, plan_ids):
-        normalized_ids = [cls._to_int(plan_id, minimum=1) for plan_id in plan_ids or []]
-        normalized_ids = [plan_id for plan_id in normalized_ids if plan_id]
-        if not normalized_ids:
-            return {}
-
-        payload = {}
-        tokens = []
-        for index, plan_id in enumerate(normalized_ids):
-            token = f"plan_id_{index}"
-            payload[token] = plan_id
-            tokens.append(f"%({token})s")
-        rows = query_db(
-            f"""
+        rows = cls._query_rows_for_ids(
+            plan_ids,
+            """
       SELECT service_plan_id, detail_text, sort_order
       FROM service_plan_details
-      WHERE service_plan_id IN ({", ".join(tokens)})
+      WHERE service_plan_id IN ({in_clause})
       ORDER BY service_plan_id ASC, sort_order ASC, id ASC;
       """,
-            payload,
+            token_prefix="plan_id",
         )
         grouped = {}
         for row in rows:
@@ -994,19 +961,9 @@ class AdminServicePlanService:
 
     @classmethod
     def _fetch_plan_selection_groups(cls, plan_ids):
-        normalized_ids = [cls._to_int(plan_id, minimum=1) for plan_id in plan_ids or []]
-        normalized_ids = [plan_id for plan_id in normalized_ids if plan_id]
-        if not normalized_ids:
-            return {}
-
-        payload = {}
-        tokens = []
-        for index, plan_id in enumerate(normalized_ids):
-            token = f"plan_id_{index}"
-            payload[token] = plan_id
-            tokens.append(f"%({token})s")
-        rows = query_db(
-            f"""
+        rows = cls._query_rows_for_ids(
+            plan_ids,
+            """
       SELECT
         g.id AS group_id,
         g.service_plan_id,
@@ -1026,10 +983,10 @@ class AdminServicePlanService:
         o.is_active AS option_is_active
       FROM service_plan_selection_groups g
       LEFT JOIN service_plan_selection_options o ON o.selection_group_id = g.id
-      WHERE g.service_plan_id IN ({", ".join(tokens)})
+      WHERE g.service_plan_id IN ({in_clause})
       ORDER BY g.service_plan_id ASC, g.sort_order ASC, g.id ASC, o.sort_order ASC, o.id ASC;
       """,
-            payload,
+            token_prefix="plan_id",
         )
         grouped = {}
         group_index = {}
@@ -1067,25 +1024,15 @@ class AdminServicePlanService:
 
     @classmethod
     def _fetch_include_keys(cls, section_ids):
-        normalized_ids = [cls._to_int(section_id, minimum=1) for section_id in section_ids or []]
-        normalized_ids = [section_id for section_id in normalized_ids if section_id]
-        if not normalized_ids:
-            return {}
-
-        payload = {}
-        tokens = []
-        for index, section_id in enumerate(normalized_ids):
-            token = f"section_id_{index}"
-            payload[token] = section_id
-            tokens.append(f"%({token})s")
-        rows = query_db(
-            f"""
+        rows = cls._query_rows_for_ids(
+            section_ids,
+            """
       SELECT section_id, menu_group_key, sort_order
       FROM service_section_menu_groups
-      WHERE section_id IN ({", ".join(tokens)})
+      WHERE section_id IN ({in_clause})
       ORDER BY section_id ASC, sort_order ASC, id ASC;
       """,
-            payload,
+            token_prefix="section_id",
         )
         grouped = {}
         for row in rows:
@@ -1228,14 +1175,25 @@ class AdminServicePlanService:
         return cls._to_int((row or {}).get("next_sort_order"), default=1, minimum=1)
 
     @classmethod
-    def _replace_plan_constraints(cls, plan_id, constraints, catalog_key, connection):
+    def _replace_simple_plan_rows(cls, plan_id, rows, delete_sql, insert_sql, connection):
         query_db(
-            "DELETE FROM service_plan_constraints WHERE service_plan_id = %(plan_id)s;",
+            delete_sql,
             {"plan_id": plan_id},
             fetch="none",
             connection=connection,
             auto_commit=False,
         )
+        if not rows:
+            return
+        query_db_many(
+            insert_sql,
+            [{"service_plan_id": plan_id, **row} for row in rows],
+            connection=connection,
+            auto_commit=False,
+        )
+
+    @classmethod
+    def _replace_plan_constraints(cls, plan_id, constraints, catalog_key, connection):
         if isinstance(constraints, list) and all(isinstance(row, dict) for row in constraints):
             rows = []
             for row in constraints:
@@ -1253,38 +1211,29 @@ class AdminServicePlanService:
                 )
         else:
             rows = cls._normalize_constraint_rows(constraints, catalog_key=catalog_key)
-        if not rows:
-            return
-        query_db_many(
+        cls._replace_simple_plan_rows(
+            plan_id,
+            rows,
+            "DELETE FROM service_plan_constraints WHERE service_plan_id = %(plan_id)s;",
             """
       INSERT INTO service_plan_constraints (service_plan_id, selection_key, min_select, max_select)
       VALUES (%(service_plan_id)s, %(selection_key)s, %(min_select)s, %(max_select)s);
       """,
-            [{"service_plan_id": plan_id, **row} for row in rows],
-            connection=connection,
-            auto_commit=False,
+            connection,
         )
 
     @classmethod
     def _replace_plan_details(cls, plan_id, details, connection):
-        query_db(
-            "DELETE FROM service_plan_details WHERE service_plan_id = %(plan_id)s;",
-            {"plan_id": plan_id},
-            fetch="none",
-            connection=connection,
-            auto_commit=False,
-        )
         rows = cls._normalize_detail_rows(details)
-        if not rows:
-            return
-        query_db_many(
+        cls._replace_simple_plan_rows(
+            plan_id,
+            rows,
+            "DELETE FROM service_plan_details WHERE service_plan_id = %(plan_id)s;",
             """
       INSERT INTO service_plan_details (service_plan_id, detail_text, sort_order)
       VALUES (%(service_plan_id)s, %(detail_text)s, %(sort_order)s);
       """,
-            [{"service_plan_id": plan_id, **row} for row in rows],
-            connection=connection,
-            auto_commit=False,
+            connection,
         )
 
     @classmethod
@@ -1701,8 +1650,7 @@ class AdminServicePlanService:
         if not normalized_section_id:
             return {"error": "Invalid section id."}, 400
 
-        requested_ids = [cls._to_int(plan_id, minimum=1) for plan_id in ordered_plan_ids or []]
-        requested_ids = [plan_id for plan_id in requested_ids if plan_id]
+        requested_ids = normalize_id_list(ordered_plan_ids, minimum=1)
         if not requested_ids:
             return {"error": "ordered_plan_ids is required."}, 400
 
@@ -1722,13 +1670,7 @@ class AdminServicePlanService:
             if not current_ids:
                 return {"error": "Service plan section has no plans to reorder."}, 404
 
-            current_set = set(current_ids)
-            ordered_ids = []
-            seen = set()
-            for plan_id_value in requested_ids + current_ids:
-                if plan_id_value in current_set and plan_id_value not in seen:
-                    ordered_ids.append(plan_id_value)
-                    seen.add(plan_id_value)
+            ordered_ids = merge_requested_ids(requested_ids, current_ids)
 
             for index, plan_id_value in enumerate(ordered_ids, start=1):
                 query_db(

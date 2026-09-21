@@ -1,14 +1,11 @@
-import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Card, Col, Form, Row, Spinner, Table } from "react-bootstrap";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { useOutletContext } from "react-router-dom";
 import Context from "../../context";
-import ThemeToggleButton from "../ThemeToggleButton";
 import {
   createAdminServicePlan,
   deleteAdminServicePlan,
-  getAdminSession,
   listAdminServicePlanSections,
-  logoutAdminSession,
   reorderAdminServicePlans,
   updateAdminServicePlan,
 } from "./adminApi";
@@ -26,6 +23,7 @@ import {
 } from "../../utils/servicePackageAdminUtils";
 import ConfirmActionModal from "./ConfirmActionModal";
 import ConfirmReviewList from "./ConfirmReviewList";
+import useAdminSession from "./useAdminSession";
 
 const EMPTY_PLAN_FORM = {
   planId: null,
@@ -199,17 +197,18 @@ const getCatalogLabel = (catalogKey = "") => {
   return "Catering";
 };
 
-const AdminServicePlansPage = ({
-  embedded = false,
-  adminUser: externalAdminUser = null,
-  sessionLoading: externalSessionLoading,
-}) => {
-  const { isDarkTheme, setThemeMode } = useContext(Context);
-  const navigate = useNavigate();
-  const location = useLocation();
-  const hasExternalSession = typeof externalSessionLoading === "boolean";
-  const [internalSessionLoading, setInternalSessionLoading] = useState(hasExternalSession ? externalSessionLoading : true);
-  const [internalAdminUser, setInternalAdminUser] = useState(null);
+const AdminServicePlansPage = (props) => {
+  const { isDarkTheme } = useContext(Context);
+  const outletContext = useOutletContext();
+  const hasPropAdminUser = Object.prototype.hasOwnProperty.call(props, "adminUser");
+  const hasPropSessionLoading = Object.prototype.hasOwnProperty.call(props, "sessionLoading");
+  const hasOutletSession = outletContext && typeof outletContext.sessionLoading === "boolean";
+  const shouldHydrateStandaloneSession = !hasPropAdminUser && !hasPropSessionLoading && !hasOutletSession;
+  const { adminUser: fallbackAdminUser, sessionLoading: fallbackSessionLoading } = useAdminSession({
+    enabled: shouldHydrateStandaloneSession,
+  });
+  const adminUser = props.adminUser ?? outletContext?.adminUser ?? fallbackAdminUser ?? null;
+  const sessionLoading = props.sessionLoading ?? outletContext?.sessionLoading ?? fallbackSessionLoading ?? false;
   const [catalogKey, setCatalogKey] = useState("catering");
   const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -231,8 +230,6 @@ const AdminServicePlansPage = ({
   const [confirmState, setConfirmState] = useState(EMPTY_CONFIRM_STATE);
   const [confirmBusy, setConfirmBusy] = useState(false);
   const editorFormRef = useRef(null);
-  const adminUser = externalAdminUser || internalAdminUser;
-  const sessionLoading = hasExternalSession ? externalSessionLoading : internalSessionLoading;
 
   const editableSections = useMemo(
     () => sortSections(sections).filter((section) => section?.section_type !== "include_menu"),
@@ -254,6 +251,16 @@ const AdminServicePlansPage = ({
     () => (Array.isArray(planForm.choiceRows) ? planForm.choiceRows : []).some((row) => row?.source_type === "custom_options"),
     [planForm.choiceRows]
   );
+  const selectedPlanTitle = useMemo(
+    () => String(planFormOriginal?.title || planForm.title || "").trim(),
+    [planForm.title, planFormOriginal]
+  );
+  const editorHeading = useMemo(() => {
+    if (planForm.planId) {
+      return `Edit ${selectedPlanTitle || "Package"}`;
+    }
+    return `Create New ${activeCatalogLabel} Package`;
+  }, [activeCatalogLabel, planForm.planId, selectedPlanTitle]);
 
   const loadSections = useCallback(async (nextCatalogKey = catalogKey) => {
     setLoading(true);
@@ -271,31 +278,6 @@ const AdminServicePlansPage = ({
       setLoading(false);
     }
   }, [catalogKey]);
-
-  useEffect(() => {
-    if (hasExternalSession) return undefined;
-    let mounted = true;
-
-    const hydrate = async () => {
-      try {
-        const payload = await getAdminSession();
-        if (!mounted) return;
-        setInternalAdminUser(payload.user || null);
-      } catch {
-        if (!mounted) return;
-        setInternalAdminUser(null);
-      } finally {
-        if (mounted) {
-          setInternalSessionLoading(false);
-        }
-      }
-    };
-
-    hydrate();
-    return () => {
-      mounted = false;
-    };
-  }, [hasExternalSession]);
 
   useEffect(() => {
     if (sessionLoading || !adminUser) return;
@@ -371,12 +353,14 @@ const AdminServicePlansPage = ({
 
   useEffect(() => {
     if (!editableSections.length) return;
-    const hasCurrentSection = editableSections.some(
-      (section) => Number(section?.id) === Number(planForm.sectionId)
-    );
-    if (hasCurrentSection) return;
-    setPlanForm((prev) => buildEmptyPlanForm(editableSections[0]?.id || prev.sectionId));
-  }, [editableSections, planForm.sectionId]);
+    setPlanForm((prev) => {
+      const hasCurrentSection = editableSections.some(
+        (section) => Number(section?.id) === Number(prev.sectionId)
+      );
+      if (hasCurrentSection) return prev;
+      return buildEmptyPlanForm(editableSections[0]?.id || prev.sectionId);
+    });
+  }, [editableSections]);
 
   const openCreateEditor = (section) => {
     const nextForm = buildEmptyPlanForm(section?.id || selectedSection?.id || editableSections[0]?.id || "");
@@ -390,8 +374,15 @@ const AdminServicePlansPage = ({
     setIsEditorOpen(true);
   };
 
-  const openEditEditor = (plan) => {
-    const nextForm = toPlanForm(plan);
+  const openEditEditor = (plan, fallbackSection = null) => {
+    const normalizedPlan = fallbackSection
+      ? {
+          ...plan,
+          section_id: plan?.section_id || fallbackSection?.id,
+          catalog_key: plan?.catalog_key || fallbackSection?.catalog_key,
+        }
+      : plan;
+    const nextForm = toPlanForm(normalizedPlan, fallbackSection?.id || "");
     setEditorError("");
     setEditorFieldErrors(EMPTY_EDITOR_FIELD_ERRORS);
     setEditorChoiceRowErrors([]);
@@ -788,60 +779,20 @@ const AdminServicePlansPage = ({
     }
   };
 
-  const logout = async () => {
-    try {
-      await logoutAdminSession();
-    } finally {
-      navigate("/admin/login", { replace: true });
-    }
-  };
-
   if (sessionLoading) {
-    return (
-      <main className="container py-5 d-flex justify-content-center">
-        <Spinner animation="border" role="status" />
-      </main>
-    );
+    return null;
   }
 
   if (!adminUser) {
-    return embedded ? null : <Navigate to="/admin/login" replace state={{ from: location }} />;
+    return null;
   }
 
-  const Shell = embedded ? Fragment : "main";
-  const shellProps = embedded
-    ? {}
-    : {
-        className: `container-fluid py-4 admin-dashboard ${isDarkTheme ? "admin-dashboard-dark" : ""}`,
-        "data-bs-theme": isDarkTheme ? "dark" : "light",
-      };
-
   return (
-    <Shell {...shellProps}>
-      {!embedded ? (
-        <header className="admin-header mb-3">
-          <div className="admin-header-main">
-            <h2 className="h4 mb-1">Service Packages</h2>
-            <p className="text-secondary mb-0">
-              Signed in as <strong>{adminUser?.display_name || adminUser?.username}</strong>
-            </p>
-            <ThemeToggleButton
-              isDarkTheme={isDarkTheme}
-              onToggle={() => setThemeMode?.(isDarkTheme ? "light" : "dark")}
-              className="mt-2"
-            />
-          </div>
-          <div className="admin-header-actions d-flex gap-2">
-            <Button variant="outline-secondary" onClick={() => navigate("/admin/menu-items")}>
-              Back to Dashboard
-            </Button>
-            <Button variant="outline-danger" onClick={logout}>
-              Sign Out
-            </Button>
-          </div>
-        </header>
-      ) : null}
-
+    <>
+      <div className="mb-3">
+        <h2 className="h4 mb-1">Service Packages</h2>
+        <p className="text-secondary mb-0">Create, reorder, and manage package offerings for each catalog.</p>
+      </div>
       <div className="d-flex flex-wrap gap-2 mb-3">
         <Button
           variant={catalogKey === "catering" ? "secondary" : "outline-secondary"}
@@ -894,7 +845,6 @@ const AdminServicePlansPage = ({
                             <th>Price</th>
                             <th className="text-center">Active</th>
                             <th className="admin-order-cell text-center">Order</th>
-                            <th className="text-end">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -960,13 +910,13 @@ const AdminServicePlansPage = ({
                               }}
                               onClick={() => {
                                 if (!plan?.id) return;
-                                openEditEditor(plan);
+                                openEditEditor(plan, section);
                               }}
                               onKeyDown={(event) => {
                                 if (!plan?.id) return;
                                 if (event.key !== "Enter" && event.key !== " ") return;
                                 event.preventDefault();
-                                openEditEditor(plan);
+                                openEditEditor(plan, section);
                               }}>
                               <td>
                                 <div className="fw-semibold">{plan.title}</div>
@@ -999,20 +949,6 @@ const AdminServicePlansPage = ({
                                   </span>
                                 ) : null}
                               </td>
-                              <td className="text-end">
-                                <div className="d-inline-flex flex-wrap justify-content-end gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant="outline-danger"
-                                    disabled={busyPlanId === plan.id}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      void handleDeletePlan(plan);
-                                    }}>
-                                    Delete
-                                  </Button>
-                                </div>
-                              </td>
                               </tr>
                             );
                           })}
@@ -1033,9 +969,7 @@ const AdminServicePlansPage = ({
             <Card>
               <Card.Body>
                 <div className="d-flex justify-content-between align-items-center mb-3">
-                  <h3 className="h6 mb-0">
-                    {planForm.planId ? "Edit Package" : `Create New ${activeCatalogLabel} Package`}
-                  </h3>
+                  <h3 className="h6 mb-0">{editorHeading}</h3>
                   <Button variant="outline-secondary" size="sm" onClick={clearEditor}>
                     Clear
                   </Button>
@@ -1080,8 +1014,15 @@ const AdminServicePlansPage = ({
                       placeholder="45-89"
                     />
                     <div className="small text-secondary mt-1">
-                      Enter a price or price range. Dollar signs and <code>per person</code> are added automatically
-                      for simple package prices.
+                      <ul className="list-unstyled mb-0">
+                        <li>Enter a price or price range.</li>
+                        <li>
+                          <code>$ signs</code> and <code>per person</code> are added automatically later.
+                        </li>
+                        <li>
+                          Example input: <code>45-89</code>
+                        </li>
+                      </ul>
                     </div>
                     <Form.Control.Feedback type="invalid">{editorFieldErrors.price}</Form.Control.Feedback>
                   </Form.Group>
@@ -1094,8 +1035,14 @@ const AdminServicePlansPage = ({
                       className={`small mb-2 ${
                         editorFieldErrors.details ? "admin-form-requirement-text admin-form-requirement-text-invalid" : "text-secondary"
                       }`}>
-                      {editorFieldErrors.details ||
-                        "Fixed inclusions only. Do not repeat anything the customer is choosing below."}
+                      {editorFieldErrors.details ? (
+                        editorFieldErrors.details
+                      ) : (
+                        <ul className="list-unstyled mb-0">
+                          <li>Fixed inclusions only.</li>
+                          <li>Do not repeat anything the customer is choosing below.</li>
+                        </ul>
+                      )}
                     </div>
                     {(planForm.details || []).map((detail, index) => (
                       <div className="admin-package-remove-row mb-2" key={`detail-row-${index}`}>
@@ -1153,18 +1100,16 @@ const AdminServicePlansPage = ({
                       {editorFieldErrors.choiceRows ? (
                         editorFieldErrors.choiceRows
                       ) : (
-                        <>
-                          <span className="d-block">
-                            Use one row per thing the customer picks. Menu options pull from shared package families
-                            and require Min and Max.
-                          </span>
+                        <ul className="list-unstyled mb-0">
+                          <li>Use one row per thing the customer picks.</li>
+                          <li>Menu options pull from shared package families and require Min and Max.</li>
                           {hasCustomChoiceRows ? (
-                            <span className="d-block">
-                              Custom options cover package-specific choices like Taco Bar proteins. Min/Max can stay
-                              blank when there is no fixed selection count.
-                            </span>
+                            <>
+                              <li>Custom options cover package-specific choices like Taco Bar proteins.</li>
+                              <li>Min/Max can stay blank when there is no fixed selection count.</li>
+                            </>
                           ) : null}
-                        </>
+                        </ul>
                       )}
                     </div>
                     {(planForm.choiceRows || []).map((row, index) => {
@@ -1249,8 +1194,10 @@ const AdminServicePlansPage = ({
                                 placeholder="Add one option per line"
                               />
                               <div className="small text-secondary mt-1">
-                                Add one custom option per line. Bullets or numbering are okay, and commas stay part
-                                of the option text.
+                                <ul className="list-unstyled mb-0">
+                                  <li>Add one custom option per line.</li>
+                                  <li>Bullets or numbering are okay, and commas stay part of the option text.</li>
+                                </ul>
                               </div>
                             </Col>
                           ) : null}
@@ -1289,12 +1236,10 @@ const AdminServicePlansPage = ({
                   </div>
 
                   <div className="small text-secondary mb-3">
-                    {selectedSection
-                      ? `${planForm.isActive ? "Saving into" : "Archiving in"} ${selectedSection.title}. Inactive packages are hidden from the public catalog and inquiry form.`
-                      : "Select a section before saving."}
+                    {selectedSection ? "Inactive packages are hidden from the public catalog and inquiry form." : "Select a section before saving."}
                   </div>
 
-                  <div className="d-flex gap-2">
+                  <div className="d-flex gap-2 align-items-center">
                     <Button
                       type="submit"
                       className="btn-inquiry-action"
@@ -1305,6 +1250,21 @@ const AdminServicePlansPage = ({
                     <Button type="button" variant="outline-secondary" onClick={resetEditor} disabled={saving}>
                       Cancel
                     </Button>
+                    {planForm.planId ? (
+                      <Button
+                        type="button"
+                        className="ms-auto"
+                        variant="danger"
+                        disabled={saving || busyPlanId === planForm.planId}
+                        onClick={() =>
+                          void handleDeletePlan({
+                            id: planForm.planId,
+                            title: planFormOriginal?.title || planForm.title,
+                          })
+                        }>
+                        Delete Package
+                      </Button>
+                    ) : null}
                   </div>
                 </Form>
               </Card.Body>
@@ -1328,7 +1288,7 @@ const AdminServicePlansPage = ({
         onExtraAction={confirmState.extraAction}
         onConfirm={runConfirmedAction}
       />
-    </Shell>
+    </>
   );
 };
 

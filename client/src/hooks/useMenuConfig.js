@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { requestJson } from "../utils/http";
 
 const EMPTY = {
   menu: {},
@@ -94,11 +95,9 @@ const normalizeMenuConfig = (body) => {
 };
 
 const fetchMenuConfig = async () => {
-  const response = await fetch("/api/menus");
-  const body = await response.json();
-  if (!response.ok) {
-    throw new Error(body.error || "Failed to load menu config.");
-  }
+  const body = await requestJson("/api/menus", {
+    fallbackMessage: "Failed to load menu config.",
+  });
 
   const normalized = normalizeMenuConfig(body);
   if (!normalized.menu || typeof normalized.menu !== "object" || !Object.keys(normalized.menu).length) {

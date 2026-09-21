@@ -2,12 +2,16 @@
 set -Eeuo pipefail
 
 # Expected overrides via environment:
-# APP_DIR, BRANCH, API_SERVICE, WEB_ROOT, HEALTH_URL
+# APP_DIR, BRANCH, DEPLOY_REF, API_SERVICE, WEB_ROOT, HEALTH_URL, API_ENV_FILE,
+# DB_MIGRATION_ARGS.  DEPLOY_REF is an immutable commit SHA supplied by CI.
 APP_DIR="${APP_DIR:-/home/ubuntu/PostCatering}"
 BRANCH="${BRANCH:-main}"
 API_SERVICE="${API_SERVICE:-postcatering-api}"
 WEB_ROOT="${WEB_ROOT:-/var/www/postcatering}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1/api/health}"
+API_ENV_FILE="${API_ENV_FILE:-/etc/postcatering/api.env}"
+DB_MIGRATION_ARGS="${DB_MIGRATION_ARGS:---apply-schema --no-seed}"
+DEPLOY_REF="${DEPLOY_REF:-}"
 
 if sudo -n true >/dev/null 2>&1; then
   SUDO="sudo -n"
@@ -17,6 +21,108 @@ fi
 
 log() {
   printf '[%s] %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"
+}
+
+load_api_env() {
+  local env_path="$1"
+  local tmp_env=""
+  local env_source line key value
+
+  if [ -z "$env_path" ]; then
+    return 1
+  fi
+
+  if [ ! -f "$env_path" ] && ! $SUDO test -f "$env_path" >/dev/null 2>&1; then
+    return 1
+  fi
+
+  log "Loading API environment from $env_path"
+
+  if [ -r "$env_path" ]; then
+    env_source="$env_path"
+  else
+    tmp_env="$(mktemp)"
+    if ! $SUDO cat "$env_path" >"$tmp_env"; then
+      rm -f "$tmp_env"
+      return 1
+    fi
+    env_source="$tmp_env"
+  fi
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+
+    if [[ "$line" =~ ^[[:space:]]*$ ]] || [[ "$line" =~ ^[[:space:]]*# ]]; then
+      continue
+    fi
+
+    if [[ "$line" =~ ^[[:space:]]*export[[:space:]]+ ]]; then
+      line="${line#export }"
+      line="${line#"${line%%[![:space:]]*}"}"
+    fi
+
+    if [[ ! "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]]; then
+      log "Skipping unsupported env line in $env_path"
+      continue
+    fi
+
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+
+    if [[ "$value" =~ ^\"(.*)\"$ ]]; then
+      value="${BASH_REMATCH[1]}"
+      value="${value//\\\"/\"}"
+      value="${value//\\\\/\\}"
+      value="${value//\\n/$'\n'}"
+      value="${value//\\t/$'\t'}"
+      value="${value//\\r/$'\r'}"
+    elif [[ "$value" =~ ^\'(.*)\'$ ]]; then
+      value="${BASH_REMATCH[1]}"
+    fi
+
+    export "$key=$value"
+  done <"$env_source"
+
+  rm -f "$tmp_env"
+  return 0
+}
+
+discover_api_env_file() {
+  local raw token
+
+  raw="$($SUDO systemctl show "$API_SERVICE" --property=EnvironmentFiles --value 2>/dev/null || true)"
+  if [ -z "$raw" ]; then
+    raw="$($SUDO systemctl cat "$API_SERVICE" 2>/dev/null | sed -n 's/^[[:space:]]*EnvironmentFile=//p' || true)"
+  fi
+
+  for token in $raw; do
+    case "$token" in
+      EnvironmentFiles=*)
+        token="${token#EnvironmentFiles=}"
+        ;;
+      "(ignore_errors="*)
+        continue
+        ;;
+    esac
+
+    token="${token#-}"
+    token="${token%\"}"
+    token="${token#\"}"
+    token="${token%\'}"
+    token="${token#\'}"
+
+    case "$token" in
+      /*)
+        printf '%s\n' "$token"
+        return 0
+        ;;
+    esac
+  done
+
+  return 1
 }
 
 lock_file="/tmp/postcatering-deploy.lock"
@@ -30,8 +136,21 @@ log "Starting deploy in $APP_DIR (branch: $BRANCH)"
 cd "$APP_DIR"
 
 git fetch origin "$BRANCH"
-git checkout "$BRANCH"
-git pull --ff-only origin "$BRANCH"
+if [ -n "$DEPLOY_REF" ]; then
+  if ! [[ "$DEPLOY_REF" =~ ^[0-9a-f]{40}$ ]]; then
+    log "DEPLOY_REF must be a full 40-character commit SHA."
+    exit 1
+  fi
+  if ! git cat-file -e "${DEPLOY_REF}^{commit}" 2>/dev/null; then
+    log "Commit $DEPLOY_REF is not available after fetching $BRANCH."
+    exit 1
+  fi
+  git checkout --detach "$DEPLOY_REF"
+else
+  # Kept for an operator's manual deployment. CI deployments always use DEPLOY_REF.
+  git checkout "$BRANCH"
+  git pull --ff-only origin "$BRANCH"
+fi
 DEPLOY_SHA="$(git rev-parse --short HEAD)"
 log "Checked out $DEPLOY_SHA"
 
@@ -44,6 +163,25 @@ source venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 python -m pip install gunicorn cryptography
+
+if ! load_api_env "$API_ENV_FILE"; then
+  SYSTEMD_API_ENV_FILE="$(discover_api_env_file || true)"
+  if [ -n "${SYSTEMD_API_ENV_FILE:-}" ] && [ "$SYSTEMD_API_ENV_FILE" != "$API_ENV_FILE" ]; then
+    API_ENV_FILE="$SYSTEMD_API_ENV_FILE"
+    load_api_env "$API_ENV_FILE" || true
+  fi
+fi
+
+if [ -z "${DB_HOST:-}" ] && [ -z "${DB_USER:-}" ] && [ -z "${DB_NAME:-}" ]; then
+  if ! load_api_env ".env"; then
+    log "No API environment file found at $API_ENV_FILE or $(pwd)/.env; relying on current shell environment"
+  fi
+fi
+
+log "Running database schema sync ($DB_MIGRATION_ARGS)"
+# Intentional word splitting so multiple flags can be supplied via DB_MIGRATION_ARGS.
+# shellcheck disable=SC2086
+python scripts/menu_admin_sync.py $DB_MIGRATION_ARGS
 deactivate
 
 log "Building frontend"

@@ -3,9 +3,13 @@ import {
   filterGeneratedPackageDetails,
   normalizePackageConstraintMap,
 } from "../../utils/servicePackageUtils";
+import {
+  getFormalPlanDetails as getSharedFormalPlanDetails,
+  getSelectionGroupBullets,
+  mergeUniquePlanDetails,
+} from "../../utils/servicePlanDisplayUtils";
 
 export const normalizeMenuText = (value) => value;
-const getPlanId = (plan) => String(plan?.planId || plan?.id || "").trim();
 
 const normalizeMenuItemNameForMatch = (value) => String(normalizeMenuText(value) || "").trim().toLowerCase();
 
@@ -46,33 +50,16 @@ export const normalizeMenuTitle = (value) => {
     .trim();
 };
 
-const getSelectionGroupBullet = (group) => {
-  const title = String(group?.title || group?.groupTitle || "").trim();
-  const optionLabels = (group?.options || [])
-    .map((option) => String(option?.label || option?.optionLabel || "").trim())
-    .filter(Boolean);
-  if (title && optionLabels.length) {
-    return `${title}: ${optionLabels.join(", ")}`;
-  }
-  if (title) return title;
-  return "";
-};
-
 export const getCateringPackageBullets = (section) => {
   const selectionMode = section?.selectionMode || section?.selection_mode || "menu_groups";
-  const selectionGroupBullets = (section?.selectionGroups || []).map((group) => getSelectionGroupBullet(group)).filter(Boolean);
+  const selectionGroupBullets = getSelectionGroupBullets(section?.selectionGroups);
   const fixedDetails = filterGeneratedPackageDetails(section?.details, {
     catalogKey: "catering",
     selectionMode,
   });
   const generatedDetails =
     selectionMode === "menu_groups" ? buildCateringConstraintDetails(section?.constraints) : [];
-  if (generatedDetails.length || fixedDetails.length) {
-    return [...generatedDetails, ...fixedDetails, ...selectionGroupBullets].filter(
-      (item, index, rows) => rows.indexOf(item) === index
-    );
-  }
-  return selectionGroupBullets;
+  return mergeUniquePlanDetails(generatedDetails, fixedDetails, selectionGroupBullets);
 };
 
 export const normalizeCateringPackageConstraints = (sectionId, tierTitle, constraints) => {
@@ -92,17 +79,7 @@ export const getFormalCourseLabel = (courseType) => {
 };
 
 export const getFormalPlanDetails = (plan) => {
-  if (!plan) return [];
-  if (Array.isArray(plan.details) && plan.details.length) {
-    return plan.details;
-  }
-  if (getPlanId(plan) === "formal:3-course") {
-    return ["2 Passed Appetizers", "1 Starter", "1 or 2 Entrees", "Bread"];
-  }
-  if (getPlanId(plan) === "formal:2-course") {
-    return ["1 Starter", "1 Entree", "Bread"];
-  }
-  return plan.details || [];
+  return getSharedFormalPlanDetails(plan);
 };
 
 export const getApprovedFormalPlans = (plans) =>
@@ -126,7 +103,7 @@ const getCateringPackageConstraintBullets = (section, tier) => {
   );
   const limits = normalizeCateringPackageConstraints(section.sectionId, tier.tierTitle, tier.constraints);
   const generatedDetails = selectionMode === "menu_groups" ? buildCateringConstraintDetails(limits) : [];
-  return [...generatedDetails, ...fixedDetails].filter((item, index, rows) => rows.indexOf(item) === index);
+  return mergeUniquePlanDetails(generatedDetails, fixedDetails);
 };
 
 const normalizeTableColumns = (columns = [], blankFirstColumn = false) =>

@@ -17,9 +17,9 @@ logger = logging.getLogger(__name__)
 
 class InquiryService:
     EMAIL_CONTENT_CONFIG_KEY = "inquiry_email_content"
-    DEFAULT_CONFIRMATION_SUBJECT = "Post 468 Catering Team - Inquiry Recieved"
+    DEFAULT_CONFIRMATION_SUBJECT = "Post 468 Catering Team - Inquiry Received"
     DEFAULT_CONFIRMATION_OWNER_NOTE = (
-        "[PLACEHOLDER_NOTE_FROM_ARIANNE] Thank you for your inquiry. We will be in touch soon."
+        "Thank you for your inquiry. Our catering team will review the details and be in touch soon."
     )
 
     @staticmethod

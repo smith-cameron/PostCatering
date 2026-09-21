@@ -1,18 +1,20 @@
-# Owner Account Cutover Checklist (Launch Day)
+# Production Cutover Checklist (Launch Day)
 
-Use this checklist when moving production from a temporary/staging AWS account into the owner's AWS account.
-Target production domain: `post460catering.com`
+Use this checklist when moving production from a source environment to a
+target environment. The environments may be in different accounts, Regions,
+or hosting arrangements.
+Target production domain: `your-production-domain.com`
 
 ## 1) 24-48 Hours Before Cutover
 
-- Confirm owner account has target infrastructure ready (VPC, subnet, SG, EC2, IAM role, DNS zone).
-- Confirm deployment has already been tested in owner account with the same commit SHA you plan to release.
+- Confirm the target infrastructure is ready (VPC, subnet, SG, EC2, IAM role, DNS zone).
+- Confirm deployment has already been tested in the target environment with the same commit SHA you plan to release.
 - Lower DNS TTL on records that will move (for example to 60-300 seconds).
 - Export a fresh staging DB backup and store an encrypted copy.
 - Freeze non-critical schema changes and content edits until cutover completes.
 - Prepare rollback target (old endpoint/IP and previous DB backup timestamp).
 
-## 2) Pre-Cutover Validation (Owner Account)
+## 2) Pre-Cutover Validation (Target Environment)
 
 - Confirm `postcatering-api` service is healthy: `systemctl status postcatering-api --no-pager`.
 - Confirm Nginx config test passes: `sudo nginx -t`.
@@ -25,19 +27,21 @@ Target production domain: `post460catering.com`
 
 - Announce brief write freeze window for inquiry submissions and admin menu changes.
 - Take final source backup:
-  - `mysqldump -u <user> -p --single-transaction --routines --triggers post_catering > final_cutover.sql`
-- Import final backup into owner account DB.
+  - Use the source environment account named by `DB_USER` in its deployed API environment file, or `sudo mysqldump` for Ubuntu socket-authenticated MySQL root:
+    `mysqldump -u <user> -p --single-transaction --routines --triggers --events --default-character-set=utf8mb4 post_catering > final_cutover.sql`
+- Make a final copy of `<source-app-path>/api/flask_api/static/slides/`; uploaded media is stored on the source host and is not included in the database dump.
+- Import the final backup into the target database.
 - Run quick integrity checks:
   - Table row counts for `menu_config`, `menu_items`, `slides`, `inquiries`
   - Spot-check latest records and expected IDs
 
 ## 4) DNS Cutover
 
-- Update DNS `A`/`AAAA` records to owner account target.
+- Update DNS `A`/`AAAA` records to the target endpoint.
 - Verify propagation from at least two external resolvers.
 - Validate:
-  - `https://post460catering.com/`
-  - `https://post460catering.com/api/health`
+  - `https://your-production-domain.com/`
+  - `https://your-production-domain.com/api/health`
   - One real frontend inquiry submission path end-to-end
 
 ## 5) Immediate Post-Cutover
@@ -55,7 +59,7 @@ Target production domain: `post460catering.com`
 - Rotate `FLASK_SECRET_KEY`.
 - Rotate `MENU_ADMIN_TOKEN`.
 - Rotate SMTP credentials/app password.
-- Invalidate old keys/secrets in the temporary account.
+- Invalidate old keys and secrets in the source environment.
 
 ## 7) Rollback Triggers
 
@@ -70,11 +74,11 @@ Rollback steps:
 
 - Point DNS back to prior target.
 - Restore pre-cutover DB backup if writes occurred in failed window.
-- Keep owner account infra running for investigation.
+- Keep the target infrastructure running for investigation.
 
-## 8) Decommission Temporary Account Resources
+## 8) Decommission Source Environment Resources
 
-- Stop and terminate staging EC2 used for temporary production.
+- Stop and terminate source compute resources only after the rollback window closes.
 - Delete attached EBS volumes/snapshots that contain sensitive app data.
 - Remove old SG rules and unused Elastic IPs/public IPv4 resources.
 - Delete old certificates, keys, and secrets no longer needed.

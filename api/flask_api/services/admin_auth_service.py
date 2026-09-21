@@ -1,6 +1,7 @@
 import re
 
 from flask_api.config.mysqlconnection import query_db
+from flask_api.services._shared import to_bool, to_iso
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
@@ -14,18 +15,7 @@ class AdminAuthService:
     def _normalize_username(value):
         return str(value or "").strip().lower()
 
-    @staticmethod
-    def _to_bool(value, default=True):
-        if isinstance(value, bool):
-            return value
-        if value is None:
-            return default
-        normalized = str(value).strip().lower()
-        if normalized in {"1", "true", "yes", "on"}:
-            return True
-        if normalized in {"0", "false", "no", "off"}:
-            return False
-        return default
+    _to_bool = staticmethod(to_bool)
 
     @classmethod
     def _normalize_access_tier(cls, value, default=ACCESS_TIER_MANAGER):
@@ -80,7 +70,7 @@ class AdminAuthService:
         return int((row or {}).get("delegated_count") or 0) > 0
 
     @classmethod
-    def _to_managed_user(cls, user_row):
+    def _serialize_user(cls, user_row):
         if not user_row:
             return None
         return {
@@ -88,11 +78,7 @@ class AdminAuthService:
             "username": user_row.get("username"),
             "display_name": user_row.get("display_name"),
             "is_active": bool(user_row.get("is_active", 0)),
-            "last_login_at": (
-                user_row.get("last_login_at").isoformat()
-                if hasattr(user_row.get("last_login_at"), "isoformat")
-                else None
-            ),
+            "last_login_at": to_iso(user_row.get("last_login_at")),
             "access_tier": cls._normalize_access_tier(
                 user_row.get("access_tier"),
                 default=cls.ACCESS_TIER_MANAGER,
@@ -100,6 +86,10 @@ class AdminAuthService:
             "is_delete_protected": bool(user_row.get("is_delete_protected", 0)),
             "can_manage_admin_users": bool(user_row.get("can_manage_admin_users", 0)),
         }
+
+    @classmethod
+    def _to_managed_user(cls, user_row):
+        return cls._serialize_user(user_row)
 
     @classmethod
     def get_user_by_username(cls, username):
@@ -127,46 +117,20 @@ class AdminAuthService:
             fetch="one",
         )
 
-    @staticmethod
-    def get_user_by_id(admin_user_id):
+    @classmethod
+    def _fetch_user_by_id(cls, admin_user_id, include_password=False):
         try:
             normalized_id = int(admin_user_id)
         except (TypeError, ValueError):
             return None
 
+        password_columns = "password_hash,\n        " if include_password else ""
         return query_db(
-            """
+            f"""
       SELECT
         id,
         username,
-        display_name,
-        access_tier,
-        is_active,
-        is_delete_protected,
-        can_manage_admin_users,
-        last_login_at
-      FROM admin_users
-      WHERE id = %(id)s
-      LIMIT 1;
-      """,
-            {"id": normalized_id},
-            fetch="one",
-        )
-
-    @staticmethod
-    def get_user_with_password_by_id(admin_user_id):
-        try:
-            normalized_id = int(admin_user_id)
-        except (TypeError, ValueError):
-            return None
-
-        return query_db(
-            """
-      SELECT
-        id,
-        username,
-        password_hash,
-        display_name,
+        {password_columns}display_name,
         access_tier,
         is_active,
         is_delete_protected,
@@ -181,27 +145,16 @@ class AdminAuthService:
         )
 
     @classmethod
-    def to_public_user(cls, user_row):
-        if not user_row:
-            return None
+    def get_user_by_id(cls, admin_user_id):
+        return cls._fetch_user_by_id(admin_user_id, include_password=False)
 
-        return {
-            "id": user_row.get("id"),
-            "username": user_row.get("username"),
-            "display_name": user_row.get("display_name"),
-            "is_active": bool(user_row.get("is_active", 0)),
-            "access_tier": cls._normalize_access_tier(
-                user_row.get("access_tier"),
-                default=cls.ACCESS_TIER_MANAGER,
-            ),
-            "is_delete_protected": bool(user_row.get("is_delete_protected", 0)),
-            "can_manage_admin_users": bool(user_row.get("can_manage_admin_users", 0)),
-            "last_login_at": (
-                user_row.get("last_login_at").isoformat()
-                if hasattr(user_row.get("last_login_at"), "isoformat")
-                else None
-            ),
-        }
+    @classmethod
+    def get_user_with_password_by_id(cls, admin_user_id):
+        return cls._fetch_user_by_id(admin_user_id, include_password=True)
+
+    @classmethod
+    def to_public_user(cls, user_row):
+        return cls._serialize_user(user_row)
 
     @classmethod
     def authenticate(cls, username, password):

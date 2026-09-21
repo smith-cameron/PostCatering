@@ -2,6 +2,7 @@
 import { Alert, Button, Form, InputGroup, Modal, Spinner } from "react-bootstrap";
 import { useSearchParams } from "react-router-dom";
 import useMenuConfig from "../hooks/useMenuConfig";
+import { requestJson } from "../utils/http";
 import InquiryDesiredItemsSection from "./inquiry/InquiryDesiredItemsSection";
 import InquiryFieldLabel from "./inquiry/InquiryFieldLabel";
 import InquiryServicePlanSection from "./inquiry/InquiryServicePlanSection";
@@ -456,18 +457,24 @@ const Inquiry = ({ forceOpen = false, onRequestClose = null, presetService = "" 
         message: normalizedForm.message,
       };
 
-      const response = await fetch("/api/inquiries", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const body = await response.json();
+      let body;
+      try {
+        body = await requestJson("/api/inquiries", {
+          method: "POST",
+          body: JSON.stringify(payload),
+          fallbackMessage: "Unable to submit inquiry.",
+        });
+      } catch (requestError) {
+        if (!requestError || !("payload" in requestError)) {
+          throw requestError;
+        }
 
-      if (!response.ok) {
-        const responseErrors = Array.isArray(body.errors) ? body.errors : ["Unable to submit inquiry."];
+        const responseErrors = Array.isArray(requestError?.payload?.errors)
+          ? requestError.payload.errors
+          : [requestError?.message || "Unable to submit inquiry."];
         const mappedFieldErrors = buildFieldErrorsFromMessages(responseErrors);
         const selectionKeys = [...new Set(responseErrors.map(getSelectionCategoryKeyFromText).filter(Boolean))];
-        if (response.status === 400 || hasFieldValidationErrors(mappedFieldErrors) || selectionKeys.length) {
+        if (requestError.status === 400 || hasFieldValidationErrors(mappedFieldErrors) || selectionKeys.length) {
           applyValidationState({
             nextFieldErrors: mappedFieldErrors,
             nextHighlightedDetailKeys: selectionKeys,

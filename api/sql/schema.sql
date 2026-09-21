@@ -241,13 +241,13 @@ ALTER TABLE slides
   ADD UNIQUE KEY uq_slides_image_url (image_url(191));
 
 UPDATE slides
-SET title = 'placeholder title'
+SET title = 'Post 468 Catering Media'
 WHERE title IS NULL
    OR TRIM(title) = ''
    OR LOWER(TRIM(title)) REGEXP '(^|/)[^/]+\\.(jpg|jpeg|png|webp|gif|avif|mp4|webm|mov|m4v|ogv)$';
 
 UPDATE slides
-SET caption = 'placeholder text'
+SET caption = 'Photos and videos from Post 468 Catering events and community programs.'
 WHERE caption IS NULL
    OR TRIM(caption) = ''
    OR LOWER(TRIM(caption)) REGEXP '(^|/)[^/]+\\.(jpg|jpeg|png|webp|gif|avif|mp4|webm|mov|m4v|ogv)$';

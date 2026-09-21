@@ -80,7 +80,7 @@ describe("AdminServicePlansPage", () => {
     expect(screen.getAllByRole("img", { name: "Active" })).toHaveLength(1);
     expect(screen.queryByRole("heading", { name: "Menu Options" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Create New Catering Package" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Edit Package" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Edit Taco Bar" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Up" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Down" })).not.toBeInTheDocument();
@@ -180,10 +180,10 @@ describe("AdminServicePlansPage", () => {
 
     await screen.findByRole("button", { name: "Set inactive" });
     expect(screen.getByRole("img", { name: "Active" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Edit Package" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Edit Taco Bar" })).not.toBeInTheDocument();
   });
 
-  it("deletes a package from the admin table with the shared confirm modal", async () => {
+  it("deletes a selected package from the edit form with the shared confirm modal", async () => {
     let listRequestCount = 0;
     const confirmSpy = vi.spyOn(window, "confirm");
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((url, options = {}) => {
@@ -248,7 +248,14 @@ describe("AdminServicePlansPage", () => {
     );
 
     await screen.findByText("Taco Bar");
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(screen.queryByRole("button", { name: "Delete Package" })).not.toBeInTheDocument();
+
+    const packageRow = screen.getByText("Taco Bar").closest("tr");
+    expect(packageRow).toBeTruthy();
+    fireEvent.click(packageRow);
+    await screen.findByRole("heading", { name: "Edit Taco Bar" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Package" }));
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("This permanently removes the package from both the admin table and the public catalog.")).toBeInTheDocument();
@@ -430,7 +437,7 @@ describe("AdminServicePlansPage", () => {
     await screen.findByText("Entree and Salad Lunch");
     fireEvent.click(screen.getByText("Entree and Salad Lunch").closest("tr"));
 
-    expect(screen.getByRole("heading", { name: "Edit Package" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Edit Entree and Salad Lunch" })).toBeInTheDocument();
     expect(screen.getByDisplayValue("Entrees Only")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Salads Only")).toBeInTheDocument();
     expect(screen.getAllByPlaceholderText("Min")).toHaveLength(2);
@@ -512,7 +519,7 @@ describe("AdminServicePlansPage", () => {
     await screen.findByText("Taco Bar");
     fireEvent.click(screen.getByText("Taco Bar").closest("tr"));
 
-    expect(screen.getByRole("heading", { name: "Edit Package" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Edit Taco Bar" })).toBeInTheDocument();
     expect(screen.getByDisplayValue("Custom options")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Taco Bar Proteins")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Add one option per line")).toHaveValue("Carne Asada\nChicken\nMarinated Pork");
@@ -598,7 +605,10 @@ describe("AdminServicePlansPage", () => {
     expect(screen.queryByText("Select section")).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox")).not.toBeChecked();
     expect(screen.getByPlaceholderText("45-89")).toBeInTheDocument();
-    expect(screen.getByText(/Dollar signs and/i)).toBeInTheDocument();
+    expect(screen.getByText("$ signs")).toBeInTheDocument();
+    expect(screen.getByText(/are added automatically later/i)).toBeInTheDocument();
+    expect(screen.getByText("Example input:")).toBeInTheDocument();
+    expect(screen.getAllByText("45-89").length).toBeGreaterThan(0);
 
     fireEvent.change(screen.getAllByRole("textbox")[0], {
       target: { value: "Omelette Bar" },
@@ -902,16 +912,12 @@ describe("AdminServicePlansPage", () => {
     await screen.findByRole("heading", { name: "Catering Packages" });
     fireEvent.click(screen.getByRole("button", { name: "Add Package" }));
 
+    expect(screen.getByText("Use one row per thing the customer picks.")).toBeInTheDocument();
+    expect(screen.getByText("Menu options pull from shared package families and require Min and Max.")).toBeInTheDocument();
     expect(
-      screen.getByText(
-        "Use one row per thing the customer picks. Menu options pull from shared package families and require Min and Max."
-      )
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText(
-        "Custom options cover package-specific choices like Taco Bar proteins. Min/Max can stay blank when there is no fixed selection count."
-      )
+      screen.queryByText("Custom options cover package-specific choices like Taco Bar proteins.")
     ).not.toBeInTheDocument();
+    expect(screen.queryByText("Min/Max can stay blank when there is no fixed selection count.")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Title"), {
       target: { value: "Taco Bar" },
@@ -921,21 +927,15 @@ describe("AdminServicePlansPage", () => {
       target: { value: "custom_options" },
     });
 
-    expect(
-      screen.getByText(
-        "Custom options cover package-specific choices like Taco Bar proteins. Min/Max can stay blank when there is no fixed selection count."
-      )
-    ).toBeInTheDocument();
+    expect(screen.getByText("Custom options cover package-specific choices like Taco Bar proteins.")).toBeInTheDocument();
+    expect(screen.getByText("Min/Max can stay blank when there is no fixed selection count.")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Choice source 1"), {
       target: { value: "menu_group" },
     });
 
-    expect(
-      screen.queryByText(
-        "Custom options cover package-specific choices like Taco Bar proteins. Min/Max can stay blank when there is no fixed selection count."
-      )
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Custom options cover package-specific choices like Taco Bar proteins.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Min/Max can stay blank when there is no fixed selection count.")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Choice source 1"), {
       target: { value: "custom_options" },

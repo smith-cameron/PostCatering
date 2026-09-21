@@ -1,63 +1,16 @@
-const parseJsonSafely = async (response) => {
-  try {
-    return await response.json();
-  } catch {
-    return {};
-  }
-};
+import { requestJson as requestJsonBase, requestWithFormData as requestWithFormDataBase } from "../../utils/http";
 
-const resolveErrorMessage = (payload, fallback) => {
-  if (payload && typeof payload.error === "string" && payload.error.trim()) {
-    return payload.error;
-  }
-  if (payload && Array.isArray(payload.errors) && payload.errors.length) {
-    return String(payload.errors[0]);
-  }
-  return fallback;
-};
-
-const buildRequestError = (payload, fallback, status) => {
-  const error = new Error(resolveErrorMessage(payload, fallback));
-  error.status = status;
-  error.payload = payload;
-  error.fieldErrors = payload && typeof payload.field_errors === "object" ? payload.field_errors : null;
-  return error;
-};
-
-export const requestJson = async (url, options = {}) => {
-  const nextOptions = {
-    credentials: "include",
-    ...options,
-  };
-
-  if (nextOptions.body && !(nextOptions.body instanceof FormData)) {
-    nextOptions.headers = {
-      "Content-Type": "application/json",
-      ...(nextOptions.headers || {}),
-    };
-  }
-
-  const response = await fetch(url, nextOptions);
-  const payload = await parseJsonSafely(response);
-  if (!response.ok) {
-    throw buildRequestError(payload, "Request failed.", response.status);
-  }
-  return payload;
-};
-
-export const requestWithFormData = async (url, formData, options = {}) => {
-  const response = await fetch(url, {
-    method: "POST",
-    body: formData,
+export const requestJson = (url, options = {}) =>
+  requestJsonBase(url, {
     credentials: "include",
     ...options,
   });
-  const payload = await parseJsonSafely(response);
-  if (!response.ok) {
-    throw buildRequestError(payload, "Upload failed.", response.status);
-  }
-  return payload;
-};
+
+export const requestWithFormData = (url, formData, options = {}) =>
+  requestWithFormDataBase(url, formData, {
+    credentials: "include",
+    ...options,
+  });
 
 export const getAdminSession = () => requestJson("/api/admin/auth/me");
 

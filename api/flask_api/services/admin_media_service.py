@@ -1,34 +1,13 @@
 from flask_api.config.mysqlconnection import db_transaction, query_db
+from flask_api.services.media_asset_service import MediaAssetService
+from flask_api.services._shared import merge_requested_ids, normalize_id_list, to_bool, to_int, to_iso
 
 
 class AdminMediaService:
     ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"}
     ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".webm", ".mov", ".m4v", ".ogv"}
-
-    @staticmethod
-    def _to_bool(value, default=None):
-        if value is None:
-            return default
-        if isinstance(value, bool):
-            return value
-        normalized = str(value).strip().lower()
-        if normalized in ("1", "true", "yes", "on"):
-            return True
-        if normalized in ("0", "false", "no", "off"):
-            return False
-        return default
-
-    @staticmethod
-    def _to_int(value, default=None, minimum=None, maximum=None):
-        try:
-            normalized = int(value)
-        except (TypeError, ValueError):
-            return default
-        if minimum is not None and normalized < minimum:
-            normalized = minimum
-        if maximum is not None and normalized > maximum:
-            normalized = maximum
-        return normalized
+    _to_bool = staticmethod(to_bool)
+    _to_int = staticmethod(to_int)
 
     @classmethod
     def infer_media_type_from_filename(cls, filename):
@@ -42,10 +21,15 @@ class AdminMediaService:
             return "video"
         return None
 
+    @staticmethod
+    def _validate_slide_media_type(media_type, is_slide):
+        if bool(is_slide) and str(media_type or "").strip().lower() != "image":
+            return {"error": "Only images can be used as landing slides."}, 400
+        return None
+
     @classmethod
     def _apply_display_order_sequence(cls, ordered_ids, connection=None):
-        normalized_ids = [cls._to_int(value, minimum=1) for value in ordered_ids or []]
-        normalized_ids = [value for value in normalized_ids if value]
+        normalized_ids = normalize_id_list(ordered_ids, minimum=1)
         if not normalized_ids:
             return
 
@@ -88,7 +72,7 @@ class AdminMediaService:
             connection=connection,
             auto_commit=False,
         )
-        return [cls._to_int(row.get("id"), minimum=1) for row in rows or [] if cls._to_int(row.get("id"), minimum=1)]
+        return normalize_id_list([row.get("id") for row in rows or []], minimum=1)
 
     @classmethod
     def _resequence_group(cls, is_slide, connection=None, leading_ids=None):
@@ -96,16 +80,7 @@ class AdminMediaService:
         if not current_ids:
             return []
         if leading_ids:
-            normalized_leading = [cls._to_int(value, minimum=1) for value in leading_ids]
-            normalized_leading = [value for value in normalized_leading if value]
-            current_set = set(current_ids)
-            ordered_leading = []
-            seen = set()
-            for media_id in normalized_leading:
-                if media_id in current_set and media_id not in seen:
-                    ordered_leading.append(media_id)
-                    seen.add(media_id)
-            ordered_ids = ordered_leading + [media_id for media_id in current_ids if media_id not in seen]
+            ordered_ids = merge_requested_ids(normalize_id_list(leading_ids, minimum=1), current_ids)
         else:
             ordered_ids = current_ids
         cls._apply_display_order_sequence(ordered_ids, connection=connection)
@@ -133,6 +108,29 @@ class AdminMediaService:
             default=1,
             minimum=1,
         )
+
+    @staticmethod
+    def _serialize_media_row(row):
+        if not row:
+            return None
+        return {
+            "id": row.get("id"),
+            "title": str(row.get("title") or "").strip(),
+            "caption": str(row.get("caption") or "").strip(),
+            "alt_text": str(row.get("alt_text") or "").strip(),
+            "src": row.get("image_url"),
+            "image_url": row.get("image_url"),
+            "thumbnail_src": MediaAssetService.thumbnail_url_for_image_url(
+                row.get("image_url"),
+                media_type=row.get("media_type") or "image",
+            ),
+            "media_type": row.get("media_type") or "image",
+            "display_order": row.get("display_order"),
+            "is_slide": bool(row.get("is_slide", 0)),
+            "is_active": bool(row.get("is_active", 0)),
+            "created_at": to_iso(row.get("created_at")),
+            "updated_at": to_iso(row.get("updated_at")),
+        }
 
     @classmethod
     def list_media(cls, search="", media_type="", is_active=None, is_slide=None, limit=400):
@@ -185,27 +183,7 @@ class AdminMediaService:
             payload,
         )
 
-        return [
-            {
-                "id": row.get("id"),
-                "title": str(row.get("title") or "").strip(),
-                "caption": str(row.get("caption") or "").strip(),
-                "alt_text": str(row.get("alt_text") or "").strip(),
-                "src": row.get("image_url"),
-                "image_url": row.get("image_url"),
-                "media_type": row.get("media_type") or "image",
-                "display_order": row.get("display_order"),
-                "is_slide": bool(row.get("is_slide", 0)),
-                "is_active": bool(row.get("is_active", 0)),
-                "created_at": (
-                    row.get("created_at").isoformat() if hasattr(row.get("created_at"), "isoformat") else None
-                ),
-                "updated_at": (
-                    row.get("updated_at").isoformat() if hasattr(row.get("updated_at"), "isoformat") else None
-                ),
-            }
-            for row in rows
-        ]
+        return [cls._serialize_media_row(row) for row in rows]
 
     @classmethod
     def get_media_by_id(cls, media_id):
@@ -234,22 +212,7 @@ class AdminMediaService:
             {"id": normalized_media_id},
             fetch="one",
         )
-        if not row:
-            return None
-        return {
-            "id": row.get("id"),
-            "title": str(row.get("title") or "").strip(),
-            "caption": str(row.get("caption") or "").strip(),
-            "alt_text": str(row.get("alt_text") or "").strip(),
-            "src": row.get("image_url"),
-            "image_url": row.get("image_url"),
-            "media_type": row.get("media_type") or "image",
-            "display_order": row.get("display_order"),
-            "is_slide": bool(row.get("is_slide", 0)),
-            "is_active": bool(row.get("is_active", 0)),
-            "created_at": row.get("created_at").isoformat() if hasattr(row.get("created_at"), "isoformat") else None,
-            "updated_at": row.get("updated_at").isoformat() if hasattr(row.get("updated_at"), "isoformat") else None,
-        }
+        return cls._serialize_media_row(row)
 
     @classmethod
     def create_media_record(cls, payload):
@@ -266,8 +229,12 @@ class AdminMediaService:
         if not resolved_caption:
             return {"error": "Caption is required."}, 400
 
+        resolved_is_slide = cls._to_bool((payload or {}).get("is_slide"), default=False)
+        slide_validation = cls._validate_slide_media_type(media_type, resolved_is_slide)
+        if slide_validation is not None:
+            return slide_validation
+
         with db_transaction() as connection:
-            resolved_is_slide = cls._to_bool((payload or {}).get("is_slide"), default=False)
             next_display_order = cls._to_int(
                 (payload or {}).get("display_order"),
                 default=cls._next_group_display_order(is_slide=True, connection=connection) if resolved_is_slide else 1,
@@ -350,9 +317,13 @@ class AdminMediaService:
         if not resolved_caption:
             return {"error": "Caption is required."}, 400
 
+        display_order_explicit = "display_order" in (payload or {})
+        next_is_slide = cls._to_bool((payload or {}).get("is_slide"), default=existing["is_slide"])
+        slide_validation = cls._validate_slide_media_type(existing.get("media_type"), next_is_slide)
+        if slide_validation is not None:
+            return slide_validation
+
         with db_transaction() as connection:
-            display_order_explicit = "display_order" in (payload or {})
-            next_is_slide = cls._to_bool((payload or {}).get("is_slide"), default=existing["is_slide"])
             moved_from_slide_to_gallery = existing["is_slide"] and not next_is_slide
             next_display_order = cls._to_int(
                 (payload or {}).get("display_order"),
@@ -425,6 +396,10 @@ class AdminMediaService:
             )
             cls._resequence_group(is_slide=bool(existing.get("is_slide")), connection=connection)
 
+        MediaAssetService.delete_local_asset_bundle(
+            existing.get("image_url"),
+            media_type=existing.get("media_type") or "image",
+        )
         return {
             "ok": True,
             "deleted_media_id": normalized_media_id,
@@ -446,14 +421,8 @@ class AdminMediaService:
         if not isinstance(requested_ids, list):
             return {"error": "ordered_ids must be a list of media ids."}, 400
 
-        normalized_ids = []
-        seen = set()
-        for raw_value in requested_ids:
-            media_id = cls._to_int(raw_value, minimum=1)
-            if not media_id or media_id in seen:
-                continue
-            seen.add(media_id)
-            normalized_ids.append(media_id)
+        normalized_ids = normalize_id_list(requested_ids, minimum=1)
+        normalized_ids = list(dict.fromkeys(normalized_ids))
 
         if not normalized_ids:
             return {"error": "At least one valid media id is required."}, 400
@@ -489,8 +458,7 @@ class AdminMediaService:
                 group_label = "slide" if target_is_slide else "gallery"
                 return {"error": f"None of the provided ids are current {group_label} items."}, 400
 
-            requested_set = set(requested_present)
-            ordered_ids = requested_present + [media_id for media_id in current_ids if media_id not in requested_set]
+            ordered_ids = merge_requested_ids(requested_present, current_ids)
             cls._apply_display_order_sequence(ordered_ids, connection=connection)
 
         media_items = [cls.get_media_by_id(media_id) for media_id in ordered_ids]

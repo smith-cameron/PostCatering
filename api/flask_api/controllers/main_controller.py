@@ -75,6 +75,24 @@ def _bool_query_param(name, default=None):
     return default
 
 
+def _json_body():
+    return request.get_json(silent=True) or {}
+
+
+def _audit_admin_change(
+    admin_user_id, action, entity_type, entity_id=None, change_summary=None, before=None, after=None
+):
+    AdminAuditService.log_change(
+        admin_user_id=admin_user_id,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        change_summary=change_summary,
+        before=before,
+        after=after,
+    )
+
+
 def _sanitize_upload_filename(filename):
     safe_name = secure_filename(str(filename or "").strip())
     if not safe_name:
@@ -122,6 +140,20 @@ def _service_plan_schema_error_response(exc):
         return None
     response_body, status_code = AdminServicePlanService._missing_tables_response()
     return jsonify(response_body), status_code
+
+
+def _service_plan_schema_guard(handler):
+    @wraps(handler)
+    def wrapped(*args, **kwargs):
+        try:
+            return handler(*args, **kwargs)
+        except pymysql.err.ProgrammingError as exc:
+            schema_response = _service_plan_schema_error_response(exc)
+            if schema_response is not None:
+                return schema_response
+            raise
+
+    return wrapped
 
 
 @app.route("/api/health", methods=["GET"])
@@ -217,7 +249,7 @@ def admin_menu_sync():
         if auth_error:
             return jsonify(auth_error), status_code
 
-    body = request.get_json(silent=True) or {}
+    body = _json_body()
     apply_schema = bool(body.get("apply_schema", False))
     reset = bool(body.get("reset", False))
     seed = bool(body.get("seed", True))
@@ -235,7 +267,7 @@ def admin_auth_login():
     if request.method == "OPTIONS":
         return ("", 204)
 
-    body = request.get_json(silent=True) or {}
+    body = _json_body()
     username = body.get("username")
     password = body.get("password")
 
@@ -272,22 +304,19 @@ def admin_auth_me():
 @app.route("/api/admin/auth/profile", methods=["PATCH", "OPTIONS"])
 @_require_admin_auth
 def admin_auth_profile_update(admin_user=None):
-    if request.method == "OPTIONS":
-        return ("", 204)
-
     before = AdminAuthService.to_public_user(admin_user)
     response_body, status_code = AdminAuthService.update_user_profile(
         admin_user["id"],
-        request.get_json(silent=True) or {},
+        _json_body(),
     )
     if status_code < 400 and response_body.get("user"):
         updated_user = response_body["user"]
         session["admin_user_id"] = updated_user.get("id")
         session.modified = True
-        AdminAuditService.log_change(
-            admin_user_id=admin_user["id"],
-            action="update",
-            entity_type="admin_user",
+        _audit_admin_change(
+            admin_user["id"],
+            "update",
+            "admin_user",
             entity_id=updated_user.get("id"),
             change_summary=f"Updated admin profile '{updated_user.get('username', '')}'",
             before=before,
@@ -299,23 +328,20 @@ def admin_auth_profile_update(admin_user=None):
 @app.route("/api/admin/auth/users", methods=["GET", "POST", "OPTIONS"])
 @_require_admin_auth
 def admin_auth_users(admin_user=None):
-    if request.method == "OPTIONS":
-        return ("", 204)
-
     if request.method == "GET":
         response_body, status_code = AdminAuthService.list_admin_users(admin_user["id"])
         return jsonify(response_body), status_code
 
     response_body, status_code = AdminAuthService.create_admin_user(
         admin_user["id"],
-        request.get_json(silent=True) or {},
+        _json_body(),
     )
     created_user = response_body.get("user") if isinstance(response_body, dict) else None
     if status_code < 400 and created_user:
-        AdminAuditService.log_change(
-            admin_user_id=admin_user["id"],
-            action="create",
-            entity_type="admin_user",
+        _audit_admin_change(
+            admin_user["id"],
+            "create",
+            "admin_user",
             entity_id=created_user.get("id"),
             change_summary=f"Created admin user '{created_user.get('username', '')}'",
             before=None,
@@ -327,9 +353,6 @@ def admin_auth_users(admin_user=None):
 @app.route("/api/admin/auth/users/<int:user_id>", methods=["PATCH", "DELETE", "OPTIONS"])
 @_require_admin_auth
 def admin_auth_user_detail(user_id, admin_user=None):
-    if request.method == "OPTIONS":
-        return ("", 204)
-
     before = AdminAuthService.get_user_by_id(user_id)
     before_public = AdminAuthService.to_public_user(before) if before else None
 
@@ -337,14 +360,14 @@ def admin_auth_user_detail(user_id, admin_user=None):
         response_body, status_code = AdminAuthService.update_admin_user(
             admin_user["id"],
             user_id,
-            request.get_json(silent=True) or {},
+            _json_body(),
         )
         updated_user = response_body.get("user") if isinstance(response_body, dict) else None
         if status_code < 400 and updated_user:
-            AdminAuditService.log_change(
-                admin_user_id=admin_user["id"],
-                action="update",
-                entity_type="admin_user",
+            _audit_admin_change(
+                admin_user["id"],
+                "update",
+                "admin_user",
                 entity_id=updated_user.get("id"),
                 change_summary=f"Updated admin user '{updated_user.get('username', '')}'",
                 before=before_public,
@@ -360,10 +383,10 @@ def admin_auth_user_detail(user_id, admin_user=None):
             if isinstance(response_body, dict)
             else (before_public or {}).get("username", "")
         )
-        AdminAuditService.log_change(
-            admin_user_id=admin_user["id"],
-            action="delete",
-            entity_type="admin_user",
+        _audit_admin_change(
+            admin_user["id"],
+            "delete",
+            "admin_user",
             entity_id=deleted_user_id or user_id,
             change_summary=f"Deleted admin user '{deleted_username or ''}'",
             before=before_public,
@@ -375,9 +398,6 @@ def admin_auth_user_detail(user_id, admin_user=None):
 @app.route("/api/admin/menu/items", methods=["GET", "POST", "OPTIONS"])
 @_require_admin_auth
 def admin_menu_items(admin_user=None):
-    if request.method == "OPTIONS":
-        return ("", 204)
-
     if request.method == "GET":
         items = AdminMenuService.list_menu_items(
             search=request.args.get("search", ""),
@@ -386,14 +406,14 @@ def admin_menu_items(admin_user=None):
         )
         return jsonify({"items": items}), 200
 
-    body = request.get_json(silent=True) or {}
+    body = _json_body()
 
     response_body, status_code = AdminMenuService.create_menu_item(body)
     if status_code < 400:
-        AdminAuditService.log_change(
-            admin_user_id=admin_user["id"],
-            action="create",
-            entity_type="menu_item",
+        _audit_admin_change(
+            admin_user["id"],
+            "create",
+            "menu_item",
             entity_id=response_body.get("item", {}).get("id"),
             change_summary=f"Created menu item '{response_body.get('item', {}).get('item_name', '')}'",
             before=None,
@@ -405,9 +425,6 @@ def admin_menu_items(admin_user=None):
 @app.route("/api/admin/menu/items/<int:item_id>", methods=["GET", "PATCH", "DELETE", "OPTIONS"])
 @_require_admin_auth
 def admin_menu_item_detail(item_id, admin_user=None):
-    if request.method == "OPTIONS":
-        return ("", 204)
-
     if request.method == "GET":
         item = AdminMenuService.get_menu_item_detail(item_id)
         if not item:
@@ -421,10 +438,10 @@ def admin_menu_item_detail(item_id, admin_user=None):
     if request.method == "DELETE":
         response_body, status_code = AdminMenuService.delete_menu_item(item_id)
         if status_code < 400:
-            AdminAuditService.log_change(
-                admin_user_id=admin_user["id"],
-                action="delete",
-                entity_type="menu_item",
+            _audit_admin_change(
+                admin_user["id"],
+                "delete",
+                "menu_item",
                 entity_id=item_id,
                 change_summary=f"Deleted menu item '{before.get('item_name', '')}'",
                 before=before,
@@ -432,13 +449,13 @@ def admin_menu_item_detail(item_id, admin_user=None):
             )
         return jsonify(response_body), status_code
 
-    response_body, status_code = AdminMenuService.update_menu_item(item_id, request.get_json(silent=True) or {})
+    response_body, status_code = AdminMenuService.update_menu_item(item_id, _json_body())
     if status_code < 400:
         after = response_body.get("item")
-        AdminAuditService.log_change(
-            admin_user_id=admin_user["id"],
-            action="update",
-            entity_type="menu_item",
+        _audit_admin_change(
+            admin_user["id"],
+            "update",
+            "menu_item",
             entity_id=item_id,
             change_summary=f"Updated menu item '{after.get('item_name', '')}'",
             before=before,
@@ -448,148 +465,119 @@ def admin_menu_item_detail(item_id, admin_user=None):
 
 
 @app.route("/api/admin/service-plans", methods=["GET", "POST", "OPTIONS"])
+@_service_plan_schema_guard
 @_require_admin_auth
 def admin_service_plans(admin_user=None):
-    if request.method == "OPTIONS":
-        return ("", 204)
-
-    try:
-        if request.method == "GET":
-            response_body, status_code = AdminServicePlanService.list_service_plan_sections(
-                catalog_key=request.args.get("catalog_key", ""),
-                include_inactive=_bool_query_param("include_inactive", default=True),
-            )
-            return jsonify(response_body), status_code
-
-        response_body, status_code = AdminServicePlanService.create_service_plan(request.get_json(silent=True) or {})
-        created_plan = response_body.get("plan") if isinstance(response_body, dict) else None
-        if status_code < 400 and created_plan:
-            AdminAuditService.log_change(
-                admin_user_id=admin_user["id"],
-                action="create",
-                entity_type="service_plan",
-                entity_id=created_plan.get("id"),
-                change_summary=f"Created service plan '{created_plan.get('title', '')}'",
-                before=None,
-                after=created_plan,
-            )
+    if request.method == "GET":
+        response_body, status_code = AdminServicePlanService.list_service_plan_sections(
+            catalog_key=request.args.get("catalog_key", ""),
+            include_inactive=_bool_query_param("include_inactive", default=True),
+        )
         return jsonify(response_body), status_code
-    except pymysql.err.ProgrammingError as exc:
-        schema_response = _service_plan_schema_error_response(exc)
-        if schema_response is not None:
-            return schema_response
-        raise
+
+    response_body, status_code = AdminServicePlanService.create_service_plan(_json_body())
+    created_plan = response_body.get("plan") if isinstance(response_body, dict) else None
+    if status_code < 400 and created_plan:
+        _audit_admin_change(
+            admin_user["id"],
+            "create",
+            "service_plan",
+            entity_id=created_plan.get("id"),
+            change_summary=f"Created service plan '{created_plan.get('title', '')}'",
+            before=None,
+            after=created_plan,
+        )
+    return jsonify(response_body), status_code
 
 
 @app.route("/api/admin/service-plans/<int:plan_id>", methods=["GET", "PATCH", "DELETE", "OPTIONS"])
+@_service_plan_schema_guard
 @_require_admin_auth
 def admin_service_plan_detail(plan_id, admin_user=None):
-    if request.method == "OPTIONS":
-        return ("", 204)
-
-    try:
-        if request.method == "GET":
-            plan = AdminServicePlanService.get_service_plan_detail(plan_id)
-            if not plan:
-                return jsonify({"error": "Service plan not found."}), 404
-            return jsonify({"plan": plan}), 200
-
-        before = AdminServicePlanService.get_service_plan_detail(plan_id)
-        if not before:
+    if request.method == "GET":
+        plan = AdminServicePlanService.get_service_plan_detail(plan_id)
+        if not plan:
             return jsonify({"error": "Service plan not found."}), 404
+        return jsonify({"plan": plan}), 200
 
-        if request.method == "DELETE":
-            response_body, status_code = AdminServicePlanService.delete_service_plan(
-                plan_id,
-                hard_delete=_bool_query_param("hard_delete", default=False),
-            )
-            if status_code < 400:
-                AdminAuditService.log_change(
-                    admin_user_id=admin_user["id"],
-                    action="delete",
-                    entity_type="service_plan",
-                    entity_id=plan_id,
-                    change_summary=f"Deleted service plan '{before.get('title', '')}'",
-                    before=before,
-                    after=None,
-                )
-            return jsonify(response_body), status_code
+    before = AdminServicePlanService.get_service_plan_detail(plan_id)
+    if not before:
+        return jsonify({"error": "Service plan not found."}), 404
 
-        response_body, status_code = AdminServicePlanService.update_service_plan(
-            plan_id, request.get_json(silent=True) or {}
+    if request.method == "DELETE":
+        response_body, status_code = AdminServicePlanService.delete_service_plan(
+            plan_id,
+            hard_delete=_bool_query_param("hard_delete", default=False),
         )
         if status_code < 400:
-            after = response_body.get("plan")
-            AdminAuditService.log_change(
-                admin_user_id=admin_user["id"],
-                action="update",
-                entity_type="service_plan",
+            _audit_admin_change(
+                admin_user["id"],
+                "delete",
+                "service_plan",
                 entity_id=plan_id,
-                change_summary=f"Updated service plan '{after.get('title', '')}'",
+                change_summary=f"Deleted service plan '{before.get('title', '')}'",
                 before=before,
-                after=after,
+                after=None,
             )
         return jsonify(response_body), status_code
-    except pymysql.err.ProgrammingError as exc:
-        schema_response = _service_plan_schema_error_response(exc)
-        if schema_response is not None:
-            return schema_response
-        raise
+
+    response_body, status_code = AdminServicePlanService.update_service_plan(plan_id, _json_body())
+    if status_code < 400:
+        after = response_body.get("plan")
+        _audit_admin_change(
+            admin_user["id"],
+            "update",
+            "service_plan",
+            entity_id=plan_id,
+            change_summary=f"Updated service plan '{after.get('title', '')}'",
+            before=before,
+            after=after,
+        )
+    return jsonify(response_body), status_code
 
 
 @app.route("/api/admin/service-plans/reorder", methods=["PATCH", "OPTIONS"])
+@_service_plan_schema_guard
 @_require_admin_auth
 def admin_service_plan_reorder(admin_user=None):
-    if request.method == "OPTIONS":
-        return ("", 204)
+    request_body = _json_body()
+    section_id = request_body.get("section_id")
+    catalog_key = request_body.get("catalog_key", "")
 
-    try:
-        request_body = request.get_json(silent=True) or {}
-        section_id = request_body.get("section_id")
-        catalog_key = request_body.get("catalog_key", "")
+    before_response, _before_status = AdminServicePlanService.list_service_plan_sections(
+        catalog_key=catalog_key,
+        include_inactive=True,
+    )
+    before_section = _find_service_plan_section(before_response.get("sections"), section_id)
 
-        before_response, _before_status = AdminServicePlanService.list_service_plan_sections(
+    response_body, status_code = AdminServicePlanService.reorder_service_plans(
+        section_id,
+        request_body.get("ordered_plan_ids"),
+    )
+    if status_code < 400:
+        after_response, _after_status = AdminServicePlanService.list_service_plan_sections(
             catalog_key=catalog_key,
             include_inactive=True,
         )
-        before_section = _find_service_plan_section(before_response.get("sections"), section_id)
-
-        response_body, status_code = AdminServicePlanService.reorder_service_plans(
-            section_id,
-            request_body.get("ordered_plan_ids"),
+        after_section = _find_service_plan_section(after_response.get("sections"), section_id)
+        section_title = (
+            (after_section or {}).get("title") or (before_section or {}).get("title") or f"section {section_id}"
         )
-        if status_code < 400:
-            after_response, _after_status = AdminServicePlanService.list_service_plan_sections(
-                catalog_key=catalog_key,
-                include_inactive=True,
-            )
-            after_section = _find_service_plan_section(after_response.get("sections"), section_id)
-            section_title = (
-                (after_section or {}).get("title") or (before_section or {}).get("title") or f"section {section_id}"
-            )
-            AdminAuditService.log_change(
-                admin_user_id=admin_user["id"],
-                action="reorder",
-                entity_type="service_plan",
-                entity_id=section_id,
-                change_summary=f"Reordered service plans for '{section_title}'",
-                before=_serialize_service_plan_order(before_section),
-                after=_serialize_service_plan_order(after_section),
-            )
-        return jsonify(response_body), status_code
-    except pymysql.err.ProgrammingError as exc:
-        schema_response = _service_plan_schema_error_response(exc)
-        if schema_response is not None:
-            return schema_response
-        raise
+        _audit_admin_change(
+            admin_user["id"],
+            "reorder",
+            "service_plan",
+            entity_id=section_id,
+            change_summary=f"Reordered service plans for '{section_title}'",
+            before=_serialize_service_plan_order(before_section),
+            after=_serialize_service_plan_order(after_section),
+        )
+    return jsonify(response_body), status_code
 
 
 @app.route("/api/admin/media", methods=["GET", "OPTIONS"])
 @_require_admin_auth
 def admin_media_list(admin_user=None):
-    if request.method == "OPTIONS":
-        return ("", 204)
-
     media_items = AdminMediaService.list_media(
         search=request.args.get("search", ""),
         media_type=request.args.get("media_type", ""),
@@ -603,9 +591,6 @@ def admin_media_list(admin_user=None):
 @app.route("/api/admin/media/upload", methods=["POST", "OPTIONS"])
 @_require_admin_auth
 def admin_media_upload(admin_user=None):
-    if request.method == "OPTIONS":
-        return ("", 204)
-
     uploaded_file = request.files.get("file")
     if uploaded_file is None or not str(uploaded_file.filename or "").strip():
         return jsonify({"error": "Media file is required."}), 400
@@ -638,10 +623,10 @@ def admin_media_upload(admin_user=None):
         return jsonify(response_body), status_code
 
     media_item = response_body.get("media", {})
-    AdminAuditService.log_change(
-        admin_user_id=admin_user["id"],
-        action="create",
-        entity_type="media",
+    _audit_admin_change(
+        admin_user["id"],
+        "create",
+        "media",
         entity_id=media_item.get("id"),
         change_summary=f"Uploaded media '{media_item.get('title', normalized_filename)}'",
         before=None,
@@ -653,9 +638,6 @@ def admin_media_upload(admin_user=None):
 @app.route("/api/admin/media/<int:media_id>", methods=["PATCH", "DELETE", "OPTIONS"])
 @_require_admin_auth
 def admin_media_update(media_id, admin_user=None):
-    if request.method == "OPTIONS":
-        return ("", 204)
-
     before = AdminMediaService.get_media_by_id(media_id)
     if not before:
         return jsonify({"error": "Media item not found."}), 404
@@ -663,10 +645,10 @@ def admin_media_update(media_id, admin_user=None):
     if request.method == "DELETE":
         response_body, status_code = AdminMediaService.delete_media(media_id)
         if status_code < 400:
-            AdminAuditService.log_change(
-                admin_user_id=admin_user["id"],
-                action="delete",
-                entity_type="media",
+            _audit_admin_change(
+                admin_user["id"],
+                "delete",
+                "media",
                 entity_id=media_id,
                 change_summary=f"Deleted media '{before.get('title', '')}'",
                 before=before,
@@ -674,13 +656,13 @@ def admin_media_update(media_id, admin_user=None):
             )
         return jsonify(response_body), status_code
 
-    response_body, status_code = AdminMediaService.update_media(media_id, request.get_json(silent=True) or {})
+    response_body, status_code = AdminMediaService.update_media(media_id, _json_body())
     if status_code < 400:
         after = response_body.get("media")
-        AdminAuditService.log_change(
-            admin_user_id=admin_user["id"],
-            action="update",
-            entity_type="media",
+        _audit_admin_change(
+            admin_user["id"],
+            "update",
+            "media",
             entity_id=media_id,
             change_summary=f"Updated media '{after.get('title', '')}'",
             before=before,
@@ -692,17 +674,14 @@ def admin_media_update(media_id, admin_user=None):
 @app.route("/api/admin/media/reorder-slides", methods=["PATCH", "OPTIONS"])
 @_require_admin_auth
 def admin_media_reorder_slides(admin_user=None):
-    if request.method == "OPTIONS":
-        return ("", 204)
-
     before = AdminMediaService.list_media(is_slide=True, limit=2000)
-    response_body, status_code = AdminMediaService.reorder_slide_items(request.get_json(silent=True) or {})
+    response_body, status_code = AdminMediaService.reorder_slide_items(_json_body())
     if status_code < 400:
         after = response_body.get("slides") or []
-        AdminAuditService.log_change(
-            admin_user_id=admin_user["id"],
-            action="reorder",
-            entity_type="media",
+        _audit_admin_change(
+            admin_user["id"],
+            "reorder",
+            "media",
             entity_id="slides",
             change_summary="Reordered landing slides",
             before=[{"id": row.get("id"), "display_order": row.get("display_order")} for row in before],
@@ -714,20 +693,17 @@ def admin_media_reorder_slides(admin_user=None):
 @app.route("/api/admin/media/reorder", methods=["PATCH", "OPTIONS"])
 @_require_admin_auth
 def admin_media_reorder(admin_user=None):
-    if request.method == "OPTIONS":
-        return ("", 204)
-
-    request_body = request.get_json(silent=True) or {}
+    request_body = _json_body()
     is_slide_group = bool(AdminMediaService._to_bool(request_body.get("is_slide"), default=False))
     before = AdminMediaService.list_media(is_slide=is_slide_group, limit=2000)
     response_body, status_code = AdminMediaService.reorder_media_items(request_body)
     if status_code < 400:
         after = response_body.get("media") or []
         group_label = "slides" if bool(response_body.get("is_slide")) else "gallery"
-        AdminAuditService.log_change(
-            admin_user_id=admin_user["id"],
-            action="reorder",
-            entity_type="media",
+        _audit_admin_change(
+            admin_user["id"],
+            "reorder",
+            "media",
             entity_id=group_label,
             change_summary=f"Reordered {group_label}",
             before=[{"id": row.get("id"), "display_order": row.get("display_order")} for row in before],
@@ -739,9 +715,6 @@ def admin_media_reorder(admin_user=None):
 @app.route("/api/admin/audit", methods=["GET", "OPTIONS"])
 @_require_admin_auth
 def admin_audit_log(admin_user=None):
-    if request.method == "OPTIONS":
-        return ("", 204)
-
     entries = AdminAuditService.get_recent_entries(limit=request.args.get("limit", 100))
     return jsonify({"entries": entries}), 200
 
@@ -756,7 +729,7 @@ def create_inquiry():
     user_agent = request.headers.get("User-Agent", "")
 
     response_body, status_code = InquiryService.submit(
-        request.get_json(silent=True) or {},
+        _json_body(),
         client_ip=client_ip,
         user_agent=user_agent,
     )
